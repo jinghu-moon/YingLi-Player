@@ -1,0 +1,953 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>影里 - 第 61 题导航原型</title>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #e8e9e6;
+      --surface: #f8f8f6;
+      --surface-2: #eeeeeb;
+      --surface-3: #e2e4df;
+      --ink: #151714;
+      --muted: #686d68;
+      --line: #d1d4cf;
+      --accent: #16816b;
+      --accent-soft: #d4ece5;
+      --accent-ink: #075647;
+      --warning: #b76c2c;
+      --shadow: 0 18px 55px rgba(24, 29, 25, .14);
+      --phone-shadow: 0 28px 70px rgba(16, 20, 17, .25);
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --page: #111311;
+      --surface: #1a1c19;
+      --surface-2: #232622;
+      --surface-3: #2d302c;
+      --ink: #f0f1ed;
+      --muted: #a7ada6;
+      --line: #353a35;
+      --accent: #5eb8a2;
+      --accent-soft: #193c33;
+      --accent-ink: #aee3d5;
+      --warning: #e0a06a;
+      --shadow: 0 18px 55px rgba(0, 0, 0, .28);
+      --phone-shadow: 0 28px 70px rgba(0, 0, 0, .52);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--page);
+      color: var(--ink);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input { font: inherit; letter-spacing: 0; }
+    button { color: inherit; }
+
+    .page-shell {
+      width: min(1380px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 36px;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .brand-lockup { min-width: 0; }
+    .brand-lockup h1 { margin: 0; font-size: 22px; font-weight: 500; }
+    .brand-lockup p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+
+    .icon-button {
+      width: 48px;
+      height: 48px;
+      display: inline-grid;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .icon-button:hover { background: var(--surface-2); }
+    .icon-button:focus-visible, .variant-button:focus-visible, .decision-button:focus-visible,
+    .nav-row:focus-visible, .quick-entry:focus-visible, .chip:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
+      outline-offset: 2px;
+    }
+
+    .icon-button svg, .phone button svg { width: 20px; height: 20px; stroke-width: 1.8; }
+
+    .variant-bar {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .variant-button {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .variant-button:hover { background: var(--surface-2); }
+    .variant-button[aria-selected="true"] {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent-ink);
+    }
+
+    .variant-code {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .variant-button[aria-selected="true"] .variant-code {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .variant-name { font-size: 14px; font-weight: 500; }
+    .variant-note { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(430px, 1fr) minmax(320px, 420px);
+      gap: 28px;
+      align-items: start;
+    }
+
+    .stage {
+      min-height: 840px;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      background-color: var(--surface-2);
+      background-image:
+        linear-gradient(var(--line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line) 1px, transparent 1px);
+      background-size: 24px 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .phone {
+      position: relative;
+      width: 390px;
+      height: 800px;
+      padding: 10px;
+      border-radius: 34px;
+      background: #0b0c0b;
+      box-shadow: var(--phone-shadow);
+    }
+
+    .phone::before {
+      content: "";
+      position: absolute;
+      z-index: 20;
+      top: 17px;
+      left: 50%;
+      width: 72px;
+      height: 20px;
+      transform: translateX(-50%);
+      border-radius: 14px;
+      background: #090a09;
+      pointer-events: none;
+    }
+
+    .phone-screen {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 25px;
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .status-bar {
+      position: relative;
+      z-index: 4;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .status-icons { display: flex; gap: 5px; align-items: center; }
+    .status-icons span { display: block; width: 11px; height: 7px; border: 1.5px solid currentColor; border-radius: 2px; }
+    .status-icons span:first-child { width: 9px; border-radius: 50% 50% 0 0; border-bottom: 0; }
+
+    .app-content {
+      position: absolute;
+      inset: 32px 0 0;
+      overflow: hidden;
+    }
+
+    .screen-scroll {
+      height: 100%;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: none;
+      padding-bottom: 30px;
+    }
+
+    .screen-scroll::-webkit-scrollbar { display: none; }
+
+    .app-bar {
+      position: sticky;
+      z-index: 5;
+      top: 0;
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 10px;
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      backdrop-filter: blur(14px);
+    }
+
+    .app-title {
+      min-width: 0;
+      flex: 1;
+      padding: 0 6px;
+      font-size: 20px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .app-title small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 400; }
+
+    .search-field {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 16px 18px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .search-field svg { width: 18px; }
+    .search-field span { flex: 1; }
+
+    .section { margin: 0 0 24px; }
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 16px 10px; }
+    .section-head h2 { margin: 0; font-size: 16px; font-weight: 500; }
+    .section-head button { border: 0; background: transparent; color: var(--accent); font-size: 12px; cursor: pointer; }
+
+    .continue-item {
+      display: grid;
+      grid-template-columns: 136px 1fr;
+      gap: 12px;
+      margin: 0 16px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .thumb {
+      position: relative;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      border-radius: 6px;
+      background: var(--surface-3);
+    }
+
+    .thumb img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .duration { position: absolute; right: 6px; bottom: 6px; padding: 2px 5px; border-radius: 3px; background: rgba(0,0,0,.72); color: #fff; font-size: 10px; }
+    .progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: rgba(255,255,255,.34); }
+    .progress span { display: block; width: 63%; height: 100%; background: #72c9b2; }
+
+    .media-copy { min-width: 0; }
+    .media-copy strong { display: block; margin: 3px 0 7px; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .media-copy span { display: block; color: var(--muted); font-size: 11px; line-height: 1.65; }
+
+    .media-row {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 152px;
+      gap: 10px;
+      overflow-x: auto;
+      padding: 0 16px 4px;
+      scrollbar-width: none;
+    }
+
+    .media-row::-webkit-scrollbar { display: none; }
+    .media-card { min-width: 0; }
+    .media-card h3 { margin: 7px 0 3px; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .media-card p { margin: 0; color: var(--muted); font-size: 10px; }
+
+    .folder-grid, .hub-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 0 16px;
+    }
+
+    .folder-item, .quick-entry {
+      min-height: 76px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface-2);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .folder-item svg, .quick-entry svg { color: var(--accent); }
+    .folder-item span, .quick-entry span { font-size: 12px; font-weight: 500; }
+    .folder-item small, .quick-entry small { color: var(--muted); font-size: 10px; }
+
+    .quick-entry { min-height: 92px; }
+    .quick-entry:hover, .folder-item:hover { border-color: var(--accent); }
+
+    .tab-strip {
+      position: sticky;
+      z-index: 4;
+      top: 64px;
+      display: flex;
+      gap: 18px;
+      overflow-x: auto;
+      padding: 0 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      scrollbar-width: none;
+    }
+
+    .tab-strip button {
+      position: relative;
+      min-width: max-content;
+      min-height: 48px;
+      padding: 0 2px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .tab-strip button.active { color: var(--ink); font-weight: 500; }
+    .tab-strip button.active::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: var(--accent); }
+
+    .chip-row { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 16px; scrollbar-width: none; }
+    .chip {
+      min-width: max-content;
+      height: 36px;
+      padding: 0 13px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .chip.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+
+    .drawer-backdrop, .switcher-backdrop {
+      position: absolute;
+      z-index: 30;
+      inset: 0;
+      display: none;
+      background: rgba(0, 0, 0, .45);
+    }
+    .drawer-backdrop.open, .switcher-backdrop.open { display: block; }
+
+    .drawer {
+      width: 302px;
+      height: 100%;
+      padding: 44px 12px 18px;
+      background: var(--surface);
+      box-shadow: 18px 0 45px rgba(0,0,0,.2);
+      transform: translateX(-100%);
+      transition: transform 180ms ease;
+    }
+    .drawer-backdrop.open .drawer { transform: translateX(0); }
+    .drawer-brand { padding: 0 14px 18px; font-size: 22px; font-weight: 500; }
+    .drawer-brand small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 400; }
+
+    .nav-row {
+      width: 100%;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+      font-size: 13px;
+    }
+    .nav-row.active { background: var(--accent-soft); color: var(--accent-ink); }
+    .nav-separator { height: 1px; margin: 10px 14px; background: var(--line); }
+
+    .switcher-panel {
+      position: absolute;
+      top: 52px;
+      right: 12px;
+      left: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .switcher-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 10px; }
+    .switcher-head strong { font-size: 14px; font-weight: 500; }
+    .switcher-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .switcher-grid .quick-entry { min-height: 82px; padding: 10px; }
+
+    .rail-layout { display: grid; grid-template-columns: 58px 1fr; height: 100%; }
+    .rail {
+      z-index: 6;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 16px 5px;
+      border-right: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+    .rail .icon-button { width: 48px; height: 48px; }
+    .rail .icon-button[data-rail-active] { border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink); }
+    .rail-spacer { flex: 1; }
+    .rail-main { min-width: 0; overflow: hidden; }
+
+    .now-playing-pill {
+      position: absolute;
+      z-index: 10;
+      right: 14px;
+      bottom: 14px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 13px 0 7px;
+      border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+      border-radius: 24px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      color: var(--accent-ink);
+      font-size: 11px;
+    }
+    .now-playing-pill img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+
+    .adaptive-layout {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .adaptive-main {
+      min-height: 0;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .adaptive-layout .now-playing-pill { bottom: 82px; }
+
+    .bottom-nav {
+      position: relative;
+      z-index: 12;
+      flex: 0 0 70px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface) 96%, transparent);
+      backdrop-filter: blur(14px);
+    }
+
+    .bottom-nav button {
+      min-width: 0;
+      min-height: 64px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .bottom-nav button svg { width: 21px; height: 21px; }
+    .bottom-nav button.active { color: var(--accent-ink); font-weight: 500; }
+    .bottom-nav button.active svg {
+      width: 34px;
+      height: 28px;
+      padding: 4px 7px;
+      border-radius: 17px;
+      background: var(--accent-soft);
+    }
+
+    .organize-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 0 16px 22px;
+    }
+
+    .organize-grid .quick-entry { min-height: 106px; }
+
+    .inspection {
+      position: sticky;
+      top: 20px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .inspection-kicker { color: var(--accent); font-size: 12px; font-weight: 500; }
+    .inspection h2 { margin: 7px 0 6px; font-size: 24px; font-weight: 500; }
+    .inspection-summary { margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+
+    .flow {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      overflow-x: auto;
+      padding: 12px 0 18px;
+      border-bottom: 1px solid var(--line);
+      scrollbar-width: none;
+    }
+    .flow span { min-width: max-content; font-size: 12px; }
+    .flow svg { flex: 0 0 auto; width: 14px; color: var(--muted); }
+
+    .fact-list { margin: 18px 0 22px; }
+    .fact-row { display: grid; grid-template-columns: 76px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .fact-row:last-child { border-bottom: 0; }
+    .fact-row dt { color: var(--muted); font-size: 12px; }
+    .fact-row dd { margin: 0; font-size: 13px; line-height: 1.6; }
+
+    .decision-button {
+      width: 100%;
+      min-height: 48px;
+      border: 0;
+      border-radius: 7px;
+      background: var(--ink);
+      color: var(--surface);
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .decision-button.selected { background: var(--accent); color: #fff; }
+    .selection-result { min-height: 22px; margin: 12px 0 0; color: var(--muted); text-align: center; font-size: 12px; }
+
+    .comparison {
+      margin-top: 22px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+    }
+    .comparison h3 { margin: 0 0 12px; font-size: 14px; font-weight: 500; }
+    .score-row { display: grid; grid-template-columns: 86px 1fr auto; gap: 10px; align-items: center; margin: 10px 0; font-size: 12px; }
+    .score-track { height: 5px; overflow: hidden; border-radius: 3px; background: var(--surface-3); }
+    .score-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+    .score-row output { color: var(--muted); }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+
+    @media (max-width: 980px) {
+      .variant-bar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .workspace { grid-template-columns: 1fr; }
+      .inspection { position: static; }
+      .stage { min-height: auto; }
+    }
+
+    @media (max-width: 620px) {
+      .page-shell { width: min(100% - 20px, 430px); padding-top: 14px; }
+      .page-header { align-items: flex-start; }
+      .brand-lockup h1 { font-size: 19px; }
+      .variant-bar { display: flex; overflow-x: auto; padding-bottom: 5px; scrollbar-width: none; }
+      .variant-button { flex: 0 0 154px; }
+      .variant-note { display: none; }
+      .workspace { gap: 16px; }
+      .stage { padding: 10px 0; border-right: 0; border-left: 0; background-image: none; }
+      .phone { width: min(390px, calc(100vw - 20px)); height: 760px; border-radius: 28px; }
+      .inspection { padding: 18px; }
+      .inspection h2 { font-size: 21px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <div class="brand-lockup">
+        <h1>影里 · 一级导航方案</h1>
+        <p>最终一级页面命名为“首页 / 视频 / 整理”，方案 F 为当前推荐。</p>
+      </div>
+      <button class="icon-button" id="themeToggle" type="button" aria-label="切换明暗主题" title="切换明暗主题">
+        <i data-lucide="moon" aria-hidden="true"></i>
+      </button>
+    </header>
+
+    <nav class="variant-bar" id="variantBar" aria-label="导航方案">
+      <button class="variant-button" type="button" data-variant="drawer" aria-selected="false">
+        <span class="variant-code">A</span><span><span class="variant-name">侧边抽屉</span><span class="variant-note">经典 Android 信息架构</span></span>
+      </button>
+      <button class="variant-button" type="button" data-variant="tabs" aria-selected="false">
+        <span class="variant-code">B</span><span><span class="variant-name">顶部分区</span><span class="variant-note">播放器常见分类结构</span></span>
+      </button>
+      <button class="variant-button" type="button" data-variant="hub" aria-selected="false">
+        <span class="variant-code">C</span><span><span class="variant-name">首页门户</span><span class="variant-note">仪表盘承担导航中枢</span></span>
+      </button>
+      <button class="variant-button" type="button" data-variant="switcher" aria-selected="false">
+        <span class="variant-code">D</span><span><span class="variant-name">聚焦切换器</span><span class="variant-note">标题打开全局目的地</span></span>
+      </button>
+      <button class="variant-button" type="button" data-variant="rail" aria-selected="false">
+        <span class="variant-code">E</span><span><span class="variant-name">紧凑侧轨</span><span class="variant-note">工具型应用高效切换</span></span>
+      </button>
+      <button class="variant-button" type="button" data-variant="adaptive" aria-selected="true">
+        <span class="variant-code">F</span><span><span class="variant-name">自适应三栏</span><span class="variant-note">推荐 · 手机底栏/宽屏侧轨</span></span>
+      </button>
+    </nav>
+
+    <div class="workspace">
+      <section class="stage" aria-label="手机界面交互预览">
+        <div class="phone">
+          <div class="phone-screen" id="phoneScreen"></div>
+        </div>
+      </section>
+
+      <aside class="inspection" aria-live="polite">
+        <span class="inspection-kicker" id="detailCode">方案 F · 推荐</span>
+        <h2 id="detailTitle">自适应三栏</h2>
+        <p class="inspection-summary" id="detailSummary"></p>
+        <div class="flow" id="detailFlow"></div>
+        <dl class="fact-list" id="detailFacts"></dl>
+        <button class="decision-button" id="decisionButton" type="button">选择方案 F</button>
+        <p class="selection-result" id="selectionResult">尚未选择最终候选</p>
+        <div class="comparison">
+          <h3>针对影里的适配度</h3>
+          <div id="scoreRows"></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const media = [
+      { title: '山海之间', meta: '今天 · 42:18', duration: '42:18', image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=520&q=78' },
+      { title: '夜行记录', meta: '昨天 · 18:06', duration: '18:06', image: 'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=520&q=78' },
+      { title: '海岸散步', meta: '8 月 2 日 · 26:40', duration: '26:40', image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=520&q=78' }
+    ];
+
+    const variants = {
+      drawer: {
+        code: 'A',
+        title: '侧边抽屉',
+        summary: '所有一级目的地收进一个熟悉的入口，页面本身保持干净。适合功能会持续增长的媒体管理工具。',
+        flow: ['菜单', '选择目的地', '进入页面'],
+        facts: [
+          ['优势', '扩展容量大；设置、处理中心等低频入口有稳定归属。'],
+          ['代价', '目的地默认不可见，打开抽屉多一步。'],
+          ['参考', 'VLC、文件管理器、传统 Android 工具应用。']
+        ],
+        scores: { '发现效率': 68, '扩展能力': 94, '内容空间': 92, '操作直觉': 78 }
+      },
+      tabs: {
+        code: 'B',
+        title: '顶部分区',
+        summary: '一级目的地直接显示在内容顶部，滑动或点击即可切换。用户容易理解，但目的地数量必须保持克制。',
+        flow: ['顶部标签', '直接切换'],
+        facts: [
+          ['优势', '入口始终可见；全部、文件夹、标签之间切换很快。'],
+          ['代价', '搜索框和分组都会争夺顶部空间，超过五项后拥挤。'],
+          ['参考', 'Gramophone、Poweramp 分类页、媒体库应用。']
+        ],
+        scores: { '发现效率': 92, '扩展能力': 58, '内容空间': 80, '操作直觉': 90 }
+      },
+      hub: {
+        code: 'C',
+        title: '首页门户',
+        summary: '仪表盘既承载最近内容，也承担全部一级入口。进入具体工作区后使用明确的返回路径，不保留永久导航。',
+        flow: ['仪表盘入口', '进入工作区', '返回仪表盘'],
+        facts: [
+          ['优势', '最符合无底栏目标；首页具有产品辨识度。'],
+          ['代价', '跨工作区切换需要先返回，依赖优秀的首页组织。'],
+          ['参考', 'Plex、电视媒体中心、部分图库首页。']
+        ],
+        scores: { '发现效率': 84, '扩展能力': 82, '内容空间': 96, '操作直觉': 82 }
+      },
+      switcher: {
+        code: 'D',
+        title: '聚焦切换器',
+        summary: '点击页面标题打开紧凑的全局切换面板，高频目的地一步可达，关闭后不占任何内容空间。',
+        flow: ['点击标题', '切换器', '进入页面'],
+        facts: [
+          ['优势', '兼顾扩展与简洁；比完整抽屉更聚焦。'],
+          ['代价', '标题可点击的认知不够主流，需要清晰的下拉符号。'],
+          ['参考', '工作区切换器、账号切换器、桌面生产力工具。']
+        ],
+        scores: { '发现效率': 75, '扩展能力': 88, '内容空间': 94, '操作直觉': 72 }
+      },
+      rail: {
+        code: 'E',
+        title: '紧凑侧轨',
+        summary: '一级功能以图标常驻左侧，像桌面媒体管理器一样快速切换。平板表现优秀，手机竖屏会牺牲一定宽度。',
+        flow: ['侧轨图标', '直接切换'],
+        facts: [
+          ['优势', '切换最快；天然适配横屏、平板和折叠屏。'],
+          ['代价', '手机内容宽度减少，纯图标需要学习。'],
+          ['参考', 'Material Navigation Rail、平板工具应用。']
+        ],
+        scores: { '发现效率': 80, '扩展能力': 84, '内容空间': 66, '操作直觉': 70 }
+      },
+      adaptive: {
+        code: 'F',
+        title: '自适应三栏',
+        summary: '手机用“首页、视频、整理”三项底部导航，宽屏自动转换为侧边导航轨。处理任务和设置保持为顶部全局入口。',
+        flow: ['三项常驻导航', '一步切换', '页面状态保留'],
+        facts: [
+          ['优势', '三个高频工作区始终可见；命名直观，单手操作稳定。'],
+          ['代价', '手机底部占用固定高度，但仅三个入口，信息密度仍可控。'],
+          ['规则', '播放页隐藏导航；处理中心可在设置中固定为第四项。'],
+          ['适配', '手机竖屏使用底栏，横屏、平板和折叠屏使用侧轨。']
+        ],
+        scores: { '发现效率': 96, '扩展能力': 88, '内容空间': 84, '操作直觉': 96 }
+      }
+    };
+
+    let activeVariant = 'adaptive';
+    let activeAdaptivePage = 'home';
+    let selectedVariant = localStorage.getItem('huali-navigation-choice') || '';
+
+    const statusBar = `
+      <div class="status-bar"><span>9:41</span><span class="status-icons"><span></span><span></span><span></span></span></div>`;
+
+    function iconButton(icon, label, action = '') {
+      return `<button class="icon-button" type="button" aria-label="${label}" title="${label}" ${action}><i data-lucide="${icon}" aria-hidden="true"></i></button>`;
+    }
+
+    function searchField() {
+      return `<div class="search-field"><i data-lucide="search" aria-hidden="true"></i><span>搜索视频、文件夹或标签</span>${iconButton('sliders-horizontal', '筛选')}</div>`;
+    }
+
+    function dashboardBody(includeHub = false) {
+      const entries = includeHub ? `
+        <section class="section">
+          <div class="section-head"><h2>一级入口</h2></div>
+          <div class="hub-grid">
+            <button class="quick-entry" type="button" data-open-library><i data-lucide="clapperboard" aria-hidden="true"></i><span>视频</span><small>248 项</small></button>
+            <button class="quick-entry" type="button"><i data-lucide="tags" aria-hidden="true"></i><span>整理</span><small>收藏与标签</small></button>
+            <button class="quick-entry" type="button"><i data-lucide="list-checks" aria-hidden="true"></i><span>处理</span><small>2 个任务</small></button>
+            <button class="quick-entry" type="button"><i data-lucide="settings-2" aria-hidden="true"></i><span>设置</span><small>界面与播放</small></button>
+          </div>
+        </section>` : '';
+
+      return `${entries}
+        <section class="section">
+          <div class="section-head"><h2>继续观看</h2><button type="button">查看全部</button></div>
+          <article class="continue-item">
+            <div class="thumb"><img src="${media[0].image}" alt="山海风景视频缩略图"><span class="duration">${media[0].duration}</span><span class="progress"><span></span></span></div>
+            <div class="media-copy"><strong>${media[0].title}</strong><span>已观看 63%</span><span>还剩 15 分钟</span></div>
+          </article>
+        </section>
+        <section class="section">
+          <div class="section-head"><h2>最近添加</h2><button type="button">查看全部</button></div>
+          <div class="media-row">${media.map(item => `<article class="media-card"><div class="thumb"><img src="${item.image}" alt="${item.title}视频缩略图"><span class="duration">${item.duration}</span></div><h3>${item.title}</h3><p>${item.meta}</p></article>`).join('')}</div>
+        </section>
+        <section class="section">
+          <div class="section-head"><h2>常用文件夹</h2></div>
+          <div class="folder-grid"><button class="folder-item" type="button"><i data-lucide="folder" aria-hidden="true"></i><span>Movies</span><small>86 个视频</small></button><button class="folder-item" type="button"><i data-lucide="folder" aria-hidden="true"></i><span>Camera</span><small>42 个视频</small></button></div>
+        </section>`;
+    }
+
+    function nowPlaying() {
+      return `<button class="now-playing-pill" type="button"><img src="${media[0].image}" alt=""><i data-lucide="play" aria-hidden="true"></i><span>正在播放</span></button>`;
+    }
+
+    function videoBody() {
+      return `${searchField()}
+        <div class="chip-row"><button class="chip active" type="button">全部</button><button class="chip" type="button">文件夹</button><button class="chip" type="button">最近</button><button class="chip" type="button">未看</button></div>
+        <section class="section">
+          <div class="section-head"><h2>全部视频</h2><button type="button">248 项</button></div>
+          <div class="media-row">${media.map(item => `<article class="media-card"><div class="thumb"><img src="${item.image}" alt="${item.title}视频缩略图"><span class="duration">${item.duration}</span></div><h3>${item.title}</h3><p>${item.meta}</p></article>`).join('')}</div>
+        </section>
+        <section class="section">
+          <div class="section-head"><h2>文件夹</h2><button type="button">查看全部</button></div>
+          <div class="folder-grid"><button class="folder-item" type="button"><i data-lucide="folder" aria-hidden="true"></i><span>Movies</span><small>86 个视频</small></button><button class="folder-item" type="button"><i data-lucide="folder" aria-hidden="true"></i><span>Camera</span><small>42 个视频</small></button></div>
+        </section>`;
+    }
+
+    function organizeBody() {
+      return `<div class="organize-grid">
+          <button class="quick-entry" type="button"><i data-lucide="star" aria-hidden="true"></i><span>收藏</span><small>21 个视频</small></button>
+          <button class="quick-entry" type="button"><i data-lucide="tags" aria-hidden="true"></i><span>标签</span><small>12 个标签</small></button>
+          <button class="quick-entry" type="button"><i data-lucide="list-video" aria-hidden="true"></i><span>播放列表</span><small>6 个列表</small></button>
+          <button class="quick-entry" type="button"><i data-lucide="sparkles" aria-hidden="true"></i><span>智能集合</span><small>4 条规则</small></button>
+        </div>
+        <section class="section">
+          <div class="section-head"><h2>最近整理</h2><button type="button">查看全部</button></div>
+          <div class="media-row">${media.slice(0, 2).map(item => `<article class="media-card"><div class="thumb"><img src="${item.image}" alt="${item.title}视频缩略图"><span class="duration">${item.duration}</span></div><h3>${item.title}</h3><p>已添加标签</p></article>`).join('')}</div>
+        </section>`;
+    }
+
+    function bottomNavigation(activePage) {
+      const items = [
+        ['home', 'house', '首页'],
+        ['video', 'clapperboard', '视频'],
+        ['organize', 'tags', '整理']
+      ];
+      return `<nav class="bottom-nav" aria-label="一级导航">${items.map(([page, icon, label]) => `<button type="button" data-adaptive-page="${page}" class="${activePage === page ? 'active' : ''}" ${activePage === page ? 'aria-current="page"' : ''}><i data-lucide="${icon}" aria-hidden="true"></i><span>${label}</span></button>`).join('')}</nav>`;
+    }
+
+    function renderAdaptive() {
+      const pageMeta = {
+        home: ['影里', '首页总览'],
+        video: ['视频', '248 个视频'],
+        organize: ['整理', '收藏、标签与列表']
+      }[activeAdaptivePage];
+      const body = activeAdaptivePage === 'home' ? `${searchField()}${dashboardBody(false)}` : activeAdaptivePage === 'video' ? videoBody() : organizeBody();
+      return `${statusBar}<div class="app-content adaptive-layout"><div class="adaptive-main"><div class="screen-scroll"><header class="app-bar"><div class="app-title">${pageMeta[0]}<small>${pageMeta[1]}</small></div>${iconButton('list-checks', '处理任务')}${iconButton('settings-2', '设置')}</header>${body}</div></div>${nowPlaying()}${bottomNavigation(activeAdaptivePage)}</div>`;
+    }
+
+    function renderDrawer() {
+      return `${statusBar}<div class="app-content"><div class="screen-scroll">
+        <header class="app-bar">${iconButton('menu', '打开导航', 'data-open-drawer')}<div class="app-title">影里<small>首页总览</small></div>${iconButton('search', '搜索')}${iconButton('settings-2', '设置')}</header>
+        ${searchField()}${dashboardBody(false)}
+      </div>${nowPlaying()}
+      <div class="drawer-backdrop" data-drawer-backdrop><nav class="drawer" aria-label="主导航"><div class="drawer-brand">影里<small>本地媒体中心</small></div>${drawerRows()}</nav></div></div>`;
+    }
+
+    function drawerRows() {
+      return `<button class="nav-row active" type="button"><i data-lucide="house" aria-hidden="true"></i>首页</button>
+        <button class="nav-row" type="button"><i data-lucide="clapperboard" aria-hidden="true"></i>视频</button>
+        <button class="nav-row" type="button"><i data-lucide="tags" aria-hidden="true"></i>整理</button>
+        <div class="nav-separator"></div>
+        <button class="nav-row" type="button"><i data-lucide="list-checks" aria-hidden="true"></i>处理中心</button>
+        <button class="nav-row" type="button"><i data-lucide="settings-2" aria-hidden="true"></i>设置</button>`;
+    }
+
+    function renderTabs() {
+      return `${statusBar}<div class="app-content"><div class="screen-scroll">
+        <header class="app-bar"><div class="app-title">影里<small>248 个视频</small></div>${iconButton('search', '搜索')}${iconButton('more-vertical', '更多')}</header>
+        <nav class="tab-strip" aria-label="一级导航"><button class="active" type="button">首页</button><button type="button">视频</button><button type="button">整理</button></nav>
+        <div style="height:16px"></div>${searchField()}${dashboardBody(false)}
+      </div>${nowPlaying()}</div>`;
+    }
+
+    function renderHub(isLibrary = false) {
+      if (isLibrary) {
+        return `${statusBar}<div class="app-content"><div class="screen-scroll"><header class="app-bar">${iconButton('arrow-left', '返回首页', 'data-back-hub')}<div class="app-title">全部视频<small>248 项</small></div>${iconButton('search', '搜索')}${iconButton('sliders-horizontal', '筛选')}</header><div class="chip-row"><button class="chip active" type="button">全部</button><button class="chip" type="button">最近添加</button><button class="chip" type="button">未播放</button><button class="chip" type="button">长视频</button></div>${dashboardBody(false)}</div>${nowPlaying()}</div>`;
+      }
+      return `${statusBar}<div class="app-content"><div class="screen-scroll"><header class="app-bar"><div class="app-title">影里<small>上午好</small></div>${iconButton('search', '搜索')}${iconButton('settings-2', '设置')}</header>${searchField()}${dashboardBody(true)}</div>${nowPlaying()}</div>`;
+    }
+
+    function renderSwitcher() {
+      return `${statusBar}<div class="app-content"><div class="screen-scroll"><header class="app-bar">${iconButton('panels-top-left', '打开页面切换器', 'data-open-switcher')}<button type="button" class="app-title" data-open-switcher style="border:0;background:transparent;text-align:left;cursor:pointer">首页 <i data-lucide="chevron-down" aria-hidden="true"></i><small>影里 · 本地媒体中心</small></button>${iconButton('list-checks', '处理任务')}${iconButton('settings-2', '设置')}</header>${searchField()}${dashboardBody(false)}</div>${nowPlaying()}<div class="switcher-backdrop" data-switcher-backdrop><div class="switcher-panel"><div class="switcher-head"><strong>前往</strong>${iconButton('x', '关闭', 'data-close-switcher')}</div><div class="switcher-grid"><button class="quick-entry" type="button"><i data-lucide="house" aria-hidden="true"></i><span>首页</span></button><button class="quick-entry" type="button"><i data-lucide="clapperboard" aria-hidden="true"></i><span>视频</span></button><button class="quick-entry" type="button"><i data-lucide="tags" aria-hidden="true"></i><span>整理</span></button><button class="quick-entry" type="button"><i data-lucide="list-checks" aria-hidden="true"></i><span>处理</span></button><button class="quick-entry" type="button"><i data-lucide="history" aria-hidden="true"></i><span>历史</span></button><button class="quick-entry" type="button"><i data-lucide="settings-2" aria-hidden="true"></i><span>设置</span></button></div></div></div></div>`;
+    }
+
+    function renderRail() {
+      return `${statusBar}<div class="app-content rail-layout"><nav class="rail" aria-label="主导航">${iconButton('house', '首页', 'data-rail-active')}${iconButton('clapperboard', '视频')}${iconButton('tags', '整理')}<span class="rail-spacer"></span>${iconButton('list-checks', '处理任务')}${iconButton('settings-2', '设置')}</nav><div class="rail-main"><div class="screen-scroll"><header class="app-bar"><div class="app-title">影里<small>首页总览</small></div>${iconButton('search', '搜索')}${iconButton('sliders-horizontal', '筛选')}</header>${searchField()}${dashboardBody(false)}</div>${nowPlaying()}</div></div>`;
+    }
+
+    function renderPhone() {
+      const phone = document.getElementById('phoneScreen');
+      phone.innerHTML = activeVariant === 'drawer' ? renderDrawer() : activeVariant === 'tabs' ? renderTabs() : activeVariant === 'hub' ? renderHub(false) : activeVariant === 'switcher' ? renderSwitcher() : activeVariant === 'rail' ? renderRail() : renderAdaptive();
+      bindPhoneActions();
+      window.lucide?.createIcons();
+    }
+
+    function bindPhoneActions() {
+      document.querySelectorAll('[data-open-drawer]').forEach(button => button.addEventListener('click', () => document.querySelector('[data-drawer-backdrop]')?.classList.add('open')));
+      document.querySelector('[data-drawer-backdrop]')?.addEventListener('click', event => { if (event.target.matches('[data-drawer-backdrop]')) event.currentTarget.classList.remove('open'); });
+      document.querySelectorAll('[data-open-switcher]').forEach(button => button.addEventListener('click', () => document.querySelector('[data-switcher-backdrop]')?.classList.add('open')));
+      document.querySelector('[data-close-switcher]')?.addEventListener('click', () => document.querySelector('[data-switcher-backdrop]')?.classList.remove('open'));
+      document.querySelector('[data-switcher-backdrop]')?.addEventListener('click', event => { if (event.target.matches('[data-switcher-backdrop]')) event.currentTarget.classList.remove('open'); });
+      document.querySelector('[data-open-library]')?.addEventListener('click', () => { document.getElementById('phoneScreen').innerHTML = renderHub(true); bindPhoneActions(); window.lucide?.createIcons(); });
+      document.querySelector('[data-back-hub]')?.addEventListener('click', renderPhone);
+      document.querySelectorAll('.tab-strip button').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.tab-strip button').forEach(item => item.classList.remove('active')); button.classList.add('active'); }));
+      document.querySelectorAll('.chip').forEach(button => button.addEventListener('click', () => button.classList.toggle('active')));
+      document.querySelectorAll('[data-adaptive-page]').forEach(button => button.addEventListener('click', () => { activeAdaptivePage = button.dataset.adaptivePage; renderPhone(); }));
+    }
+
+    function renderDetails() {
+      const variant = variants[activeVariant];
+      document.getElementById('detailCode').textContent = `方案 ${variant.code}${activeVariant === 'adaptive' ? ' · 推荐' : ''}`;
+      document.getElementById('detailTitle').textContent = variant.title;
+      document.getElementById('detailSummary').textContent = variant.summary;
+      document.getElementById('detailFlow').innerHTML = variant.flow.map((step, index) => `${index ? '<i data-lucide="chevron-right" aria-hidden="true"></i>' : ''}<span>${step}</span>`).join('');
+      document.getElementById('detailFacts').innerHTML = variant.facts.map(([term, value]) => `<div class="fact-row"><dt>${term}</dt><dd>${value}</dd></div>`).join('');
+      document.getElementById('scoreRows').innerHTML = Object.entries(variant.scores).map(([label, value]) => `<div class="score-row"><span>${label}</span><span class="score-track"><span style="width:${value}%"></span></span><output>${value}</output></div>`).join('');
+      const decision = document.getElementById('decisionButton');
+      decision.textContent = selectedVariant === activeVariant ? `已选择方案 ${variant.code}` : `选择方案 ${variant.code}`;
+      decision.classList.toggle('selected', selectedVariant === activeVariant);
+      const result = document.getElementById('selectionResult');
+      result.textContent = selectedVariant ? `当前候选：方案 ${variants[selectedVariant].code} · ${variants[selectedVariant].title}` : '尚未选择最终候选';
+      window.lucide?.createIcons();
+    }
+
+    document.getElementById('variantBar').addEventListener('click', event => {
+      const button = event.target.closest('[data-variant]');
+      if (!button) return;
+      activeVariant = button.dataset.variant;
+      document.querySelectorAll('[data-variant]').forEach(item => item.setAttribute('aria-selected', String(item === button)));
+      renderPhone();
+      renderDetails();
+    });
+
+    document.getElementById('decisionButton').addEventListener('click', () => {
+      selectedVariant = activeVariant;
+      localStorage.setItem('huali-navigation-choice', selectedVariant);
+      renderDetails();
+    });
+
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const isDark = document.documentElement.dataset.theme === 'dark';
+      document.documentElement.dataset.theme = isDark ? '' : 'dark';
+      document.getElementById('themeToggle').innerHTML = `<i data-lucide="${isDark ? 'moon' : 'sun'}" aria-hidden="true"></i>`;
+      window.lucide?.createIcons();
+    });
+
+    renderPhone();
+    renderDetails();
+  </script>
+</body>
+</html>

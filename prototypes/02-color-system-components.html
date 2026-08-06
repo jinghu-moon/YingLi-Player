@@ -1,0 +1,1598 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-theme-choice="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>影里 · 组件配色设计</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
+  <style>
+    :root {
+      color-scheme: light;
+
+      /* Primitive: neutral */
+      --neutral-0: #ffffff;
+      --neutral-50: #fafafa;
+      --neutral-100: #f5f5f5;
+      --neutral-200: #eeeeee;
+      --neutral-300: #e0e0e0;
+      --neutral-400: #c7c7c7;
+      --neutral-500: #a3a3a3;
+      --neutral-600: #737373;
+      --neutral-700: #525252;
+      --neutral-800: #333333;
+      --neutral-900: #1f1f1f;
+      --neutral-950: #121212;
+      --neutral-1000: #000000;
+
+      /* Primitive: steel blue */
+      --blue-50: #f2f7fa;
+      --blue-100: #e2eef4;
+      --blue-200: #c1dce8;
+      --blue-300: #98c3d5;
+      --blue-400: #6fa8c0;
+      --blue-500: #4e8aa5;
+      --blue-600: #3b6f88;
+      --blue-700: #315a70;
+      --blue-800: #2b4c5d;
+      --blue-900: #273f4c;
+      --blue-950: #172832;
+
+      /* Primitive: red */
+      --red-50: #fff5f4;
+      --red-100: #fee8e6;
+      --red-200: #fbcfcb;
+      --red-300: #f5aaa3;
+      --red-400: #ea7d73;
+      --red-500: #d85d52;
+      --red-600: #b9443a;
+      --red-700: #96372f;
+      --red-800: #7c322c;
+      --red-900: #682f2b;
+      --red-950: #391512;
+
+      /* Primitive: amber */
+      --amber-50: #fff9eb;
+      --amber-100: #fff0c6;
+      --amber-200: #fcdd88;
+      --amber-300: #f7c44d;
+      --amber-400: #eaa923;
+      --amber-500: #c98a12;
+      --amber-600: #a66a0d;
+      --amber-700: #85500f;
+      --amber-800: #6e4013;
+      --amber-900: #5d3615;
+      --amber-950: #351b07;
+
+      /* Primitive: green */
+      --green-50: #f1f8f4;
+      --green-100: #ddefe4;
+      --green-200: #bce0ca;
+      --green-300: #8fc9a5;
+      --green-400: #64ae82;
+      --green-500: #438f65;
+      --green-600: #347451;
+      --green-700: #2d5d43;
+      --green-800: #284b38;
+      --green-900: #233e30;
+      --green-950: #102219;
+
+      /* Primitive: light functional B */
+      --blue-light-50: #f4f9fc;
+      --blue-light-100: #e5f1f7;
+      --blue-light-200: #c6e2ee;
+      --blue-light-300: #a1ccde;
+      --blue-light-400: #7ab3cb;
+      --blue-light-500: #5a96b2;
+      --blue-light-600: #477b94;
+      --blue-light-700: #3b647a;
+      --blue-light-800: #325364;
+      --blue-light-900: #2b4351;
+      --blue-light-950: #192a35;
+
+      --red-light-50: #fff8f7;
+      --red-light-100: #ffecea;
+      --red-light-200: #ffd5d1;
+      --red-light-300: #feb3ab;
+      --red-light-400: #f6887e;
+      --red-light-500: #e66a5e;
+      --red-light-600: #c75146;
+      --red-light-700: #a14138;
+      --red-light-800: #843933;
+      --red-light-900: #6d342f;
+      --red-light-950: #3c1714;
+
+      --amber-light-50: #fffaed;
+      --amber-light-100: #fff4d3;
+      --amber-light-200: #ffe397;
+      --amber-light-300: #ffcd5c;
+      --amber-light-400: #f6b435;
+      --amber-light-500: #d69629;
+      --amber-light-600: #b37622;
+      --amber-light-700: #905a1d;
+      --amber-light-800: #75471b;
+      --amber-light-900: #623a1a;
+      --amber-light-950: #381d09;
+
+      --green-light-50: #f3faf6;
+      --green-light-100: #e0f2e7;
+      --green-light-200: #c1e6cf;
+      --green-light-300: #98d2ae;
+      --green-light-400: #6fb98d;
+      --green-light-500: #509b71;
+      --green-light-600: #40805c;
+      --green-light-700: #37674c;
+      --green-light-800: #2f523e;
+      --green-light-900: #274234;
+      --green-light-950: #12241b;
+
+      /* Semantic: light */
+      --page: var(--neutral-100);
+      --surface: var(--neutral-0);
+      --surface-subtle: var(--neutral-50);
+      --surface-muted: var(--neutral-200);
+      --surface-component: var(--neutral-200);
+      --surface-component-hover: var(--neutral-300);
+      --surface-inverse: var(--neutral-950);
+      --surface-level-0: var(--neutral-100);
+      --surface-level-1: var(--neutral-0);
+      --surface-level-2: var(--neutral-0);
+      --surface-level-3: var(--neutral-0);
+
+      --text-primary: var(--neutral-900);
+      --text-secondary: var(--neutral-700);
+      --text-placeholder: var(--neutral-600);
+      --text-disabled: var(--neutral-500);
+      --text-inverse: var(--neutral-0);
+      --text-selection-bg: var(--blue-light-200);
+      --text-selection-on-bg: var(--blue-light-900);
+
+      --border-divider: var(--neutral-200);
+      --border-default: var(--neutral-300);
+      --border-strong: var(--neutral-600);
+      --border-control: var(--neutral-600);
+      --focus-ring: var(--blue-light-600);
+
+      --action-primary: var(--neutral-900);
+      --action-primary-hover: var(--neutral-800);
+      --action-primary-active: var(--neutral-1000);
+      --action-on-primary: var(--neutral-0);
+      --action-primary-soft: var(--neutral-200);
+      --action-secondary: var(--neutral-700);
+      --action-on-secondary: var(--neutral-0);
+      --action-secondary-container: var(--neutral-200);
+      --action-on-secondary-container: var(--neutral-900);
+      --action-tertiary: var(--neutral-800);
+      --action-on-tertiary: var(--neutral-0);
+      --action-tertiary-container: var(--neutral-100);
+      --action-on-tertiary-container: var(--neutral-900);
+      --selection-structural: var(--neutral-900);
+      --selection-on-structural: var(--neutral-0);
+      --inverse-primary: var(--neutral-100);
+
+      --state-hover: rgb(0 0 0 / 0.06);
+      --state-pressed: rgb(0 0 0 / 0.10);
+      --state-dragged: rgb(0 0 0 / 0.14);
+      --scrim-subtle: rgb(0 0 0 / 0.32);
+      --scrim-default: rgb(0 0 0 / 0.56);
+      --scrim-strong: rgb(0 0 0 / 0.72);
+      --scrollbar-thumb: var(--neutral-500);
+      --scrollbar-track: transparent;
+
+      --info: var(--blue-light-600);
+      --info-strong: var(--blue-light-700);
+      --info-container: var(--blue-light-100);
+      --info-on-container: var(--blue-light-800);
+      --warning: var(--amber-light-600);
+      --warning-strong: var(--amber-light-700);
+      --warning-container: var(--amber-light-100);
+      --warning-on-container: var(--amber-light-800);
+      --error: var(--red-light-600);
+      --error-strong: var(--red-light-700);
+      --error-container: var(--red-light-100);
+      --error-on-container: var(--red-light-800);
+      --success: var(--green-light-600);
+      --success-strong: var(--green-light-800);
+      --success-container: var(--green-light-200);
+      --success-on-container: var(--green-light-900);
+
+      --player-canvas: #000000;
+      --player-control-100: #ffffff;
+      --player-control-70: rgb(255 255 255 / 0.72);
+      --player-control-40: rgb(255 255 255 / 0.40);
+      --player-track: rgb(255 255 255 / 0.24);
+      --player-buffer: rgb(255 255 255 / 0.40);
+      --player-scrim-edge: rgb(0 0 0 / 0.72);
+      --player-scrim-center: rgb(0 0 0 / 0.00);
+
+      --system-bar-light-bg: transparent;
+      --system-bar-light-content: var(--neutral-900);
+      --system-bar-dark-bg: transparent;
+      --system-bar-dark-content: var(--neutral-100);
+      --system-bar-player-bg: transparent;
+      --system-bar-player-content: #ffffff;
+      --system-nav-player-bg: #000000;
+
+      --shadow-1: 0 1px 2px rgb(0 0 0 / 0.08), 0 6px 20px rgb(0 0 0 / 0.06);
+      --shadow-2: 0 12px 36px rgb(0 0 0 / 0.16);
+      --shadow-3: 0 18px 56px rgb(0 0 0 / 0.22);
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --page: #0f0f0f;
+      --surface: #171717;
+      --surface-subtle: #1f1f1f;
+      --surface-muted: #242424;
+      --surface-component: #292929;
+      --surface-component-hover: #333333;
+      --surface-inverse: var(--neutral-100);
+      --surface-level-0: #0f0f0f;
+      --surface-level-1: #171717;
+      --surface-level-2: #1f1f1f;
+      --surface-level-3: #292929;
+
+      --text-primary: #f5f5f5;
+      --text-secondary: #b8b8b8;
+      --text-placeholder: #858585;
+      --text-disabled: #5f5f5f;
+      --text-inverse: var(--neutral-950);
+      --text-selection-bg: var(--blue-800);
+      --text-selection-on-bg: var(--blue-100);
+
+      --border-divider: #292929;
+      --border-default: #353535;
+      --border-strong: #5d5d5d;
+      --border-control: #707070;
+      --focus-ring: var(--blue-300);
+
+      --action-primary: var(--neutral-100);
+      --action-primary-hover: var(--neutral-0);
+      --action-primary-active: var(--neutral-300);
+      --action-on-primary: var(--neutral-950);
+      --action-primary-soft: #2b2b2b;
+      --action-secondary: var(--neutral-400);
+      --action-on-secondary: var(--neutral-950);
+      --action-secondary-container: var(--neutral-800);
+      --action-on-secondary-container: var(--neutral-100);
+      --action-tertiary: var(--neutral-300);
+      --action-on-tertiary: var(--neutral-950);
+      --action-tertiary-container: var(--neutral-900);
+      --action-on-tertiary-container: var(--neutral-100);
+      --selection-structural: var(--neutral-100);
+      --selection-on-structural: var(--neutral-950);
+      --inverse-primary: var(--neutral-900);
+
+      --state-hover: rgb(255 255 255 / 0.08);
+      --state-pressed: rgb(255 255 255 / 0.12);
+      --state-dragged: rgb(255 255 255 / 0.16);
+      --scrim-subtle: rgb(0 0 0 / 0.40);
+      --scrim-default: rgb(0 0 0 / 0.64);
+      --scrim-strong: rgb(0 0 0 / 0.80);
+      --scrollbar-thumb: var(--neutral-700);
+      --scrollbar-track: transparent;
+
+      --info: var(--blue-300);
+      --info-strong: var(--blue-200);
+      --info-container: var(--blue-950);
+      --info-on-container: var(--blue-200);
+      --warning: var(--amber-300);
+      --warning-strong: var(--amber-200);
+      --warning-container: var(--amber-950);
+      --warning-on-container: var(--amber-200);
+      --error: var(--red-300);
+      --error-strong: var(--red-200);
+      --error-container: var(--red-950);
+      --error-on-container: var(--red-200);
+      --success: var(--green-300);
+      --success-strong: var(--green-100);
+      --success-container: var(--green-800);
+      --success-on-container: var(--green-100);
+
+      --shadow-1: 0 1px 2px rgb(0 0 0 / 0.28), 0 8px 24px rgb(0 0 0 / 0.24);
+      --shadow-2: 0 12px 40px rgb(0 0 0 / 0.48);
+      --shadow-3: 0 20px 64px rgb(0 0 0 / 0.62);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--page);
+      color: var(--text-primary);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+    button, input, select { font: inherit; letter-spacing: 0; }
+    button { color: inherit; }
+    img { display: block; max-width: 100%; }
+    ::selection { background: var(--text-selection-bg); color: var(--text-selection-on-bg); }
+    * { scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); scrollbar-width: thin; }
+
+    .topbar {
+      position: sticky;
+      z-index: 30;
+      top: 0;
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 12px max(20px, calc((100vw - 1440px) / 2));
+      border-bottom: 1px solid var(--border-divider);
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      backdrop-filter: blur(16px);
+    }
+    .brand { min-width: 220px; }
+    .brand strong { display: block; font-size: 17px; font-weight: 650; }
+    .brand span { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 12px; }
+    .section-nav {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .section-nav::-webkit-scrollbar { display: none; }
+    .section-nav a {
+      flex: 0 0 auto;
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 12px;
+      border-radius: 6px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      text-decoration: none;
+    }
+    .section-nav a:hover { background: var(--surface-component); color: var(--text-primary); }
+
+    .theme-switch {
+      flex: 0 0 auto;
+      display: grid;
+      grid-template-columns: repeat(3, 40px);
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: var(--surface-muted);
+    }
+    .theme-switch button {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      cursor: pointer;
+    }
+    .theme-switch button[aria-pressed="true"] {
+      background: var(--surface);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-1);
+    }
+
+    .shell { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding-bottom: 80px; }
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 460px);
+      gap: 48px;
+      align-items: end;
+      padding: 48px 0 36px;
+      border-bottom: 1px solid var(--border-divider);
+    }
+    .eyebrow { color: var(--text-secondary); font-size: 12px; font-weight: 650; text-transform: uppercase; }
+    .intro h1 { margin: 8px 0 12px; font-size: 52px; line-height: 1.08; font-weight: 670; }
+    .intro p { max-width: 760px; margin: 0; color: var(--text-secondary); font-size: 15px; line-height: 1.75; }
+    .rule-list { display: grid; gap: 10px; }
+    .rule {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 12px;
+      align-items: center;
+      min-height: 50px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border-divider);
+      font-size: 13px;
+    }
+    .rule:last-child { border-bottom: 0; }
+    .rule i { font-size: 22px; color: var(--text-secondary); }
+    .rule strong { display: block; margin-bottom: 2px; font-weight: 650; }
+    .rule span { color: var(--text-secondary); }
+
+    .showcase-section { scroll-margin-top: 92px; padding: 42px 0; border-bottom: 1px solid var(--border-divider); }
+    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+    .section-heading h2 { margin: 0; font-size: 24px; font-weight: 660; }
+    .section-heading p { max-width: 680px; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.65; text-align: right; }
+    .subheading { margin: 28px 0 12px; color: var(--text-secondary); font-size: 12px; font-weight: 650; }
+
+    .scale-list { display: grid; gap: 18px; }
+    .scale-row { min-width: 0; }
+    .scale-title { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+    .scale-title strong { font-size: 14px; }
+    .scale-title span { color: var(--text-secondary); font-size: 12px; }
+    .swatch-strip { display: grid; grid-template-columns: repeat(11, minmax(62px, 1fr)); overflow-x: auto; border: 1px solid var(--border-default); border-radius: 8px; }
+    .swatch-strip.neutral { grid-template-columns: repeat(13, minmax(62px, 1fr)); }
+    .swatch {
+      min-width: 62px;
+      height: 84px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 2px;
+      padding: 8px;
+      border: 0;
+      border-right: 1px solid rgb(127 127 127 / 0.20);
+      background: var(--swatch);
+      color: var(--swatch-text, #111111);
+      cursor: pointer;
+      text-align: left;
+    }
+    .swatch:last-child { border-right: 0; }
+    .swatch strong { font-size: 11px; font-weight: 700; }
+    .swatch small { opacity: .78; font-size: 9px; text-transform: uppercase; }
+
+    .token-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .token-item {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: var(--surface);
+      color: inherit;
+      cursor: pointer;
+      text-align: left;
+    }
+    .token-item:hover { background: var(--surface-subtle); }
+    .token-color { width: 48px; height: 48px; border: 1px solid var(--border-divider); border-radius: 6px; background: var(--token-color); }
+    .token-item strong, .token-item code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .token-item strong { margin-bottom: 4px; font-size: 12px; }
+    .token-item code { color: var(--text-secondary); font-family: "Cascadia Code", Consolas, monospace; font-size: 10px; }
+
+    .component-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .component-panel {
+      min-width: 0;
+      padding: 20px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .component-panel.wide { grid-column: 1 / -1; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .panel-head h3 { margin: 0; font-size: 15px; font-weight: 650; }
+    .panel-head span { color: var(--text-secondary); font-size: 11px; }
+    .stack { display: grid; gap: 12px; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+    .btn {
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 18px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 620;
+    }
+    .btn i { font-size: 19px; }
+    .btn-primary { background: var(--action-primary); color: var(--action-on-primary); }
+    .btn-primary:hover { background: var(--action-primary-hover); }
+    .btn-secondary { border-color: var(--border-control); background: var(--surface); }
+    .btn-secondary:hover { background: var(--surface-component); }
+    .btn-tonal { background: var(--action-primary-soft); }
+    .btn-ghost { background: transparent; }
+    .btn-ghost:hover { background: var(--surface-component); }
+    .btn-danger { background: var(--error); color: #ffffff; }
+    [data-theme="dark"] .btn-danger { color: var(--red-950); }
+    .btn:disabled { background: var(--surface-component); color: var(--text-disabled); cursor: not-allowed; }
+    .icon-btn {
+      width: 48px;
+      height: 48px;
+      display: inline-grid;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      cursor: pointer;
+    }
+    .icon-btn:hover { background: var(--surface-component); }
+    .icon-btn i { font-size: 21px; }
+
+    :where(button, input, select, a):focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 3px;
+    }
+
+    .field { display: grid; gap: 7px; }
+    .field label { font-size: 12px; font-weight: 620; }
+    .field-shell {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      border: 1px solid var(--border-control);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+    .field-shell:focus-within { border-color: var(--focus-ring); box-shadow: 0 0 0 1px var(--focus-ring); }
+    .field-shell i { color: var(--text-secondary); font-size: 20px; }
+    .field-shell input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text-primary); }
+    .field-shell input::placeholder { color: var(--text-placeholder); }
+    .field-help { color: var(--text-secondary); font-size: 11px; }
+    .field-help.error { color: var(--error); }
+
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 13px;
+      border: 1px solid var(--border-control);
+      border-radius: 6px;
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .chip[aria-pressed="true"] { border-color: var(--selection-structural); background: var(--selection-structural); color: var(--selection-on-structural); }
+    .chip i { font-size: 16px; }
+
+    .segmented { display: inline-grid; grid-auto-flow: column; gap: 2px; padding: 3px; border-radius: 7px; background: var(--surface-component); }
+    .segmented button {
+      min-width: 48px;
+      height: 40px;
+      display: inline-grid;
+      place-items: center;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      cursor: pointer;
+    }
+    .segmented button[aria-pressed="true"] { background: var(--surface); box-shadow: var(--shadow-1); }
+
+    .choice { min-height: 48px; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; }
+    .choice input { position: absolute; opacity: 0; pointer-events: none; }
+    .checkmark, .radiomark { width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid var(--border-strong); background: var(--surface); }
+    .checkmark { border-radius: 4px; }
+    .radiomark { border-radius: 50%; }
+    .choice input:checked + .checkmark, .choice input:checked + .radiomark { border-color: var(--selection-structural); background: var(--selection-structural); color: var(--selection-on-structural); }
+    .choice input:checked + .radiomark::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .checkmark i { display: none; font-size: 15px; }
+    .choice input:checked + .checkmark i { display: block; }
+
+    .switch { min-height: 48px; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; }
+    .switch input { position: absolute; opacity: 0; }
+    .switch-track { width: 46px; height: 26px; padding: 3px; border: 1px solid var(--border-strong); border-radius: 13px; background: var(--surface-component); transition: .18s ease; }
+    .switch-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--text-secondary); transition: .18s ease; }
+    .switch input:checked + .switch-track { border-color: var(--selection-structural); background: var(--selection-structural); }
+    .switch input:checked + .switch-track .switch-thumb { transform: translateX(20px); background: var(--selection-on-structural); }
+
+    .slider { position: relative; height: 48px; display: flex; align-items: center; }
+    .slider-track { position: relative; width: 100%; height: 4px; border-radius: 2px; background: var(--surface-component-hover); }
+    .slider-fill { width: 64%; height: 100%; border-radius: inherit; background: var(--action-primary); }
+    .slider-thumb { position: absolute; top: 50%; left: 64%; width: 20px; height: 20px; border: 3px solid var(--surface); border-radius: 50%; background: var(--action-primary); box-shadow: 0 0 0 1px var(--action-primary); transform: translate(-50%, -50%); }
+
+    .app-preview {
+      position: relative;
+      min-height: 570px;
+      overflow: hidden;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: var(--page);
+    }
+    .app-bar { min-height: 64px; display: flex; align-items: center; gap: 6px; padding: 8px 12px 8px 18px; border-bottom: 1px solid var(--border-divider); background: var(--surface); }
+    .app-name { min-width: 0; flex: 1; }
+    .app-name strong { display: block; font-size: 20px; }
+    .app-name span { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 11px; }
+    .preview-content { padding: 16px 16px 92px; }
+    .search-bar { min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; border-radius: 7px; background: var(--surface); color: var(--text-secondary); box-shadow: var(--shadow-1); }
+    .search-bar > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .library-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0 12px; }
+    .library-head h4 { margin: 0; font-size: 15px; }
+    .library-head span { color: var(--text-secondary); font-size: 11px; }
+    .media-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .media-card { min-width: 0; }
+    .thumbnail { position: relative; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 6px; background: var(--surface-component); }
+    .thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+    .duration { position: absolute; right: 6px; bottom: 6px; padding: 3px 5px; border-radius: 3px; background: rgb(0 0 0 / 0.74); color: #ffffff; font-size: 9px; }
+    .watch-progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: rgb(255 255 255 / 0.32); }
+    .watch-progress span { display: block; width: 62%; height: 100%; background: #ffffff; }
+    .media-card h5 { margin: 8px 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .media-card p { margin: 0; color: var(--text-secondary); font-size: 10px; }
+    .bottom-nav { position: absolute; right: 0; bottom: 0; left: 0; min-height: 72px; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--border-divider); background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(16px); }
+    .bottom-nav button { min-width: 0; min-height: 72px; display: grid; place-content: center; justify-items: center; gap: 3px; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 10px; }
+    .bottom-nav button i { width: 42px; height: 28px; display: grid; place-items: center; border-radius: 14px; font-size: 20px; }
+    .bottom-nav button[aria-current="page"] { color: var(--text-primary); font-weight: 650; }
+    .bottom-nav button[aria-current="page"] i { background: var(--selection-structural); color: var(--selection-on-structural); }
+
+    .tag { min-height: 32px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--border-default); border-radius: 5px; background: var(--surface-subtle); color: var(--text-primary); font-size: 11px; }
+    .tag::before { content: ""; width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--tag-dot); box-shadow: 0 0 0 1px rgb(0 0 0 / .08); }
+    .tag-neutral { --tag-dot: var(--neutral-600); }
+    .tag-blue { --tag-dot: #315a70; }
+    .tag-cyan { --tag-dot: #2f6772; }
+    .tag-violet { --tag-dot: #655a7d; }
+    .tag-rose { --tag-dot: #7a4d57; }
+    .tag-amber { --tag-dot: #7a5b1e; }
+    .tag-olive { --tag-dot: #53643a; }
+    .tag-teal { --tag-dot: #356a67; }
+    [data-theme="dark"] .tag-neutral { --tag-dot: var(--neutral-400); }
+    [data-theme="dark"] .tag-blue { --tag-dot: #98c3d5; }
+    [data-theme="dark"] .tag-cyan { --tag-dot: #9bcbd3; }
+    [data-theme="dark"] .tag-violet { --tag-dot: #c2b7d6; }
+    [data-theme="dark"] .tag-rose { --tag-dot: #d9aeb8; }
+    [data-theme="dark"] .tag-amber { --tag-dot: #e2c579; }
+    [data-theme="dark"] .tag-olive { --tag-dot: #b6c992; }
+    [data-theme="dark"] .tag-teal { --tag-dot: #9bc8c4; }
+
+    .filter-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .filter-group { padding-bottom: 16px; border-bottom: 1px solid var(--border-divider); }
+    .filter-group:last-child { border-bottom: 0; }
+    .filter-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 12px; font-weight: 650; }
+    .filter-label span { color: var(--text-secondary); font-weight: 400; }
+
+    .status-list { display: grid; gap: 10px; }
+    .status-banner { min-height: 64px; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--status-border); border-radius: 7px; background: var(--status-bg); color: var(--status-text); }
+    .status-banner > i { font-size: 21px; }
+    .status-banner strong { display: block; margin-bottom: 2px; font-size: 12px; }
+    .status-banner span { font-size: 10px; opacity: .84; }
+    .status-banner button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+    .status-info { --status-bg: var(--info-container); --status-border: color-mix(in srgb, var(--info) 34%, transparent); --status-text: var(--info-on-container); }
+    .status-warning { --status-bg: var(--warning-container); --status-border: color-mix(in srgb, var(--warning) 34%, transparent); --status-text: var(--warning-on-container); }
+    .status-error { --status-bg: var(--error-container); --status-border: color-mix(in srgb, var(--error) 34%, transparent); --status-text: var(--error-on-container); }
+    .status-success { --status-bg: var(--success-container); --status-border: color-mix(in srgb, var(--success) 34%, transparent); --status-text: var(--success-on-container); }
+
+    .task-list { border: 1px solid var(--border-default); border-radius: 8px; overflow: hidden; }
+    .task-row { min-height: 82px; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border-divider); background: var(--surface); }
+    .task-row:last-child { border-bottom: 0; }
+    .task-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 6px; background: var(--task-bg); color: var(--task-color); }
+    .task-running { --task-bg: var(--info-container); --task-color: var(--info); }
+    .task-waiting { --task-bg: var(--warning-container); --task-color: var(--warning); }
+    .task-complete { --task-bg: var(--success-container); --task-color: var(--success); }
+    .task-failed { --task-bg: var(--error-container); --task-color: var(--error); }
+    .task-copy { min-width: 0; }
+    .task-title { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; font-weight: 620; }
+    .task-title span { color: var(--task-color); font-size: 10px; }
+    .task-copy p { margin: 4px 0 8px; overflow: hidden; color: var(--text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .progress-track { height: 4px; overflow: hidden; border-radius: 2px; background: var(--surface-component); }
+    .progress-track span { display: block; width: var(--progress, 0%); height: 100%; border-radius: inherit; background: var(--task-color); }
+
+    .player {
+      position: relative;
+      min-height: 360px;
+      overflow: hidden;
+      border-radius: 8px;
+      background: var(--player-canvas);
+      color: var(--player-control-100);
+    }
+    .player-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .76; }
+    .player::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, var(--player-scrim-edge), var(--player-scrim-center) 38%, var(--player-scrim-center) 54%, var(--player-scrim-edge)); }
+    .player-top, .player-bottom, .player-center { position: absolute; z-index: 2; right: 18px; left: 18px; }
+    .player-top { top: 14px; display: flex; align-items: center; gap: 6px; }
+    .player-title { min-width: 0; flex: 1; }
+    .player-title strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .player-title span { display: block; margin-top: 2px; color: var(--player-control-70); font-size: 10px; }
+    .player .icon-btn { color: var(--player-control-100); }
+    .player .icon-btn:hover { background: rgb(255 255 255 / .12); }
+    .player-center { top: 50%; display: flex; justify-content: center; gap: 22px; transform: translateY(-50%); }
+    .player-center .play-main { width: 58px; height: 58px; background: var(--player-control-100); color: var(--player-canvas); }
+    .player-bottom { bottom: 18px; }
+    .player-track { position: relative; height: 4px; margin-bottom: 10px; border-radius: 2px; background: var(--player-track); }
+    .player-track:focus-visible { outline: 2px solid var(--player-control-100); outline-offset: 4px; }
+    .player-buffer { width: 74%; height: 100%; background: var(--player-buffer); }
+    .player-played { position: absolute; inset: 0 auto 0 0; width: 38%; background: var(--player-control-100); }
+    .player-knob { position: absolute; top: 50%; left: 38%; width: 14px; height: 14px; border-radius: 50%; background: var(--player-control-100); transform: translate(-50%, -50%); }
+    .player-track.is-dragging { height: 6px; }
+    .player-track.is-dragging .player-knob { width: 20px; height: 20px; box-shadow: 0 0 0 5px rgb(255 255 255 / .18); }
+    .player-tools { display: flex; align-items: center; gap: 4px; }
+    .player-time { min-width: 0; flex: 1; color: var(--player-control-100); font-size: 10px; font-weight: 620; }
+    .speed-state { min-height: 48px; padding: 0 10px; border: 1px solid rgb(255 255 255 / .42); border-radius: 5px; background: transparent; color: var(--player-control-100); }
+    .speed-state[aria-pressed="true"] { border-color: var(--player-control-100); background: var(--player-control-100); color: var(--player-canvas); }
+
+    .overlay-stage { min-height: 330px; display: grid; grid-template-columns: minmax(220px, 1fr) minmax(260px, .86fr); gap: 24px; align-items: center; padding: 24px; background: var(--surface-muted); }
+    .menu { max-width: 280px; overflow: hidden; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-2); }
+    .menu button { width: 100%; min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border: 0; background: transparent; cursor: pointer; text-align: left; font-size: 12px; }
+    .menu button:hover { background: var(--surface-component); }
+    .menu button.danger { color: var(--error); }
+    .menu button i { font-size: 19px; }
+    .dialog { max-width: 380px; padding: 22px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-3); }
+    .dialog-icon { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: 16px; border-radius: 50%; background: var(--error-container); color: var(--error); font-size: 22px; }
+    .dialog h4 { margin: 0 0 8px; font-size: 17px; }
+    .dialog p { margin: 0 0 20px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+    .state-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .state-box { min-height: 180px; display: grid; place-items: center; align-content: center; gap: 10px; padding: 20px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); text-align: center; }
+    .state-box > i { font-size: 30px; color: var(--text-secondary); }
+    .state-box strong { font-size: 13px; }
+    .state-box span { max-width: 220px; color: var(--text-secondary); font-size: 10px; line-height: 1.5; }
+    .skeleton { width: min(220px, 100%); display: grid; gap: 8px; }
+    .skeleton span { display: block; height: 10px; border-radius: 3px; background: var(--surface-component); }
+    .skeleton span:first-child { height: 80px; }
+    .skeleton span:last-child { width: 64%; }
+
+    .lock-preview { max-width: 340px; margin: 0 auto; text-align: center; }
+    .lock-mark { width: 62px; height: 62px; display: grid; place-items: center; margin: 0 auto 14px; border-radius: 50%; background: var(--action-primary); color: var(--action-on-primary); font-size: 28px; }
+    .pin-dots { display: flex; justify-content: center; gap: 14px; margin: 24px 0; }
+    .pin-dots span { width: 11px; height: 11px; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface); }
+    .pin-dots span.filled { border-color: var(--action-primary); background: var(--action-primary); }
+    .keypad { display: grid; grid-template-columns: repeat(3, 56px); justify-content: center; gap: 10px 22px; }
+    .keypad button { width: 56px; height: 56px; border: 0; border-radius: 50%; background: var(--surface-component); cursor: pointer; font-size: 17px; }
+    .keypad button:hover { background: var(--surface-component-hover); }
+
+    .toast {
+      position: fixed;
+      z-index: 100;
+      right: 22px;
+      bottom: 22px;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: min(360px, calc(100vw - 32px));
+      padding: 10px 14px;
+      border-radius: 6px;
+      background: var(--surface-inverse);
+      color: var(--text-inverse);
+      box-shadow: var(--shadow-2);
+      font-size: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(12px);
+      transition: .18s ease;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    .commitment-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .commitment { min-height: 112px; padding: 16px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); }
+    .commitment i { display: block; margin-bottom: 16px; color: var(--text-secondary); font-size: 22px; }
+    .commitment strong { display: block; margin-bottom: 5px; font-size: 13px; }
+    .commitment span { color: var(--text-secondary); font-size: 10px; line-height: 1.5; }
+    .audit-summary { min-height: 58px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--success); border-radius: 7px; background: var(--success-container); color: var(--success-on-container); }
+    .audit-summary i { font-size: 22px; }
+    .audit-summary strong { font-size: 12px; }
+    .audit-summary span { margin-left: auto; font-family: "Cascadia Code", Consolas, monospace; font-size: 10px; }
+    .audit-summary.has-failure { border-color: var(--error); background: var(--error-container); color: var(--error-on-container); }
+
+    .hard-rule { display: grid; grid-template-columns: minmax(0, 1fr) 42px minmax(0, 1fr); gap: 16px; align-items: center; padding: 18px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); }
+    .hard-rule > i { color: var(--text-secondary); font-size: 22px; text-align: center; }
+    .rule-family { min-height: 104px; padding: 14px; border-radius: 7px; }
+    .rule-family.neutral { background: var(--selection-structural); color: var(--selection-on-structural); }
+    .rule-family.blue { border: 1px solid color-mix(in srgb, var(--info) 36%, transparent); background: var(--info-container); color: var(--info-on-container); }
+    .rule-family strong { display: block; margin-bottom: 6px; font-size: 13px; }
+    .rule-family span { display: block; font-size: 10px; line-height: 1.55; opacity: .84; }
+
+    .matrix-wrap { overflow-x: auto; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); }
+    .contrast-table { width: 100%; min-width: 780px; border-collapse: collapse; font-size: 11px; }
+    .contrast-table th, .contrast-table td { padding: 11px 12px; border-bottom: 1px solid var(--border-divider); text-align: left; }
+    .contrast-table th { color: var(--text-secondary); font-size: 10px; font-weight: 620; }
+    .contrast-table tr:last-child td { border-bottom: 0; }
+    .pair-preview { display: inline-flex; align-items: center; gap: 8px; }
+    .pair-swatch { width: 32px; height: 24px; display: inline-grid; place-items: center; border: 1px solid var(--border-default); border-radius: 4px; background: var(--pair-bg); color: var(--pair-fg); font-size: 10px; font-weight: 700; }
+    .ratio-value { font-family: "Cascadia Code", Consolas, monospace; font-weight: 700; }
+    .result-badge { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 8px; border-radius: 4px; font-size: 10px; font-weight: 650; }
+    .result-badge.pass { background: var(--success-container); color: var(--success-on-container); }
+    .result-badge.fail { background: var(--error-container); color: var(--error-on-container); }
+
+    .elevation-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .level-card { min-height: 124px; display: grid; align-content: space-between; padding: 14px; border: 1px solid var(--border-default); border-radius: 7px; background: var(--level-bg); box-shadow: var(--level-shadow, none); }
+    .level-card strong { font-size: 12px; }
+    .level-card span { color: var(--text-secondary); font-size: 10px; line-height: 1.45; }
+    .state-layer-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .state-layer { position: relative; min-height: 76px; overflow: hidden; display: grid; place-items: center; border: 1px solid var(--border-control); border-radius: 6px; background: var(--surface); font-size: 11px; }
+    .state-layer::after { content: ""; position: absolute; inset: 0; background: var(--layer, transparent); pointer-events: none; }
+    .state-layer span { position: relative; z-index: 1; }
+
+    .cvd-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .cvd-card { min-width: 0; padding: 12px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); }
+    .cvd-card > strong { display: block; margin-bottom: 10px; font-size: 12px; }
+    .cvd-samples { display: grid; gap: 8px; }
+    .cvd-sample { min-height: 58px; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--status-border); border-radius: 6px; background: var(--status-bg); color: var(--status-text); }
+    .cvd-sample i { font-size: 19px; }
+    .cvd-sample strong { display: block; font-size: 11px; }
+    .cvd-sample span { display: block; margin-top: 2px; font-size: 9px; opacity: .82; }
+    .cvd-grayscale { filter: grayscale(1); }
+    .cvd-deuteranopia { filter: url(#deuteranopia); }
+
+    .player-spec-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .player-spec { min-height: 96px; display: grid; align-content: space-between; gap: 10px; padding: 12px; border: 1px solid rgb(255 255 255 / .16); border-radius: 7px; background: #111111; color: #ffffff; }
+    .player-spec strong { font-size: 11px; }
+    .player-spec span { color: rgb(255 255 255 / .70); font-size: 9px; line-height: 1.45; }
+    .player-mini-track { position: relative; height: 4px; border-radius: 2px; background: var(--player-track); }
+    .player-mini-track::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 72%; background: var(--player-buffer); }
+    .player-mini-track::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 38%; background: var(--player-control-100); }
+
+    .platform-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 16px; }
+    .system-bar-list { display: grid; gap: 10px; }
+    .system-bar-preview { overflow: hidden; border: 1px solid var(--border-default); border-radius: 8px; background: var(--bar-page); color: var(--bar-text); }
+    .system-bar { height: 26px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; background: var(--bar-status); font-size: 9px; }
+    .system-bar-body { min-height: 58px; display: grid; place-items: center; color: var(--bar-secondary); font-size: 10px; }
+    .system-nav-bar { height: 24px; display: grid; place-items: center; background: var(--bar-nav); }
+    .system-nav-bar::after { content: ""; width: 72px; height: 3px; border-radius: 2px; background: currentColor; }
+    .strategy-list { display: grid; gap: 10px; }
+    .strategy-item { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-divider); }
+    .strategy-item:last-child { border-bottom: 0; }
+    .strategy-item i { color: var(--text-secondary); font-size: 19px; }
+    .strategy-item strong { display: block; margin-bottom: 3px; font-size: 11px; }
+    .strategy-item span { color: var(--text-secondary); font-size: 10px; line-height: 1.5; }
+
+    .export-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .export-toolbar [data-export-view][aria-pressed="true"] { border-color: var(--selection-structural); background: var(--selection-structural); color: var(--selection-on-structural); }
+    .code-preview { min-height: 260px; max-height: 460px; overflow: auto; margin: 0; padding: 16px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-level-0); color: var(--text-primary); font: 11px/1.65 "Cascadia Code", Consolas, monospace; white-space: pre; }
+    .sync-note { min-height: 58px; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: center; margin-bottom: 16px; padding: 10px 14px; border-left: 3px solid var(--warning); background: var(--warning-container); color: var(--warning-on-container); }
+    .sync-note i { font-size: 20px; }
+    .sync-note strong { display: block; margin-bottom: 2px; font-size: 11px; }
+    .sync-note span { font-size: 10px; line-height: 1.45; }
+
+    @media (max-width: 1100px) {
+      .topbar { flex-wrap: wrap; gap: 8px 16px; }
+      .brand { flex: 1; }
+      .section-nav { order: 3; flex-basis: 100%; }
+      .token-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .intro { grid-template-columns: 1fr; gap: 24px; }
+      .commitment-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .platform-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 820px) {
+      .shell { width: min(100% - 24px, 680px); }
+      .intro h1 { font-size: 40px; }
+      .section-heading { display: block; }
+      .section-heading p { margin-top: 8px; text-align: left; }
+      .component-grid { grid-template-columns: 1fr; }
+      .component-panel.wide { grid-column: auto; }
+      .token-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .filter-layout, .overlay-stage { grid-template-columns: 1fr; }
+      .state-grid { grid-template-columns: 1fr; }
+      .media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .media-card:last-child { display: none; }
+      .player { min-height: 300px; }
+      .cvd-grid, .player-spec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .elevation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 520px) {
+      .topbar { padding: 10px 12px; }
+      .brand strong { font-size: 15px; }
+      .brand span { display: none; }
+      .theme-switch { grid-template-columns: repeat(3, 36px); }
+      .theme-switch button { width: 36px; height: 36px; }
+      .shell { width: min(100% - 20px, 440px); }
+      .intro { padding-top: 32px; }
+      .intro h1 { font-size: 32px; }
+      .showcase-section { padding: 34px 0; }
+      .token-grid { grid-template-columns: 1fr; }
+      .commitment-grid, .cvd-grid, .player-spec-grid, .elevation-grid, .state-layer-row { grid-template-columns: 1fr; }
+      .hard-rule { grid-template-columns: 1fr; }
+      .hard-rule > i { transform: rotate(90deg); }
+      .audit-summary { align-items: flex-start; }
+      .audit-summary span { margin-left: 0; }
+      .component-panel { padding: 14px; }
+      .app-preview { min-height: 560px; }
+      .preview-content { padding-right: 12px; padding-left: 12px; }
+      .player { min-height: 250px; }
+      .player-top, .player-bottom, .player-center { right: 10px; left: 10px; }
+      .player-tools .icon-btn:nth-last-child(2) { display: none; }
+      .overlay-stage { padding: 14px; }
+      .dialog-actions { flex-direction: column-reverse; }
+      .dialog-actions .btn { width: 100%; }
+      .toast { right: 10px; bottom: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>影里 · 组件配色设计</strong>
+      <span>无彩主操作 · 浅色 B / 深色 A</span>
+    </div>
+    <nav class="section-nav" aria-label="页面章节">
+      <a href="#palette">色阶</a>
+      <a href="#semantic">语义</a>
+      <a href="#accessibility">校验</a>
+      <a href="#navigation">导航</a>
+      <a href="#controls">控件</a>
+      <a href="#media">媒体</a>
+      <a href="#status">状态</a>
+      <a href="#player">播放</a>
+      <a href="#overlays">浮层</a>
+      <a href="#android">Android</a>
+    </nav>
+    <div class="theme-switch" role="group" aria-label="主题模式">
+      <button type="button" data-theme-mode="system" aria-pressed="true" title="跟随系统" aria-label="跟随系统"><i class="ti ti-device-desktop" aria-hidden="true"></i></button>
+      <button type="button" data-theme-mode="light" aria-pressed="false" title="浅色" aria-label="浅色"><i class="ti ti-sun" aria-hidden="true"></i></button>
+      <button type="button" data-theme-mode="dark" aria-pressed="false" title="深色" aria-label="深色"><i class="ti ti-moon" aria-hidden="true"></i></button>
+    </div>
+  </header>
+
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <filter id="deuteranopia" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0.367 0.861 -0.228 0 0  0.280 0.673 0.047 0 0  -0.012 0.043 0.969 0 0  0 0 0 1 0"></feColorMatrix>
+    </filter>
+  </svg>
+
+  <main class="shell">
+    <section class="intro">
+      <div>
+        <span class="eyebrow">YingLi Color System · Draft 03</span>
+        <h1>让内容有颜色，<br>让界面有秩序。</h1>
+        <p>界面骨架仅使用中性灰；主要操作通过黑白反转建立层级。蓝色表示信息与处理中，琥珀色表示警告与等待，红色表示错误与危险，绿色表示完成与成功。功能色已确定为浅色模式 B 档、深色模式 A 档，播放页沿用克制的深色映射，不做简单颜色反转。</p>
+      </div>
+      <div class="rule-list">
+        <div class="rule"><i class="ti ti-stack-2" aria-hidden="true"></i><div><strong>三层 Token</strong><span>Primitive → Semantic → Component</span></div></div>
+        <div class="rule"><i class="ti ti-palette" aria-hidden="true"></i><div><strong>灰阶覆盖主体</strong><span>背景、文字、边框、导航只取中性色</span></div></div>
+        <div class="rule"><i class="ti ti-accessible" aria-hidden="true"></i><div><strong>颜色不是唯一线索</strong><span>状态同时使用图标、文字和形状</span></div></div>
+        <div class="rule"><i class="ti ti-shield-check" aria-hidden="true"></i><div><strong>对比度承诺</strong><span>正文 ≥ 4.5:1，UI 边界和焦点 ≥ 3:1</span></div></div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="palette">
+      <div class="section-heading">
+        <h2>Primitive 原始色阶</h2>
+        <p>色阶可用于生成语义颜色，但业务组件不得直接引用。浅色主题显示 B 档，深色主题显示 A 档；点击任意色块可复制 Hex。</p>
+      </div>
+      <div class="scale-list" id="scaleList"></div>
+    </section>
+
+    <section class="showcase-section" id="semantic">
+      <div class="section-heading">
+        <h2>Semantic 语义角色</h2>
+        <p>切换主题可检查同一语义角色在浅色与深色中的映射。下方显示当前实际解析值。</p>
+      </div>
+      <div class="token-grid" id="tokenGrid"></div>
+      <div class="subheading">深色海拔 · 层级越高，表面越亮</div>
+      <div class="elevation-grid">
+        <div class="level-card" style="--level-bg:var(--surface-level-0)"><strong>Level 0 · 页面</strong><span>应用最底层背景，不承载浮动内容。</span></div>
+        <div class="level-card" style="--level-bg:var(--surface-level-1);--level-shadow:var(--shadow-1)"><strong>Level 1 · 容器</strong><span>列表、媒体库、普通面板。</span></div>
+        <div class="level-card" style="--level-bg:var(--surface-level-2);--level-shadow:var(--shadow-2)"><strong>Level 2 · 菜单</strong><span>下拉菜单、筛选面板、底部面板。</span></div>
+        <div class="level-card" style="--level-bg:var(--surface-level-3);--level-shadow:var(--shadow-3)"><strong>Level 3 · 对话框</strong><span>模态确认和需要阻断流程的内容。</span></div>
+      </div>
+      <div class="subheading">状态叠层 · 在当前表面上叠加，不创建临时色值</div>
+      <div class="state-layer-row">
+        <div class="state-layer"><span>Default · 0%</span></div>
+        <div class="state-layer" style="--layer:var(--state-hover)"><span>Hover · 6% / 8%</span></div>
+        <div class="state-layer" style="--layer:var(--state-pressed)"><span>Pressed · 10% / 12%</span></div>
+        <div class="state-layer" style="--layer:var(--state-dragged)"><span>Dragged · 14% / 16%</span></div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="accessibility">
+      <div class="section-heading">
+        <h2>可访问性承诺与自动校验</h2>
+        <p>检测结果随浅色、深色主题实时更新。装饰性分割线不承担边界识别，不纳入 3:1；输入框、焦点环等交互边界必须通过。</p>
+      </div>
+      <div class="commitment-grid">
+        <div class="commitment"><i class="ti ti-typography" aria-hidden="true"></i><strong>正文文字</strong><span>小于 18sp 的文本与背景对比度不得低于 4.5:1。</span></div>
+        <div class="commitment"><i class="ti ti-heading" aria-hidden="true"></i><strong>大字与图标</strong><span>大字、状态图标及非文字控件不得低于 3:1。</span></div>
+        <div class="commitment"><i class="ti ti-focus-2" aria-hidden="true"></i><strong>交互边界</strong><span>输入边框、焦点环和关键控制轮廓不得低于 3:1。</span></div>
+        <div class="commitment"><i class="ti ti-player-play" aria-hidden="true"></i><strong>播放器文字</strong><span>时间文字使用白色 100%，位于 72% 黑色边缘 scrim 上。</span></div>
+      </div>
+      <div class="audit-summary" id="auditSummary"><i class="ti ti-loader-2" aria-hidden="true"></i><strong>正在计算配对矩阵</strong><span>-- / --</span></div>
+
+      <div class="subheading">选中与蓝色的硬规则</div>
+      <div class="hard-rule">
+        <div class="rule-family neutral"><strong>黑白 · 结构性与控件选中</strong><span>一级导航、筛选 Chip、复选、单选、开关、滑块、批量选择。</span></div>
+        <i class="ti ti-arrows-right-left" aria-hidden="true"></i>
+        <div class="rule-family blue"><strong>钢蓝 · 信息与可访问性</strong><span>焦点环、链接、信息提示、扫描、转换与其他运行中状态。</span></div>
+      </div>
+
+      <div class="subheading">安全配对矩阵 · 当前主题</div>
+      <div class="matrix-wrap">
+        <table class="contrast-table">
+          <thead><tr><th>用途</th><th>前景 Token</th><th>背景 Token</th><th>当前预览</th><th>承诺</th><th>Light</th><th>Dark</th><th>结果</th></tr></thead>
+          <tbody id="contrastMatrixBody"></tbody>
+        </table>
+      </div>
+
+      <div class="subheading">色觉与灰度模拟 · 错误/成功保持可区分</div>
+      <div class="cvd-grid">
+        <div class="cvd-card"><strong>标准视图</strong><div class="cvd-samples"><div class="cvd-sample status-error"><i class="ti ti-circle-x" aria-hidden="true"></i><div><strong>转换失败</strong><span>输出路径不可写入</span></div></div><div class="cvd-sample status-success"><i class="ti ti-circle-check" aria-hidden="true"></i><div><strong>导出完成</strong><span>已保存 4 个片段</span></div></div></div></div>
+        <div class="cvd-card"><strong>灰度视图</strong><div class="cvd-samples cvd-grayscale"><div class="cvd-sample status-error"><i class="ti ti-circle-x" aria-hidden="true"></i><div><strong>转换失败</strong><span>输出路径不可写入</span></div></div><div class="cvd-sample status-success"><i class="ti ti-circle-check" aria-hidden="true"></i><div><strong>导出完成</strong><span>已保存 4 个片段</span></div></div></div></div>
+        <div class="cvd-card"><strong>绿色弱模拟</strong><div class="cvd-samples cvd-deuteranopia"><div class="cvd-sample status-error"><i class="ti ti-circle-x" aria-hidden="true"></i><div><strong>转换失败</strong><span>输出路径不可写入</span></div></div><div class="cvd-sample status-success"><i class="ti ti-circle-check" aria-hidden="true"></i><div><strong>导出完成</strong><span>已保存 4 个片段</span></div></div></div></div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="navigation">
+      <div class="section-heading">
+        <h2>导航与内容框架</h2>
+        <p>手机采用“首页 / 视频 / 整理”三项底部导航；处理中心与设置保留在顶部。选中态使用黑白反转。</p>
+      </div>
+      <div class="sync-note"><i class="ti ti-alert-triangle" aria-hidden="true"></i><div><strong>原型一致性基线</strong><span>Draft 03 是配色事实来源。浅色功能色使用 B 档，深色和播放页使用 A 档；01 导航原型中的绿色选中态、链接和观看进度属于历史方案，进入实现前应同步为黑白选中、钢蓝焦点和白色 90% 观看进度。</span></div></div>
+      <div class="component-grid">
+        <div class="component-panel wide">
+          <div class="panel-head"><h3>视频页 · 浅色/深色共用语义</h3><span>页面、搜索、筛选、媒体卡、底部导航</span></div>
+          <div class="app-preview">
+            <header class="app-bar">
+              <div class="app-name"><strong>视频</strong><span>248 个视频</span></div>
+              <button class="icon-btn" type="button" title="处理中心" aria-label="处理中心"><i class="ti ti-progress-check" aria-hidden="true"></i></button>
+              <button class="icon-btn" type="button" title="设置" aria-label="设置"><i class="ti ti-settings" aria-hidden="true"></i></button>
+            </header>
+            <div class="preview-content">
+              <div class="search-bar"><i class="ti ti-search" aria-hidden="true"></i><span>搜索视频、文件夹或标签</span><button class="icon-btn" type="button" title="打开筛选" aria-label="打开筛选"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button></div>
+              <div class="chip-row" style="margin-top:12px">
+                <button class="chip" type="button" aria-pressed="true">全部</button>
+                <button class="chip" type="button" aria-pressed="false">文件夹</button>
+                <button class="chip" type="button" aria-pressed="false">最近</button>
+                <button class="chip" type="button" aria-pressed="false">未看</button>
+              </div>
+              <div class="library-head"><h4>全部视频</h4><span>最近添加 ↓</span></div>
+              <div class="media-grid">
+                <article class="media-card"><div class="thumbnail"><img src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&amp;fit=crop&amp;w=720&amp;q=82" alt="山海风景视频缩略图"><span class="duration">42:18</span><span class="watch-progress"><span></span></span></div><h5>山海之间</h5><p>今天 · 1080p</p></article>
+                <article class="media-card"><div class="thumbnail"><img src="https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&amp;fit=crop&amp;w=720&amp;q=82" alt="夜景视频缩略图"><span class="duration">18:06</span></div><h5>夜行记录</h5><p>昨天 · 4K</p></article>
+                <article class="media-card"><div class="thumbnail"><img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&amp;fit=crop&amp;w=720&amp;q=82" alt="海岸视频缩略图"><span class="duration">26:40</span></div><h5>海岸散步</h5><p>8 月 2 日 · 1080p</p></article>
+              </div>
+            </div>
+            <nav class="bottom-nav" aria-label="一级导航">
+              <button type="button"><i class="ti ti-home" aria-hidden="true"></i><span>首页</span></button>
+              <button type="button" aria-current="page"><i class="ti ti-video" aria-hidden="true"></i><span>视频</span></button>
+              <button type="button"><i class="ti ti-tags" aria-hidden="true"></i><span>整理</span></button>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="controls">
+      <div class="section-heading">
+        <h2>操作与输入控件</h2>
+        <p>普通交互维持无彩色。只有危险操作使用红色；焦点环使用钢蓝色，以便键盘和无障碍导航识别。</p>
+      </div>
+      <div class="component-grid">
+        <div class="component-panel">
+          <div class="panel-head"><h3>按钮</h3><span>默认、次要、弱化、危险、禁用</span></div>
+          <div class="row">
+            <button class="btn btn-primary" type="button"><i class="ti ti-check" aria-hidden="true"></i>应用</button>
+            <button class="btn btn-secondary" type="button">取消</button>
+            <button class="btn btn-tonal" type="button"><i class="ti ti-filter" aria-hidden="true"></i>筛选</button>
+            <button class="btn btn-ghost" type="button">清除</button>
+            <button class="btn btn-danger" type="button"><i class="ti ti-trash" aria-hidden="true"></i>删除</button>
+            <button class="btn" type="button" disabled>不可用</button>
+          </div>
+          <div class="subheading">图标按钮</div>
+          <div class="row">
+            <button class="icon-btn" type="button" title="搜索" aria-label="搜索"><i class="ti ti-search" aria-hidden="true"></i></button>
+            <button class="icon-btn" type="button" title="排序" aria-label="排序"><i class="ti ti-sort-descending" aria-hidden="true"></i></button>
+            <button class="icon-btn" type="button" title="更多" aria-label="更多"><i class="ti ti-dots-vertical" aria-hidden="true"></i></button>
+          </div>
+        </div>
+        <div class="component-panel">
+          <div class="panel-head"><h3>文本输入</h3><span>默认、聚焦、错误</span></div>
+          <div class="stack">
+            <div class="field"><label for="searchInput">搜索</label><div class="field-shell"><i class="ti ti-search" aria-hidden="true"></i><input id="searchInput" type="text" placeholder="视频名称、路径或标签"></div><span class="field-help">不提供搜索建议，仅匹配本地内容</span></div>
+            <div class="field"><label for="pathInput">媒体路径</label><div class="field-shell" style="border-color:var(--error)"><i class="ti ti-folder" aria-hidden="true"></i><input id="pathInput" value="/Movies/Travel" aria-invalid="true"></div><span class="field-help error"><i class="ti ti-alert-circle" aria-hidden="true"></i> 无法访问该路径</span></div>
+          </div>
+        </div>
+        <div class="component-panel">
+          <div class="panel-head"><h3>选择控件</h3><span>复选、单选、开关</span></div>
+          <div class="row">
+            <label class="choice"><input type="checkbox" checked><span class="checkmark"><i class="ti ti-check" aria-hidden="true"></i></span>包括子文件夹</label>
+            <label class="choice"><input type="checkbox"><span class="checkmark"><i class="ti ti-check" aria-hidden="true"></i></span>仅显示未看</label>
+          </div>
+          <div class="row">
+            <label class="choice"><input name="sort" type="radio" checked><span class="radiomark"></span>降序</label>
+            <label class="choice"><input name="sort" type="radio"><span class="radiomark"></span>升序</label>
+            <label class="switch"><input type="checkbox" checked><span class="switch-track"><span class="switch-thumb"></span></span>记住筛选</label>
+          </div>
+        </div>
+        <div class="component-panel">
+          <div class="panel-head"><h3>分段与数值</h3><span>显示模式、滑块</span></div>
+          <div class="row">
+            <div class="segmented" role="group" aria-label="显示模式">
+              <button type="button" aria-pressed="true" title="网格" aria-label="网格"><i class="ti ti-layout-grid" aria-hidden="true"></i></button>
+              <button type="button" aria-pressed="false" title="列表" aria-label="列表"><i class="ti ti-list" aria-hidden="true"></i></button>
+              <button type="button" aria-pressed="false" title="瀑布流" aria-label="瀑布流"><i class="ti ti-layout-columns" aria-hidden="true"></i></button>
+            </div>
+          </div>
+          <div class="filter-label" style="margin-top:16px"><span style="color:inherit;font-weight:650">缩略图大小</span><span>64%</span></div>
+          <div class="slider" role="slider" aria-label="缩略图大小" aria-valuemin="0" aria-valuemax="100" aria-valuenow="64" tabindex="0"><div class="slider-track"><div class="slider-fill"></div><div class="slider-thumb"></div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="media">
+      <div class="section-heading">
+        <h2>筛选、标签与选择状态</h2>
+        <p>标签色属于扩展色，不承担成功、警告或错误语义。默认标签保持中性，彩色标签仅用于用户分类。</p>
+      </div>
+      <div class="component-grid">
+        <div class="component-panel">
+          <div class="panel-head"><h3>筛选面板</h3><span>移动端可作为底部面板</span></div>
+          <div class="filter-layout">
+            <div class="stack">
+              <div class="filter-group"><div class="filter-label">排序方式 <span>最近添加</span></div><div class="chip-row"><button class="chip" type="button" aria-pressed="true">最近添加</button><button class="chip" type="button" aria-pressed="false">名称</button><button class="chip" type="button" aria-pressed="false">时长</button></div></div>
+              <div class="filter-group"><div class="filter-label">分辨率 <span>全部</span></div><div class="chip-row"><button class="chip" type="button" aria-pressed="true">全部</button><button class="chip" type="button" aria-pressed="false">4K</button><button class="chip" type="button" aria-pressed="false">1080p</button></div></div>
+            </div>
+            <div class="stack">
+              <div class="filter-group"><div class="filter-label">标签匹配 <span>同时满足</span></div><div class="chip-row"><button class="chip" type="button" aria-pressed="true"><i class="ti ti-tag" aria-hidden="true"></i>旅行</button><button class="chip" type="button" aria-pressed="true"><i class="ti ti-tag" aria-hidden="true"></i>精选</button><button class="chip" type="button" aria-pressed="false">家庭</button></div></div>
+              <div class="row" style="justify-content:flex-end"><button class="btn btn-ghost" type="button">重置</button><button class="btn btn-primary js-notify" type="button">查看 36 个视频</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="component-panel">
+          <div class="panel-head"><h3>标签色板</h3><span>默认中性，可由用户设置</span></div>
+          <div class="chip-row">
+            <span class="tag tag-neutral">未分类</span>
+            <span class="tag tag-blue">旅行</span>
+            <span class="tag tag-cyan">自然</span>
+            <span class="tag tag-violet">收藏</span>
+            <span class="tag tag-rose">人物</span>
+            <span class="tag tag-amber">待整理</span>
+            <span class="tag tag-olive">纪录片</span>
+            <span class="tag tag-teal">工作</span>
+          </div>
+          <p style="margin:10px 0 0;color:var(--text-secondary);font-size:10px;line-height:1.55">标签统一使用中性文字和中性容器，色彩只出现在圆点上。即使用户选择红色，也不会与整色错误容器混淆；文字/背景配对始终复用当前主题的安全中性色。</p>
+          <div class="subheading">批量选择</div>
+          <div class="row" style="min-height:64px;padding:8px 12px;border:1px solid var(--border-default);border-radius:7px;background:var(--surface-subtle)">
+            <span style="flex:1;font-size:13px;font-weight:650">已选择 12 项</span>
+            <button class="icon-btn" type="button" title="添加标签" aria-label="添加标签"><i class="ti ti-tag-plus" aria-hidden="true"></i></button>
+            <button class="icon-btn" type="button" title="移动" aria-label="移动"><i class="ti ti-folder-symlink" aria-hidden="true"></i></button>
+            <button class="icon-btn" type="button" title="删除" aria-label="删除" style="color:var(--error)"><i class="ti ti-trash" aria-hidden="true"></i></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="status">
+      <div class="section-heading">
+        <h2>状态、反馈与任务</h2>
+        <p>功能色集中在真正需要表达状态的组件中。所有状态均配有图标和文字，避免仅凭颜色判断。</p>
+      </div>
+      <div class="component-grid">
+        <div class="component-panel">
+          <div class="panel-head"><h3>内联反馈</h3><span>信息、警告、错误、成功</span></div>
+          <div class="status-list">
+            <div class="status-banner status-info"><i class="ti ti-info-circle" aria-hidden="true"></i><div><strong>媒体库正在扫描</strong><span>已发现 186 个视频</span></div><button type="button" aria-label="关闭"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+            <div class="status-banner status-warning"><i class="ti ti-alert-triangle" aria-hidden="true"></i><div><strong>存储空间不足</strong><span>建议至少保留 2 GB 可用空间</span></div><button type="button" aria-label="关闭"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+            <div class="status-banner status-error"><i class="ti ti-circle-x" aria-hidden="true"></i><div><strong>转换失败</strong><span>输出路径不可写入</span></div><button type="button" aria-label="关闭"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+            <div class="status-banner status-success"><i class="ti ti-circle-check" aria-hidden="true"></i><div><strong>导出完成</strong><span>片段已保存到 Movies/YingLi</span></div><button type="button" aria-label="关闭"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+          </div>
+        </div>
+        <div class="component-panel">
+          <div class="panel-head"><h3>处理中心</h3><span>运行、等待、完成、失败</span></div>
+          <div class="task-list">
+            <div class="task-row task-running"><div class="task-icon"><i class="ti ti-arrows-exchange" aria-hidden="true"></i></div><div class="task-copy"><div class="task-title">转换 · 山海之间.mp4 <span>64%</span></div><p>H.265 · 1080p · 预计剩余 01:42</p><div class="progress-track"><span style="--progress:64%"></span></div></div><button class="icon-btn" type="button" title="暂停" aria-label="暂停"><i class="ti ti-player-pause" aria-hidden="true"></i></button></div>
+            <div class="task-row task-waiting"><div class="task-icon"><i class="ti ti-clock" aria-hidden="true"></i></div><div class="task-copy"><div class="task-title">压缩 · 夜行记录.mov <span>等待</span></div><p>排在当前任务之后</p><div class="progress-track"><span></span></div></div><button class="icon-btn" type="button" title="取消" aria-label="取消"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+            <div class="task-row task-complete"><div class="task-icon"><i class="ti ti-check" aria-hidden="true"></i></div><div class="task-copy"><div class="task-title">切片 · 海岸散步.mp4 <span>完成</span></div><p>已导出 4 个片段</p><div class="progress-track"><span style="--progress:100%"></span></div></div><button class="icon-btn" type="button" title="打开文件" aria-label="打开文件"><i class="ti ti-folder-open" aria-hidden="true"></i></button></div>
+            <div class="task-row task-failed"><div class="task-icon"><i class="ti ti-exclamation-circle" aria-hidden="true"></i></div><div class="task-copy"><div class="task-title">去重扫描 <span>失败</span></div><p>存储权限已被移除</p><div class="progress-track"><span style="--progress:28%"></span></div></div><button class="icon-btn" type="button" title="重试" aria-label="重试"><i class="ti ti-refresh" aria-hidden="true"></i></button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="player">
+      <div class="section-heading">
+        <h2>播放器专用配色</h2>
+        <p>播放器始终使用纯黑画布、白色主控件和分级透明灰。视频画面不改变播放控件的语义色。</p>
+      </div>
+      <div class="player" aria-label="播放器控件配色示例">
+        <img class="player-art" src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&amp;fit=crop&amp;w=1600&amp;q=86" alt="海岸视频画面">
+        <div class="player-top"><button class="icon-btn" type="button" title="返回" aria-label="返回"><i class="ti ti-arrow-left" aria-hidden="true"></i></button><div class="player-title"><strong>海岸散步</strong><span>Movies/Travel · 1080p</span></div><button class="icon-btn" type="button" title="更多" aria-label="更多"><i class="ti ti-dots-vertical" aria-hidden="true"></i></button></div>
+        <div class="player-center"><button class="icon-btn" type="button" title="后退 10 秒" aria-label="后退 10 秒"><i class="ti ti-rewind-backward-10" aria-hidden="true"></i></button><button class="icon-btn play-main" type="button" title="播放" aria-label="播放"><i class="ti ti-player-play-filled" aria-hidden="true"></i></button><button class="icon-btn" type="button" title="前进 10 秒" aria-label="前进 10 秒"><i class="ti ti-rewind-forward-10" aria-hidden="true"></i></button></div>
+        <div class="player-bottom"><div class="player-track" id="playerSeek" role="slider" aria-label="播放进度" aria-valuemin="0" aria-valuemax="1600" aria-valuenow="608" tabindex="0"><div class="player-buffer"></div><div class="player-played"></div><div class="player-knob"></div></div><div class="player-tools"><span class="player-time">10:08 / 26:40</span><button class="icon-btn" type="button" title="字幕" aria-label="字幕"><i class="ti ti-badge-cc" aria-hidden="true"></i></button><button class="speed-state" type="button" aria-pressed="true" title="播放速度">1.0×</button><button class="icon-btn" type="button" title="旋转" aria-label="旋转"><i class="ti ti-rotate-clockwise" aria-hidden="true"></i></button><button class="icon-btn" type="button" title="锁定" aria-label="锁定"><i class="ti ti-lock" aria-hidden="true"></i></button><button class="icon-btn" type="button" title="全屏" aria-label="全屏"><i class="ti ti-maximize" aria-hidden="true"></i></button></div></div>
+      </div>
+      <div class="player-spec-grid">
+        <div class="player-spec"><strong>控件层级</strong><div><span style="color:var(--player-control-100)">White 100 · 主要控件/时间</span><br><span style="color:var(--player-control-70)">White 70 · 次要说明</span><br><span style="color:var(--player-control-40)">White 40 · 不确定/轨道</span></div></div>
+        <div class="player-spec"><strong>缓冲与进度</strong><div class="player-mini-track"></div><span>轨道 24% · 缓冲 40% · 已播放 100%</span></div>
+        <div class="player-spec"><strong>拖动 Seek</strong><div class="player-track is-dragging" style="margin:10px 0"><div class="player-buffer"></div><div class="player-played"></div><div class="player-knob"></div></div><span>轨道增至 6px，触点增至 20px并增加白色状态层。</span></div>
+        <div class="player-spec"><strong>倍速选中</strong><div class="row"><button class="speed-state" type="button" aria-pressed="false">0.5×</button><button class="speed-state" type="button" aria-pressed="true">1.0×</button></div><span>仍使用黑白反转，不引入蓝色强调。</span></div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="overlays">
+      <div class="section-heading">
+        <h2>菜单、弹窗与应用锁</h2>
+        <p>浮层依靠表面层级、边框和阴影建立关系；只有破坏性命令使用红色，普通菜单不引入额外颜色。</p>
+      </div>
+      <div class="component-grid">
+        <div class="component-panel wide" style="padding:0;overflow:hidden">
+          <div class="overlay-stage">
+            <div class="menu" role="menu" aria-label="视频操作菜单">
+              <button type="button" role="menuitem"><i class="ti ti-player-play" aria-hidden="true"></i>播放</button>
+              <button type="button" role="menuitem"><i class="ti ti-tag-plus" aria-hidden="true"></i>添加标签</button>
+              <button type="button" role="menuitem"><i class="ti ti-pencil" aria-hidden="true"></i>重命名</button>
+              <button type="button" role="menuitem"><i class="ti ti-cut" aria-hidden="true"></i>创建切片</button>
+              <button class="danger" type="button" role="menuitem"><i class="ti ti-trash" aria-hidden="true"></i>删除视频</button>
+            </div>
+            <div class="dialog" role="dialog" aria-labelledby="deleteTitle" aria-describedby="deleteDescription">
+              <div class="dialog-icon"><i class="ti ti-trash" aria-hidden="true"></i></div>
+              <h4 id="deleteTitle">删除 3 个视频？</h4>
+              <p id="deleteDescription">文件将从设备存储中删除。该操作无法通过影里撤销。</p>
+              <div class="dialog-actions"><button class="btn btn-secondary" type="button">取消</button><button class="btn btn-danger js-notify" type="button">确认删除</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="component-panel">
+          <div class="panel-head"><h3>应用锁</h3><span>密码、人脸、图案共用无彩主色</span></div>
+          <div class="lock-preview">
+            <div class="lock-mark"><i class="ti ti-lock" aria-hidden="true"></i></div>
+            <strong>输入影里密码</strong>
+            <div class="pin-dots" aria-label="已输入 2 位密码"><span class="filled"></span><span class="filled"></span><span></span><span></span></div>
+            <div class="keypad" aria-label="数字键盘">
+              <button type="button">1</button><button type="button">2</button><button type="button">3</button>
+              <button type="button">4</button><button type="button">5</button><button type="button">6</button>
+              <button type="button">7</button><button type="button">8</button><button type="button">9</button>
+              <button type="button" aria-label="使用人脸"><i class="ti ti-face-id" aria-hidden="true"></i></button><button type="button">0</button><button type="button" aria-label="退格"><i class="ti ti-backspace" aria-hidden="true"></i></button>
+            </div>
+          </div>
+        </div>
+        <div class="component-panel">
+          <div class="panel-head"><h3>空、加载与禁用</h3><span>保持中性，不滥用功能色</span></div>
+          <div class="state-grid" style="grid-template-columns:1fr">
+            <div class="state-box"><i class="ti ti-folder-off" aria-hidden="true"></i><strong>没有符合条件的视频</strong><span>调整筛选条件，或添加新的媒体路径</span><button class="btn btn-secondary" type="button">调整筛选</button></div>
+            <div class="state-box"><div class="skeleton" aria-label="内容加载中"><span></span><span></span><span></span></div><strong>正在读取媒体信息</strong></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="android">
+      <div class="section-heading">
+        <h2>Android 落地与导出</h2>
+        <p>Material 3 `ColorScheme` 承载中性骨架与 error；info、warning、success 使用扩展颜色。导出内容由当前 Token 生成。</p>
+      </div>
+      <div class="platform-grid">
+        <div class="component-panel">
+          <div class="panel-head"><h3>Material You 策略</h3><span>默认关闭 · 用户主动开启</span></div>
+          <div class="strategy-list">
+            <div class="strategy-item"><i class="ti ti-palette" aria-hidden="true"></i><div><strong>仅开放动态中性表面</strong><span>壁纸色最多影响 page、surface、surfaceVariant 与 outline，且限制低饱和度。</span></div></div>
+            <div class="strategy-item"><i class="ti ti-lock" aria-hidden="true"></i><div><strong>锁定结构性选中</strong><span>primary、导航选中、复选、开关仍为真实黑白灰，不被壁纸染色。</span></div></div>
+            <div class="strategy-item"><i class="ti ti-shield-check" aria-hidden="true"></i><div><strong>锁定四类功能色</strong><span>info、warning、error、success 及其容器始终使用影里色阶并重新执行对比检测。</span></div></div>
+          </div>
+        </div>
+        <div class="component-panel">
+          <div class="panel-head"><h3>系统栏与 Edge-to-edge</h3><span>浅色、深色、播放三套映射</span></div>
+          <div class="system-bar-list">
+            <div class="system-bar-preview" style="--bar-page:#f5f5f5;--bar-status:var(--system-bar-light-bg);--bar-nav:transparent;--bar-text:var(--system-bar-light-content);--bar-secondary:#525252"><div class="system-bar"><span>浅色界面</span><span>深色系统图标</span></div><div class="system-bar-body"><code>--system-bar-light-*</code></div><div class="system-nav-bar"></div></div>
+            <div class="system-bar-preview" style="--bar-page:#0f0f0f;--bar-status:var(--system-bar-dark-bg);--bar-nav:transparent;--bar-text:var(--system-bar-dark-content);--bar-secondary:#b8b8b8"><div class="system-bar"><span>深色界面</span><span>浅色系统图标</span></div><div class="system-bar-body"><code>--system-bar-dark-*</code></div><div class="system-nav-bar"></div></div>
+            <div class="system-bar-preview" style="--bar-page:#000000;--bar-status:var(--system-bar-player-bg);--bar-nav:var(--system-nav-player-bg);--bar-text:var(--system-bar-player-content);--bar-secondary:#ffffff"><div class="system-bar"><span>播放界面</span><span>始终浅色系统图标</span></div><div class="system-bar-body"><code>--system-bar-player-*</code></div><div class="system-nav-bar"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="subheading">Compose / XML 导出</div>
+      <div class="component-panel">
+        <div class="export-toolbar" role="group" aria-label="导出格式">
+          <button class="btn btn-secondary" type="button" data-export-view="compose" aria-pressed="true"><i class="ti ti-brand-kotlin" aria-hidden="true"></i>Compose</button>
+          <button class="btn btn-secondary" type="button" data-export-view="xml-light" aria-pressed="false">XML Light</button>
+          <button class="btn btn-secondary" type="button" data-export-view="xml-dark" aria-pressed="false">XML Dark</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-tonal" id="copyExport" type="button"><i class="ti ti-copy" aria-hidden="true"></i>复制</button>
+          <button class="btn btn-primary" id="downloadExport" type="button"><i class="ti ti-download" aria-hidden="true"></i>下载</button>
+        </div>
+        <pre class="code-preview" id="exportCode" tabindex="0" aria-label="导出代码"></pre>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><i class="ti ti-check" aria-hidden="true"></i><span id="toastText">已复制颜色值</span></div>
+
+  <script>
+    const palettes = [
+      { name: 'Neutral', note: '界面骨架 · 13 级', className: 'neutral', values: [['0','#ffffff'],['50','#fafafa'],['100','#f5f5f5'],['200','#eeeeee'],['300','#e0e0e0'],['400','#c7c7c7'],['500','#a3a3a3'],['600','#737373'],['700','#525252'],['800','#333333'],['900','#1f1f1f'],['950','#121212'],['1000','#000000']] },
+      { name: 'Steel Blue', note: '浅色 B / 深色 A · 信息、处理中、焦点', lightValues: [['50','#f4f9fc'],['100','#e5f1f7'],['200','#c6e2ee'],['300','#a1ccde'],['400','#7ab3cb'],['500','#5a96b2'],['600','#477b94'],['700','#3b647a'],['800','#325364'],['900','#2b4351'],['950','#192a35']], darkValues: [['50','#f2f7fa'],['100','#e2eef4'],['200','#c1dce8'],['300','#98c3d5'],['400','#6fa8c0'],['500','#4e8aa5'],['600','#3b6f88'],['700','#315a70'],['800','#2b4c5d'],['900','#273f4c'],['950','#172832']] },
+      { name: 'Red', note: '浅色 B / 深色 A · 错误、删除、危险', lightValues: [['50','#fff8f7'],['100','#ffecea'],['200','#ffd5d1'],['300','#feb3ab'],['400','#f6887e'],['500','#e66a5e'],['600','#c75146'],['700','#a14138'],['800','#843933'],['900','#6d342f'],['950','#3c1714']], darkValues: [['50','#fff5f4'],['100','#fee8e6'],['200','#fbcfcb'],['300','#f5aaa3'],['400','#ea7d73'],['500','#d85d52'],['600','#b9443a'],['700','#96372f'],['800','#7c322c'],['900','#682f2b'],['950','#391512']] },
+      { name: 'Amber', note: '浅色 B / 深色 A · 警告、等待、注意', lightValues: [['50','#fffaed'],['100','#fff4d3'],['200','#ffe397'],['300','#ffcd5c'],['400','#f6b435'],['500','#d69629'],['600','#b37622'],['700','#905a1d'],['800','#75471b'],['900','#623a1a'],['950','#381d09']], darkValues: [['50','#fff9eb'],['100','#fff0c6'],['200','#fcdd88'],['300','#f7c44d'],['400','#eaa923'],['500','#c98a12'],['600','#a66a0d'],['700','#85500f'],['800','#6e4013'],['900','#5d3615'],['950','#351b07']] },
+      { name: 'Green', note: '浅色 B / 深色 A · 成功、完成、正常', lightValues: [['50','#f3faf6'],['100','#e0f2e7'],['200','#c1e6cf'],['300','#98d2ae'],['400','#6fb98d'],['500','#509b71'],['600','#40805c'],['700','#37674c'],['800','#2f523e'],['900','#274234'],['950','#12241b']], darkValues: [['50','#f1f8f4'],['100','#ddefe4'],['200','#bce0ca'],['300','#8fc9a5'],['400','#64ae82'],['500','#438f65'],['600','#347451'],['700','#2d5d43'],['800','#284b38'],['900','#233e30'],['950','#102219']] }
+    ];
+
+    const semanticTokens = [
+      ['页面背景','--page'], ['基础表面','--surface'], ['次级表面','--surface-subtle'], ['组件表面','--surface-component'],
+      ['主要文字','--text-primary'], ['次要文字','--text-secondary'], ['禁用文字','--text-disabled'], ['文本选中','--text-selection-bg'],
+      ['装饰分割线','--border-divider'], ['交互边界','--border-control'], ['焦点环','--focus-ring'], ['反色表面','--surface-inverse'],
+      ['主要操作','--action-primary'], ['主要操作文字','--action-on-primary'], ['结构性选中','--selection-structural'], ['选中态文字','--selection-on-structural'],
+      ['Hover 叠层','--state-hover'], ['Pressed 叠层','--state-pressed'], ['默认 Scrim','--scrim-default'], ['强 Scrim','--scrim-strong'],
+      ['信息','--info'], ['信息容器','--info-container'], ['信息容器文字','--info-on-container'], ['警告','--warning'],
+      ['警告容器','--warning-container'], ['警告容器文字','--warning-on-container'], ['错误','--error'], ['错误容器','--error-container'],
+      ['错误容器文字','--error-on-container'], ['成功','--success'], ['成功容器','--success-container'], ['成功容器文字','--success-on-container'],
+      ['播放主控件','--player-control-100'], ['播放次级控件','--player-control-70'], ['播放缓冲','--player-buffer'], ['播放边缘 Scrim','--player-scrim-edge']
+    ];
+
+    const contrastPairs = [
+      { label: '正文 / 基础表面', fg: '--text-primary', bg: '--surface', min: 4.5, kind: '正文' },
+      { label: '次要文字 / 基础表面', fg: '--text-secondary', bg: '--surface', min: 4.5, kind: '正文' },
+      { label: '主要操作文字 / 主要操作', fg: '--action-on-primary', bg: '--action-primary', min: 4.5, kind: '正文' },
+      { label: '交互边界 / 基础表面', fg: '--border-control', bg: '--surface', min: 3, kind: 'UI' },
+      { label: '焦点环 / 页面背景', fg: '--focus-ring', bg: '--page', min: 3, kind: 'UI' },
+      { label: '结构性选中 / 基础表面', fg: '--selection-structural', bg: '--surface', min: 3, kind: 'UI' },
+      { label: '信息文字 / 信息容器', fg: '--info-on-container', bg: '--info-container', min: 4.5, kind: '正文' },
+      { label: '信息图标 / 信息容器', fg: '--info', bg: '--info-container', min: 3, kind: 'UI' },
+      { label: '警告文字 / 警告容器', fg: '--warning-on-container', bg: '--warning-container', min: 4.5, kind: '正文' },
+      { label: '警告图标 / 警告容器', fg: '--warning', bg: '--warning-container', min: 3, kind: 'UI' },
+      { label: '错误文字 / 错误容器', fg: '--error-on-container', bg: '--error-container', min: 4.5, kind: '正文' },
+      { label: '错误图标 / 错误容器', fg: '--error', bg: '--error-container', min: 3, kind: 'UI' },
+      { label: '成功文字 / 成功容器', fg: '--success-on-container', bg: '--success-container', min: 4.5, kind: '正文' },
+      { label: '成功图标 / 成功容器', fg: '--success', bg: '--success-container', min: 3, kind: 'UI' },
+      { label: '标签文字 / 标签容器', fg: '--text-primary', bg: '--surface-subtle', min: 4.5, kind: '正文' },
+      { label: '播放时间 / 最亮画面 + Scrim', fgHex: '#ffffff', bgHex: '#474747', fg: '--player-control-100', bg: '--player-scrim-edge', min: 4.5, kind: '正文' }
+    ];
+
+    const schemeTokenMap = {
+      primary: '--action-primary', onPrimary: '--action-on-primary', primaryContainer: '--action-primary-soft', onPrimaryContainer: '--text-primary',
+      secondary: '--action-secondary', onSecondary: '--action-on-secondary', secondaryContainer: '--action-secondary-container', onSecondaryContainer: '--action-on-secondary-container',
+      tertiary: '--action-tertiary', onTertiary: '--action-on-tertiary', tertiaryContainer: '--action-tertiary-container', onTertiaryContainer: '--action-on-tertiary-container',
+      background: '--page', onBackground: '--text-primary', surface: '--surface', onSurface: '--text-primary',
+      surfaceVariant: '--surface-component', onSurfaceVariant: '--text-secondary', outline: '--border-control', outlineVariant: '--border-default',
+      inverseSurface: '--surface-inverse', inverseOnSurface: '--text-inverse', inversePrimary: '--inverse-primary',
+      error: '--error', onError: '--action-on-primary', errorContainer: '--error-container', onErrorContainer: '--error-on-container'
+    };
+
+    const extendedTokenMap = {
+      info: '--info', infoContainer: '--info-container', onInfoContainer: '--info-on-container',
+      warning: '--warning', warningContainer: '--warning-container', onWarningContainer: '--warning-on-container',
+      success: '--success', successContainer: '--success-container', onSuccessContainer: '--success-on-container'
+    };
+
+    const scaleList = document.getElementById('scaleList');
+    const tokenGrid = document.getElementById('tokenGrid');
+    const contrastMatrixBody = document.getElementById('contrastMatrixBody');
+    const auditSummary = document.getElementById('auditSummary');
+    const exportCode = document.getElementById('exportCode');
+    const toast = document.getElementById('toast');
+    const toastText = document.getElementById('toastText');
+    const colorProbe = document.createElement('span');
+    colorProbe.hidden = true;
+    document.body.appendChild(colorProbe);
+    let toastTimer;
+    let activeExportView = 'compose';
+
+    function luminance(hex) {
+      const rgb = hex.slice(1).match(/.{2}/g).map(value => parseInt(value, 16) / 255).map(value => value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4));
+      return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    }
+
+    function parseCssColor(value) {
+      if (value.startsWith('#')) {
+        const hex = value.slice(1);
+        const normalized = hex.length === 3 ? hex.split('').map(char => char + char).join('') : hex;
+        return { r: parseInt(normalized.slice(0, 2), 16), g: parseInt(normalized.slice(2, 4), 16), b: parseInt(normalized.slice(4, 6), 16), a: 1 };
+      }
+      const values = value.match(/[\d.]+/g)?.map(Number) || [0, 0, 0, 0];
+      return { r: values[0], g: values[1], b: values[2], a: values.length > 3 ? values[3] : 1 };
+    }
+
+    function composite(foreground, background) {
+      const alpha = foreground.a + background.a * (1 - foreground.a);
+      if (alpha === 0) return { r: 0, g: 0, b: 0, a: 0 };
+      return {
+        r: (foreground.r * foreground.a + background.r * background.a * (1 - foreground.a)) / alpha,
+        g: (foreground.g * foreground.a + background.g * background.a * (1 - foreground.a)) / alpha,
+        b: (foreground.b * foreground.a + background.b * background.a * (1 - foreground.a)) / alpha,
+        a: alpha
+      };
+    }
+
+    function channelToLinear(value) {
+      const channel = value / 255;
+      return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    }
+
+    function rgbLuminance(color) {
+      return 0.2126 * channelToLinear(color.r) + 0.7152 * channelToLinear(color.g) + 0.0722 * channelToLinear(color.b);
+    }
+
+    function contrastRatio(foreground, background) {
+      const opaqueBackground = background.a < 1 ? composite(background, { r: 255, g: 255, b: 255, a: 1 }) : background;
+      const opaqueForeground = foreground.a < 1 ? composite(foreground, opaqueBackground) : foreground;
+      const foregroundLuminance = rgbLuminance(opaqueForeground);
+      const backgroundLuminance = rgbLuminance(opaqueBackground);
+      return (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+    }
+
+    function resolveTokenColor(token) {
+      colorProbe.style.backgroundColor = `var(${token})`;
+      return getComputedStyle(colorProbe).backgroundColor;
+    }
+
+    function colorToHex(value) {
+      const color = parseCssColor(value);
+      return `#${[color.r, color.g, color.b].map(channel => Math.round(channel).toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+    }
+
+    function showToast(message, icon = 'ti-check') {
+      toast.querySelector('i').className = `ti ${icon}`;
+      toastText.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    async function copyText(value, label = value.toUpperCase()) {
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch (_) {
+        const area = document.createElement('textarea');
+        area.value = value;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+      }
+      showToast(`已复制 ${label}`);
+    }
+
+    function renderPalettes() {
+      const themeValues = document.documentElement.dataset.theme === 'dark' ? 'darkValues' : 'lightValues';
+      scaleList.innerHTML = palettes.map(palette => `
+        <div class="scale-row">
+          <div class="scale-title"><strong>${palette.name}</strong><span>${palette.note}</span></div>
+          <div class="swatch-strip ${palette.className || ''}">
+            ${(palette[themeValues] || palette.values).map(([step, hex]) => {
+              const whiteRatio = contrastRatio(parseCssColor('#ffffff'), parseCssColor(hex));
+              const blackRatio = contrastRatio(parseCssColor('#111111'), parseCssColor(hex));
+              const recommendedText = whiteRatio >= blackRatio ? '白色文字' : '黑色文字';
+              return `<button class="swatch" type="button" style="--swatch:${hex};--swatch-text:${luminance(hex) < .34 ? '#ffffff' : '#111111'}" data-copy="${hex}" title="${hex} · 白字 ${whiteRatio.toFixed(2)}:1 · 黑字 ${blackRatio.toFixed(2)}:1 · 推荐 ${recommendedText}"><strong>${step}</strong><small>${hex}</small></button>`;
+            }).join('')}
+          </div>
+        </div>`).join('');
+      scaleList.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.copy)));
+    }
+
+    function renderTokens() {
+      tokenGrid.innerHTML = semanticTokens.map(([label, token]) => {
+        const value = resolveTokenColor(token);
+        return `<button class="token-item" type="button" data-token-copy="${token}" title="复制 ${token}"><span class="token-color" style="--token-color:var(${token})"></span><span><strong>${label}</strong><code>${token}</code><code>${value}</code></span></button>`;
+      }).join('');
+      tokenGrid.querySelectorAll('[data-token-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.tokenCopy)));
+    }
+
+    function renderContrastMatrix() {
+      let passCount = 0;
+      const currentTheme = document.documentElement.dataset.theme;
+      const measure = (pair, theme) => {
+        document.documentElement.dataset.theme = theme;
+        const foregroundValue = pair.fgHex || resolveTokenColor(pair.fg);
+        const backgroundValue = pair.bgHex || resolveTokenColor(pair.bg);
+        return contrastRatio(parseCssColor(foregroundValue), parseCssColor(backgroundValue));
+      };
+      contrastMatrixBody.innerHTML = contrastPairs.map(pair => {
+        const lightRatio = measure(pair, 'light');
+        const darkRatio = measure(pair, 'dark');
+        document.documentElement.dataset.theme = currentTheme;
+        const foregroundValue = pair.fgHex || resolveTokenColor(pair.fg);
+        const backgroundValue = pair.bgHex || resolveTokenColor(pair.bg);
+        const lightPassed = lightRatio >= pair.min;
+        const darkPassed = darkRatio >= pair.min;
+        const passed = lightPassed && darkPassed;
+        if (lightPassed) passCount += 1;
+        if (darkPassed) passCount += 1;
+        return `<tr>
+          <td><strong>${pair.label}</strong><br><span style="color:var(--text-secondary)">${pair.kind}</span></td>
+          <td><code>${pair.fg}</code></td>
+          <td><code>${pair.bg}</code></td>
+          <td><span class="pair-preview"><span class="pair-swatch" style="--pair-fg:${foregroundValue};--pair-bg:${backgroundValue}">Aa</span></span></td>
+          <td>≥ ${pair.min.toFixed(1)}:1</td>
+          <td class="ratio-value">${lightRatio.toFixed(2)}:1</td>
+          <td class="ratio-value">${darkRatio.toFixed(2)}:1</td>
+          <td><span class="result-badge ${passed ? 'pass' : 'fail'}"><i class="ti ${passed ? 'ti-check' : 'ti-x'}" aria-hidden="true"></i>${passed ? '双主题通过' : '需调整'}</span></td>
+        </tr>`;
+      }).join('');
+
+      document.documentElement.dataset.theme = currentTheme;
+      const totalChecks = contrastPairs.length * 2;
+      const allPassed = passCount === totalChecks;
+      auditSummary.classList.toggle('has-failure', !allPassed);
+      auditSummary.querySelector('i').className = `ti ${allPassed ? 'ti-shield-check' : 'ti-shield-x'}`;
+      auditSummary.querySelector('strong').textContent = allPassed ? '浅色与深色全部承诺配对通过' : '存在未达到承诺值的配对';
+      auditSummary.querySelector('span').textContent = `${passCount} / ${totalChecks} PASS`;
+    }
+
+    function captureTheme(theme, tokenMap) {
+      const currentTheme = document.documentElement.dataset.theme;
+      document.documentElement.dataset.theme = theme;
+      const values = Object.fromEntries(Object.entries(tokenMap).map(([name, token]) => [name, colorToHex(resolveTokenColor(token))]));
+      document.documentElement.dataset.theme = currentTheme;
+      return values;
+    }
+
+    function composeColor(hex) {
+      return `Color(0xFF${hex.slice(1)})`;
+    }
+
+    function buildComposeExport() {
+      const lightScheme = captureTheme('light', schemeTokenMap);
+      const darkScheme = captureTheme('dark', schemeTokenMap);
+      const lightExtended = captureTheme('light', extendedTokenMap);
+      const darkExtended = captureTheme('dark', extendedTokenMap);
+      const formatScheme = (name, factory, values) => `val ${name} = ${factory}(\n${Object.entries(values).map(([key, value]) => `    ${key} = ${composeColor(value)}`).join(',\n')}\n)`;
+      const formatExtended = (name, values) => `val ${name} = YingLiExtendedColors(\n${Object.entries(values).map(([key, value]) => `    ${key} = ${composeColor(value)}`).join(',\n')}\n)`;
+      return `import androidx.compose.material3.darkColorScheme\nimport androidx.compose.material3.lightColorScheme\nimport androidx.compose.runtime.Immutable\nimport androidx.compose.ui.graphics.Color\n\n${formatScheme('YingLiLightColorScheme', 'lightColorScheme', lightScheme)}\n\n${formatScheme('YingLiDarkColorScheme', 'darkColorScheme', darkScheme)}\n\n@Immutable\ndata class YingLiExtendedColors(\n    val info: Color,\n    val infoContainer: Color,\n    val onInfoContainer: Color,\n    val warning: Color,\n    val warningContainer: Color,\n    val onWarningContainer: Color,\n    val success: Color,\n    val successContainer: Color,\n    val onSuccessContainer: Color\n)\n\n${formatExtended('YingLiLightExtendedColors', lightExtended)}\n\n${formatExtended('YingLiDarkExtendedColors', darkExtended)}\n`;
+    }
+
+    function xmlName(name) {
+      return `huali_${name.replace(/[A-Z]/g, match => `_${match.toLowerCase()}`)}`;
+    }
+
+    function buildXmlExport(theme) {
+      const scheme = captureTheme(theme, schemeTokenMap);
+      const extended = captureTheme(theme, extendedTokenMap);
+      const values = { ...scheme, ...extended };
+      return `<?xml version="1.0" encoding="utf-8"?>\n<!-- res/values${theme === 'dark' ? '-night' : ''}/colors.xml -->\n<resources>\n${Object.entries(values).map(([name, value]) => `    <color name="${xmlName(name)}">${value}</color>`).join('\n')}\n</resources>\n`;
+    }
+
+    function currentExport() {
+      if (activeExportView === 'xml-light') return { content: buildXmlExport('light'), filename: 'colors.xml', type: 'application/xml' };
+      if (activeExportView === 'xml-dark') return { content: buildXmlExport('dark'), filename: 'colors-night.xml', type: 'application/xml' };
+      return { content: buildComposeExport(), filename: 'YingLiColorSystem.kt', type: 'text/plain' };
+    }
+
+    function renderExport() {
+      exportCode.textContent = currentExport().content;
+    }
+
+    function downloadText(content, filename, type) {
+      const url = URL.createObjectURL(new Blob([content], { type }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast(`已导出 ${filename}`, 'ti-download');
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    function applyTheme(mode) {
+      const dark = mode === 'dark' || (mode === 'system' && mediaQuery.matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.dataset.themeChoice = mode;
+      document.querySelectorAll('[data-theme-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeMode === mode)));
+      renderPalettes();
+      renderTokens();
+      renderContrastMatrix();
+      renderExport();
+    }
+
+    document.querySelectorAll('[data-theme-mode]').forEach(button => button.addEventListener('click', () => applyTheme(button.dataset.themeMode)));
+    mediaQuery.addEventListener('change', () => {
+      if (document.documentElement.dataset.themeChoice === 'system') applyTheme('system');
+    });
+
+    document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => chip.setAttribute('aria-pressed', String(chip.getAttribute('aria-pressed') !== 'true'))));
+    document.querySelectorAll('.segmented').forEach(group => group.querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
+      group.querySelectorAll('button').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+    })));
+    document.querySelectorAll('.bottom-nav button').forEach(button => button.addEventListener('click', () => {
+      document.querySelectorAll('.bottom-nav button').forEach(item => item.removeAttribute('aria-current'));
+      button.setAttribute('aria-current', 'page');
+    }));
+    document.querySelectorAll('.js-notify').forEach(button => button.addEventListener('click', () => showToast('原型操作已触发', 'ti-info-circle')));
+    document.querySelectorAll('.status-banner button').forEach(button => button.addEventListener('click', () => button.closest('.status-banner').style.display = 'none'));
+    document.querySelectorAll('[data-export-view]').forEach(button => button.addEventListener('click', () => {
+      activeExportView = button.dataset.exportView;
+      document.querySelectorAll('[data-export-view]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      renderExport();
+    }));
+    document.getElementById('copyExport').addEventListener('click', () => {
+      const file = currentExport();
+      copyText(file.content, file.filename);
+    });
+    document.getElementById('downloadExport').addEventListener('click', () => {
+      const file = currentExport();
+      downloadText(file.content, file.filename, file.type);
+    });
+    document.querySelectorAll('.speed-state').forEach(button => button.addEventListener('click', () => button.setAttribute('aria-pressed', String(button.getAttribute('aria-pressed') !== 'true'))));
+    const playerSeek = document.getElementById('playerSeek');
+    playerSeek.addEventListener('pointerdown', () => playerSeek.classList.add('is-dragging'));
+    window.addEventListener('pointerup', () => playerSeek.classList.remove('is-dragging'));
+
+    renderPalettes();
+    const queryParameters = new URLSearchParams(window.location.search);
+    const requestedExport = queryParameters.get('export');
+    if (['compose', 'xml-light', 'xml-dark'].includes(requestedExport)) {
+      activeExportView = requestedExport;
+      document.querySelectorAll('[data-export-view]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.exportView === activeExportView)));
+    }
+    const requestedTheme = queryParameters.get('theme');
+    applyTheme(['system', 'light', 'dark'].includes(requestedTheme) ? requestedTheme : 'system');
+    const requestedSection = queryParameters.get('section');
+    if (requestedSection) requestAnimationFrame(() => document.getElementById(requestedSection)?.scrollIntoView());
+  </script>
+</body>
+</html>

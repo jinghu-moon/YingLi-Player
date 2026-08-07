@@ -2,7 +2,7 @@
 
 > 文档状态：已接受  
 > 适用阶段：项目初始化与 MVP  
-> 最后核对：2026-08-04
+> 最后核对：2026-08-07
 
 ## 1. 项目定位
 
@@ -41,15 +41,23 @@
 
 AGP 9 已默认启用内置 Kotlin。Android 模块不得再应用 `org.jetbrains.kotlin.android`，否则会与 AGP 的 Kotlin 扩展冲突。Compose Compiler 与 Kotlin Serialization 编译器插件使用 `2.4.0`，与 Kotlin 基线严格一致。
 
+Room 使用 KSP 生成 DAO 实现。KSP `2.3.2` 仍通过 Kotlin sourceSets 注册生成目录，因此启用 AGP 9 的 `android.disallowKotlinSourceSets=false` 兼容开关；项目继续使用内置 Kotlin，不应用旧 `org.jetbrains.kotlin.android` 插件。
+
+Phase 1 已按上述版本实装 Gradle Wrapper、单 `app` 模块和构建约束。当前代码没有 AndroidX Core KTX 使用点，因此不预选版本、不声明直接依赖；后续出现明确使用点时，再选择与当时 `compileSdk` 兼容的稳定版本。
+
+Lint 的 `UseKtx` 风格规则已关闭，避免仅为 `String.toUri()` 等可由平台 API 直接表达的调用反向引入 Core KTX；这不影响其余正确性、安全性和 API 级别检查。
+
 ## 4. 核心技术栈
 
 | 领域 | 选择 | 版本 | 用途 |
 |---|---|---:|---|
 | UI | Jetpack Compose + Material 3 | BOM `2026.06.01` | 页面、主题和自定义播放控制层 |
+| 窗口分类 | Material 3 Window Size Class | `1.4.0` | Compact/Medium/Expanded 自适应导航断点 |
+| 图标 | Compose Icons Tabler | `1.1.1` | 业务语义图标；缺失项集中回退 Material Icons |
 | 播放内核 | AndroidX Media3 ExoPlayer | `1.10.1` | 解封装、播放、轨道和字幕 |
 | 媒体会话 | Media3 Session | `1.10.1` | 后台播放、通知栏、锁屏和耳机控制 |
 | 播放控件 | Media3 UI / UI Compose | `1.10.1` | 播放画面和官方控制组件 |
-| 生命周期 | AndroidX Lifecycle | `2.11.0` | ViewModel、StateFlow 收集和生命周期管理 |
+| 生命周期 | AndroidX Lifecycle | `2.10.0` | 兼容 compileSdk 36；用于 ViewModel、StateFlow 收集和生命周期管理 |
 | Activity | Activity Compose | `1.13.0` | Compose Activity 宿主 |
 | 导航 | Navigation Compose | `2.9.8` | 稳定页面导航 |
 | 数据库 | Room | `2.8.4` | 媒体条目、播放记录、播放列表和标签 |
@@ -192,9 +200,8 @@ Playback UI
 agp = "9.3.1"
 kotlin = "2.4.0"
 compose-bom = "2026.06.01"
-core-ktx = "1.19.0"
 activity-compose = "1.13.0"
-lifecycle = "2.11.0"
+lifecycle = "2.10.0"
 navigation-compose = "2.9.8"
 media3 = "1.10.1"
 room = "2.8.4"
@@ -203,6 +210,8 @@ datastore = "1.2.1"
 coil = "3.5.0"
 coroutines = "1.11.0"
 documentfile = "1.1.0"
+material3-window = "1.4.0"
+tabler-icons = "1.1.1"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

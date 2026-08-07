@@ -1,0 +1,22 @@
+package seeyuer.yingli.player.core.foundation
+
+import seeyuer.yingli.player.core.datastore.ThemeRepository
+import seeyuer.yingli.player.core.model.AppFailureMapper
+
+interface AppContainer {
+    val dispatchers: AppDispatchers
+    val clock: AppClock
+    val idGenerator: IdGenerator
+    val logger: AppLogger
+    val failureMapper: AppFailureMapper
+    val themeRepository: ThemeRepository
+}
+
+class DefaultAppContainer(
+    override val dispatchers: AppDispatchers,
+    override val clock: AppClock,
+    override val idGenerator: IdGenerator,
+    override val logger: AppLogger,
+    override val failureMapper: AppFailureMapper,
+    override val themeRepository: ThemeRepository,
+) : AppContainer

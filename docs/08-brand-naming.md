@@ -16,7 +16,7 @@
 | 本地项目目录 | `YingLi-Player` |
 | 默认处理输出目录 | `YingLi-Output` |
 
-Android namespace 和 applicationId 在工程初始化时使用反向域名格式，例如 `io.github.jinghu_moon.yingli`。包名必须全小写且不能包含连字符；仓库名中的 `-Player` 只是功能描述，不属于应用内品牌。
+Android namespace 和 applicationId 统一使用 `seeyuer.yingli.player`。包名必须全小写且不能包含连字符；仓库名中的 `-Player` 只是功能描述，不属于应用内品牌。
 
 ## 2. 命名依据
 

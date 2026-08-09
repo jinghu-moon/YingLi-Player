@@ -57,6 +57,9 @@ import seeyuer.yingli.player.domain.navigation.AppRoute
 import seeyuer.yingli.player.domain.navigation.GlobalAppAction
 import seeyuer.yingli.player.domain.navigation.NavigationState
 import seeyuer.yingli.player.domain.navigation.RootDestination
+import seeyuer.yingli.player.domain.playback.PlaybackSourceContext
+import seeyuer.yingli.player.domain.playback.PlaybackRecoveryAction
+import seeyuer.yingli.player.domain.playback.PlaybackState
 import seeyuer.yingli.player.feature.home.HomeScreen
 import seeyuer.yingli.player.feature.library.LibraryScreen
 import seeyuer.yingli.player.feature.library.MediaLibraryEffect
@@ -64,6 +67,9 @@ import seeyuer.yingli.player.feature.library.MediaLibraryUiState
 import seeyuer.yingli.player.feature.library.MediaLibraryViewModel
 import seeyuer.yingli.player.feature.organize.OrganizeScreen
 import seeyuer.yingli.player.feature.processing.ProcessingScreen
+import seeyuer.yingli.player.feature.player.PlayerScreen
+import seeyuer.yingli.player.feature.player.PlayerViewModel
+import seeyuer.yingli.player.feature.player.MiniPlayerBar
 import seeyuer.yingli.player.feature.settings.SettingsScreen
 
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
@@ -71,7 +77,9 @@ import seeyuer.yingli.player.feature.settings.SettingsScreen
 fun YingLiApp(
     viewModel: YingLiAppViewModel,
     mediaLibraryViewModel: MediaLibraryViewModel,
+    playerViewModel: PlayerViewModel,
     windowWidthSizeClass: WindowWidthSizeClass,
+    videoSurface: @Composable () -> Unit,
 ) {
     val settings by viewModel.appearanceSettings.collectAsStateWithLifecycle()
     val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -109,6 +117,7 @@ fun YingLiApp(
     ) {
         val navigationState by viewModel.navigationState.collectAsStateWithLifecycle()
         val mediaState by mediaLibraryViewModel.state.collectAsStateWithLifecycle()
+        val playerState by playerViewModel.state.collectAsStateWithLifecycle()
         val systemBarMode = when {
             navigationState.currentRoute is AppRoute.Player -> SystemBarMode.PLAYER
             darkTheme -> SystemBarMode.DARK_APP
@@ -131,6 +140,52 @@ fun YingLiApp(
             onSafSource = mediaLibraryViewModel::addSafSource,
             onSkipMediaOnboarding = mediaLibraryViewModel::skipOnboarding,
             onRescan = mediaLibraryViewModel::rescan,
+            onMediaSelected = viewModel::openPlayer,
+            playerContent = { route, onBack ->
+                LaunchedEffect(route.mediaId) {
+                    playerViewModel.open(route.mediaId, route.source.toPlaybackSourceContext())
+                }
+                PlayerScreen(
+                    state = playerState,
+                    onBack = onBack,
+                    onPlay = { playerViewModel.play() },
+                    onPause = { playerViewModel.pause() },
+                    onSeek = playerViewModel::seekTo,
+                    onReplay = { playerViewModel.replay() },
+                    onRetry = { playerViewModel.retry() },
+                    onRecovery = { action ->
+                        when (action) {
+                            PlaybackRecoveryAction.REAUTHORIZE -> {
+                                onBack()
+                                mediaLibraryViewModel.addRecommendedSource()
+                            }
+                            PlaybackRecoveryAction.RELOCATE -> {
+                                onBack()
+                                mediaLibraryViewModel.rescan()
+                            }
+                            PlaybackRecoveryAction.VIEW_COMPATIBILITY,
+                            PlaybackRecoveryAction.RETRY,
+                            -> onBack()
+                        }
+                    },
+                    videoSurface = videoSurface,
+                )
+            },
+            miniPlayerContent = {
+                val mediaId = playerState.playback.request?.mediaId?.value
+                if (mediaId != null &&
+                    playerState.playback !is PlaybackState.Idle &&
+                    playerState.playback !is PlaybackState.Failed &&
+                    navigationState.currentRoute !is AppRoute.Player
+                ) {
+                    MiniPlayerBar(
+                        state = playerState,
+                        onOpen = { viewModel.openPlayer(mediaId) },
+                        onPlay = { playerViewModel.play() },
+                        onPause = { playerViewModel.pause() },
+                    )
+                }
+            },
         )
     }
 }
@@ -161,12 +216,17 @@ internal fun AdaptiveAppShell(
     onSafSource: () -> Unit = {},
     onSkipMediaOnboarding: () -> Unit = {},
     onRescan: () -> Unit = {},
+    onMediaSelected: (String) -> Unit = {},
+    playerContent: @Composable (AppRoute.Player, () -> Unit) -> Unit = { _, onBack ->
+        FullScreenPlayerPlaceholder(onBack)
+    },
+    miniPlayerContent: @Composable () -> Unit = {},
 ) {
     val usesNavigationRail = windowWidthSizeClass != WindowWidthSizeClass.Compact
     val destinations = navigationState.primaryDestinations
 
     if (!navigationState.showPrimaryNavigation) {
-        FullScreenRoute(navigationState.currentRoute, onBack)
+        FullScreenRoute(navigationState.currentRoute, onBack, playerContent)
         return
     }
 
@@ -190,7 +250,9 @@ internal fun AdaptiveAppShell(
                 onSafSource = onSafSource,
                 onSkipMediaOnboarding = onSkipMediaOnboarding,
                 onRescan = onRescan,
+                onMediaSelected = onMediaSelected,
                 modifier = Modifier.weight(1f),
+                bottomBar = miniPlayerContent,
             )
         }
     } else {
@@ -207,12 +269,16 @@ internal fun AdaptiveAppShell(
             onSafSource = onSafSource,
             onSkipMediaOnboarding = onSkipMediaOnboarding,
             onRescan = onRescan,
+            onMediaSelected = onMediaSelected,
             bottomBar = {
+                Column {
+                    miniPlayerContent()
                 PrimaryBottomNavigation(
                     destinations = destinations,
                     selected = navigationState.currentRoot,
                     onSelected = onRootSelected,
                 )
+                }
             },
         )
     }
@@ -233,6 +299,7 @@ private fun AppScaffold(
     onSafSource: () -> Unit,
     onSkipMediaOnboarding: () -> Unit,
     onRescan: () -> Unit,
+    onMediaSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     bottomBar: @Composable () -> Unit = {},
 ) {
@@ -283,6 +350,7 @@ private fun AppScaffold(
             onSafSource = onSafSource,
             onSkipMediaOnboarding = onSkipMediaOnboarding,
             onRescan = onRescan,
+            onMediaSelected = onMediaSelected,
             modifier = Modifier.padding(padding),
         )
     }
@@ -300,6 +368,7 @@ private fun RouteContent(
     onSafSource: () -> Unit,
     onSkipMediaOnboarding: () -> Unit,
     onRescan: () -> Unit,
+    onMediaSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (route) {
@@ -319,6 +388,7 @@ private fun RouteContent(
                 onSkipMediaOnboarding,
                 onRescan,
                 modifier,
+                onMediaSelected,
             )
             RootDestination.LIBRARY -> LibraryScreen(modifier)
             RootDestination.ORGANIZE -> OrganizeScreen(modifier)
@@ -334,27 +404,15 @@ private fun RouteContent(
 }
 
 @Composable
-private fun FullScreenRoute(route: AppRoute, onBack: () -> Unit) {
+private fun FullScreenRoute(
+    route: AppRoute,
+    onBack: () -> Unit,
+    playerContent: @Composable (AppRoute.Player, () -> Unit) -> Unit = { _, back ->
+        FullScreenPlayerPlaceholder(back)
+    },
+) {
     when (route) {
-        is AppRoute.Player -> Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(YingLiTheme.player.canvas),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = stringResource(R.string.player_placeholder),
-                    color = YingLiTheme.player.controlSecondary,
-                )
-                YingLiIconButton(
-                    icon = YingLiIcon.BACK,
-                    contentDescription = stringResource(R.string.action_back),
-                    onClick = onBack,
-                    tint = YingLiTheme.player.controlPrimary,
-                )
-            }
-        }
+        is AppRoute.Player -> playerContent(route, onBack)
         AppRoute.AppLock -> Surface(
             modifier = Modifier.fillMaxSize(),
             color = YingLiTheme.colors.page,
@@ -373,6 +431,35 @@ private fun FullScreenRoute(route: AppRoute, onBack: () -> Unit) {
         }
         else -> Unit
     }
+}
+
+@Composable
+private fun FullScreenPlayerPlaceholder(onBack: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(YingLiTheme.player.canvas),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = stringResource(R.string.player_placeholder),
+                color = YingLiTheme.player.controlSecondary,
+            )
+            YingLiIconButton(
+                icon = YingLiIcon.BACK,
+                contentDescription = stringResource(R.string.action_back),
+                onClick = onBack,
+                tint = YingLiTheme.player.controlPrimary,
+            )
+        }
+    }
+}
+
+private fun RootDestination.toPlaybackSourceContext(): PlaybackSourceContext = when (this) {
+    RootDestination.HOME -> PlaybackSourceContext.HOME
+    RootDestination.LIBRARY -> PlaybackSourceContext.LIBRARY
+    RootDestination.ORGANIZE, RootDestination.PROCESSING -> PlaybackSourceContext.DETAIL
 }
 
 @Composable

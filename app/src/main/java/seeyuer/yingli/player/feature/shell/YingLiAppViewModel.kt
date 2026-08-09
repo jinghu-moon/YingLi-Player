@@ -45,6 +45,8 @@ class YingLiAppViewModel(
 
     fun openGlobalAction(action: GlobalAppAction) = navigationStore.openGlobalAction(action)
 
+    fun openPlayer(mediaId: String) = navigationStore.openPlayer(mediaId)
+
     fun navigateBack(): Boolean = navigationStore.navigateBack()
 
     fun setThemePreference(preference: ThemePreference) {

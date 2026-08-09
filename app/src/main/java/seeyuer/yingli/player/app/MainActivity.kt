@@ -10,6 +10,7 @@ import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import seeyuer.yingli.player.feature.shell.YingLiApp
 import seeyuer.yingli.player.feature.shell.YingLiAppViewModel
 import seeyuer.yingli.player.feature.library.MediaLibraryViewModel
+import seeyuer.yingli.player.feature.player.PlayerViewModel
 
 class MainActivity : ComponentActivity() {
     private val viewModel: YingLiAppViewModel by viewModels {
@@ -25,6 +26,14 @@ class MainActivity : ComponentActivity() {
             media.onboardingRepository,
         )
     }
+    private val playerViewModel: PlayerViewModel by viewModels {
+        val app = application as YingLiApplication
+        PlayerViewModel.factory(
+            app.playbackController,
+            app.mediaContainer.playbackSourceRepository,
+            app.container.dispatchers,
+        )
+    }
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,7 +43,11 @@ class MainActivity : ComponentActivity() {
             YingLiApp(
                 viewModel = viewModel,
                 mediaLibraryViewModel = mediaLibraryViewModel,
+                playerViewModel = playerViewModel,
                 windowWidthSizeClass = calculateWindowSizeClass(this).widthSizeClass,
+                videoSurface = {
+                    Media3VideoSurface((application as YingLiApplication).playbackController)
+                },
             )
         }
     }

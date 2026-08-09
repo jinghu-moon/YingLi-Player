@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,11 +25,12 @@ fun HomeScreen(
     onSkip: () -> Unit,
     onRescan: () -> Unit,
     modifier: Modifier = Modifier,
+    onMediaSelected: (String) -> Unit = {},
 ) {
     when {
         state.onboarding -> MediaOnboarding(state.scanning, onRecommendedSource, onSafSource, onSkip, modifier)
         state.items.isEmpty() -> EmptyMediaLibrary(state, onRecommendedSource, onSafSource, onRescan, modifier)
-        else -> MediaLibraryContent(state, onRescan, modifier)
+        else -> MediaLibraryContent(state, onRescan, onMediaSelected, modifier)
     }
 }
 
@@ -95,7 +97,12 @@ private fun EmptyMediaLibrary(
 }
 
 @Composable
-private fun MediaLibraryContent(state: MediaLibraryUiState, onRescan: () -> Unit, modifier: Modifier) {
+private fun MediaLibraryContent(
+    state: MediaLibraryUiState,
+    onRescan: () -> Unit,
+    onMediaSelected: (String) -> Unit,
+    modifier: Modifier,
+) {
     Column(modifier.fillMaxSize()) {
         if (state.scanning) YingLiBanner(stringResource(R.string.media_indexing), BannerKind.INFO)
         Row(
@@ -104,7 +111,15 @@ private fun MediaLibraryContent(state: MediaLibraryUiState, onRescan: () -> Unit
         ) { YingLiButton(stringResource(R.string.media_rescan), onRescan) }
         LazyColumn(contentPadding = PaddingValues(YingLiTheme.components.pagePadding)) {
             items(state.items, key = { it.id.value }) { media ->
-                Text(media.title, modifier = Modifier.fillMaxWidth().padding(YingLiTheme.components.pagePadding))
+                Surface(
+                    onClick = { onMediaSelected(media.id.value) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = YingLiTheme.components.minimumTouchTarget),
+                    color = YingLiTheme.colors.page,
+                ) {
+                    Text(media.title, modifier = Modifier.fillMaxWidth().padding(YingLiTheme.components.pagePadding))
+                }
                 YingLiSectionDivider()
             }
         }

@@ -66,4 +66,16 @@ interface MediaCatalogDao {
 
     @Query("SELECT COUNT(DISTINCT media_item_locations.mediaItemId) FROM media_item_locations INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId WHERE media_locations.sourceId = :sourceId AND media_locations.missingScanCount = 0")
     suspend fun availableItemCount(sourceId: String): Int
+
+    @Query("SELECT * FROM media_items WHERE id = :mediaItemId")
+    suspend fun item(mediaItemId: String): MediaItemEntity?
+
+    @Query("SELECT media_locations.* FROM media_locations INNER JOIN media_item_locations ON media_item_locations.locationId = media_locations.id WHERE media_item_locations.mediaItemId = :mediaItemId AND media_locations.missingScanCount = 0 ORDER BY media_locations.lastSeenEpochMillis DESC LIMIT 1")
+    suspend fun playableLocation(mediaItemId: String): MediaLocationEntity?
+
+    @Query("SELECT * FROM media_locations WHERE id = :locationId AND missingScanCount = 0")
+    suspend fun playableLocationById(locationId: String): MediaLocationEntity?
+
+    @Query("UPDATE media_items SET playbackPositionMillis = :positionMillis, completed = :completed WHERE id = :mediaItemId")
+    suspend fun updatePlaybackProgress(mediaItemId: String, positionMillis: Long, completed: Boolean): Int
 }

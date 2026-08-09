@@ -20,6 +20,8 @@ import seeyuer.yingli.player.core.model.media.MediaLocation
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.core.model.media.MediaSourceId
 import seeyuer.yingli.player.core.model.media.MediaUri
+import seeyuer.yingli.player.app.RoomPlaybackRepository
+import seeyuer.yingli.player.domain.playback.PlaybackSourceContext
 
 @RunWith(AndroidJUnit4::class)
 class MediaDatabaseTest {
@@ -105,6 +107,28 @@ class MediaDatabaseTest {
         assertEquals(2, snapshot.locations.single().missingScanCount)
         assertEquals(item.id, snapshot.itemByLocation.getValue(location.id))
         assertEquals(setOf("收藏"), snapshot.items.single().tags)
+    }
+
+    @Test
+    fun playbackRepositoryResolvesResumePositionAndPersistsProgress() = runTest {
+        seedSource()
+        val item = MediaItem(MediaItemId("item_1"), "影片", playbackPositionMillis = 10_000)
+        val location = location("location_1", URI).copy(durationMillis = 60_000)
+        repository.applyMutation(SOURCE_ID, CatalogMutation(
+            upsertItems = listOf(item),
+            upsertLocations = listOf(location),
+            links = mapOf(location.id to item.id),
+            seenLocationIds = setOf(location.id),
+            scanCompletedAtEpochMillis = 200,
+        ))
+        val playbackRepository = RoomPlaybackRepository(database)
+
+        val source = playbackRepository.resolve(item.id, PlaybackSourceContext.HOME)
+        playbackRepository.saveProgress(item.id, 20_000, completed = false)
+
+        assertEquals(7_000L, source?.request?.startPositionMillis)
+        assertEquals(20_000L, database.mediaCatalogDao().item(item.id.value)?.playbackPositionMillis)
+        assertEquals(false, database.mediaCatalogDao().item(item.id.value)?.completed)
     }
 
     private suspend fun expectConstraintFailure(block: suspend () -> Unit) {

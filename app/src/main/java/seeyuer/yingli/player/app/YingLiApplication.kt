@@ -8,10 +8,23 @@ class YingLiApplication : Application() {
         private set
     lateinit var mediaContainer: MediaContainer
         private set
+    lateinit var playbackController: Media3PlaybackController
+        private set
 
     override fun onCreate() {
         super.onCreate()
         container = ProductionAppContainerFactory.create(this)
         mediaContainer = ProductionMediaContainerFactory.create(this, container)
+        playbackController = Media3PlaybackController(
+            this,
+            mediaContainer.playbackSourceRepository,
+            container.dispatchers,
+            container.logger,
+        )
+    }
+
+    override fun onTerminate() {
+        playbackController.close()
+        super.onTerminate()
     }
 }

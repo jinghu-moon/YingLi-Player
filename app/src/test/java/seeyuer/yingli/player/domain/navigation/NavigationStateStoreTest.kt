@@ -52,6 +52,21 @@ class NavigationStateStoreTest {
     }
 
     @Test
+    fun `vault player is reachable only from vault and back returns to vault`() {
+        val store = SavedStateNavigationStateStore(SavedStateHandle())
+        store.openVaultPlayer("item-1")
+        assertEquals(AppRoute.Root(RootDestination.HOME), store.state.value.currentRoute)
+
+        store.openVault()
+        store.openVaultPlayer("item-1")
+        assertEquals(AppRoute.VaultPlayer("item-1"), store.state.value.currentRoute)
+        assertFalse(store.state.value.showPrimaryNavigation)
+
+        assertTrue(store.navigateBack())
+        assertEquals(AppRoute.Vault, store.state.value.currentRoute)
+    }
+
+    @Test
     fun `duplicate routes and invalid identifiers are ignored`() {
         val store = SavedStateNavigationStateStore(SavedStateHandle())
 

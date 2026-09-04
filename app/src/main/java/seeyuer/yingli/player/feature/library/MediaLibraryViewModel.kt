@@ -43,6 +43,7 @@ class MediaLibraryViewModel(
     private val scanning = MutableStateFlow(false)
     private val notice = MutableStateFlow<MediaLibraryNotice?>(null)
     private val effects = Channel<MediaLibraryEffect>(Channel.BUFFERED)
+    private var initialized = false
     val effect: Flow<MediaLibraryEffect> = effects.receiveAsFlow()
     val state: StateFlow<MediaLibraryUiState> = combine(
         onboardingRepository.completed,
@@ -53,6 +54,38 @@ class MediaLibraryViewModel(
     ) { completed, items, sources, isScanning, currentNotice ->
         MediaLibraryUiState(!completed, items, sources, isScanning, currentNotice)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), MediaLibraryUiState())
+
+    /** Restores granted access after process start and starts the initial index scan. */
+    fun initialize() {
+        if (initialized) return
+        initialized = true
+        viewModelScope.launch {
+            val permission = permissionGateway.inspect()
+            when {
+                permission.allFilesAccess -> {
+                    val source = deviceVideoSource()
+                    val existing = sourceRepository.get(source.id)
+                    sourceRepository.upsert(source)
+                    onboardingRepository.setCompleted(true)
+                    if (existing.requiresInitialScan(source)) scan(setOf(source.id))
+                }
+                permission.mediaStoreReadAccess -> {
+                    val source = deviceVideoSource()
+                    val existing = sourceRepository.get(source.id)
+                    sourceRepository.upsert(source)
+                    onboardingRepository.setCompleted(true)
+                    if (existing.requiresInitialScan(source)) scan(setOf(source.id))
+                }
+                else -> {
+                    val sourceIds = sourceRepository.observeSources().first()
+                        .filter { it.accessState == MediaSourceAccessState.AVAILABLE }
+                        .map { it.id }
+                        .toSet()
+                    if (sourceIds.isNotEmpty() && catalogRepository.observeItems().first().isEmpty()) scan(sourceIds)
+                }
+            }
+        }
+    }
 
     fun skipOnboarding() {
         viewModelScope.launch { onboardingRepository.setCompleted(true) }
@@ -70,13 +103,7 @@ class MediaLibraryViewModel(
         viewModelScope.launch {
             val permission = permissionGateway.inspect()
             if (permission.allFilesAccess) {
-                val source = MediaSource(
-                    ALL_FILES_ID,
-                    "设备存储",
-                    MediaUri("file:///storage/emulated/0/"),
-                    MediaSourceMode.ALL_FILES,
-                    VolumeId("primary"),
-                )
+                val source = deviceVideoSource()
                 sourceRepository.upsert(source)
                 onboardingRepository.setCompleted(true)
                 scan(setOf(source.id))
@@ -90,13 +117,7 @@ class MediaLibraryViewModel(
         viewModelScope.launch {
             onboardingRepository.setCompleted(true)
             if (granted) {
-                val source = MediaSource(
-                    MEDIA_STORE_ID,
-                    "系统媒体库",
-                    MediaUri("content://media/external/video/media"),
-                    MediaSourceMode.MEDIA_STORE,
-                    VolumeId("external"),
-                )
+                val source = deviceVideoSource()
                 sourceRepository.upsert(source)
                 scan(setOf(source.id))
             } else {
@@ -155,10 +176,22 @@ class MediaLibraryViewModel(
         }
     }
 
+    private fun deviceVideoSource() = MediaSource(
+        DEVICE_VIDEO_SOURCE_ID,
+        "设备存储",
+        MediaUri("content://media/external/video/media"),
+        MediaSourceMode.MEDIA_STORE,
+        VolumeId("external"),
+    )
+
+    private suspend fun MediaSource?.requiresInitialScan(expected: MediaSource): Boolean =
+        this == null || mode != expected.mode || rootUri != expected.rootUri ||
+            catalogRepository.snapshot(expected.id).items.isEmpty()
+
     companion object {
         private const val STOP_TIMEOUT = 5_000L
-        private val ALL_FILES_ID = MediaSourceId("source_all_files")
-        private val MEDIA_STORE_ID = MediaSourceId("source_media_store")
+        // Retain the development source ID so existing local indexes converge without duplicates.
+        private val DEVICE_VIDEO_SOURCE_ID = MediaSourceId("source_all_files")
 
         fun factory(
             sourceRepository: MediaSourceRepository,

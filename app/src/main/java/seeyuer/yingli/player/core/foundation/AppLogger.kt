@@ -37,6 +37,39 @@ fun interface AppLogSink {
     fun emit(record: AppLogRecord)
 }
 
+interface DiagnosticLogStore : AppLogSink {
+    fun snapshot(): List<AppLogRecord>
+}
+
+class RollingDiagnosticLogStore(
+    private val maximumRecords: Int = DEFAULT_MAXIMUM_RECORDS,
+) : DiagnosticLogStore {
+    private val records = ArrayDeque<AppLogRecord>()
+
+    init {
+        require(maximumRecords > 0)
+    }
+
+    override fun emit(record: AppLogRecord) = synchronized(records) {
+        while (records.size >= maximumRecords) records.removeFirst()
+        records.addLast(record)
+    }
+
+    override fun snapshot(): List<AppLogRecord> = synchronized(records) { records.toList() }
+
+    private companion object {
+        const val DEFAULT_MAXIMUM_RECORDS = 200
+    }
+}
+
+class CompositeAppLogSink(
+    private vararg val sinks: AppLogSink,
+) : AppLogSink {
+    override fun emit(record: AppLogRecord) {
+        sinks.forEach { it.emit(record) }
+    }
+}
+
 fun interface AppLogger {
     fun log(level: AppLogLevel, event: AppLogEvent)
 }

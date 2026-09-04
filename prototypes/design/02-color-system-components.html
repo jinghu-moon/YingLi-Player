@@ -192,10 +192,13 @@
       --error-strong: var(--red-light-700);
       --error-container: var(--red-light-100);
       --error-on-container: var(--red-light-800);
-      --success: var(--green-light-600);
-      --success-strong: var(--green-light-800);
+      --success: var(--green-light-700);
+      --success-strong: var(--green-light-900);
       --success-container: var(--green-light-200);
       --success-on-container: var(--green-light-900);
+
+      /* Decorative accent — 收藏心形专用，非状态语义色，不参与对比度审计矩阵 */
+      --accent-favorite: #bd3255;
 
       --player-canvas: #000000;
       --player-control-100: #ffffff;
@@ -285,10 +288,13 @@
       --error-strong: var(--red-200);
       --error-container: var(--red-950);
       --error-on-container: var(--red-200);
-      --success: var(--green-300);
-      --success-strong: var(--green-100);
+      --success: var(--green-400);
+      --success-strong: var(--green-200);
       --success-container: var(--green-800);
       --success-on-container: var(--green-100);
+
+      /* Decorative accent — 收藏心形专用，非状态语义色，不参与对比度审计矩阵 */
+      --accent-favorite: #e89caf;
 
       --shadow-1: 0 1px 2px rgb(0 0 0 / 0.28), 0 8px 24px rgb(0 0 0 / 0.24);
       --shadow-2: 0 12px 40px rgb(0 0 0 / 0.48);
@@ -599,11 +605,19 @@
     .search-bar { min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; border-radius: 7px; background: var(--surface); color: var(--text-secondary); box-shadow: var(--shadow-1); }
     .search-bar > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
     .library-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0 12px; }
+    .org-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-divider); }
+    .org-row .cover { width: 40px; height: 40px; border-radius: 6px; background: var(--surface-component); flex: 0 0 auto; overflow: hidden; }
+    .org-row .cover img { width: 100%; height: 100%; object-fit: cover; }
+    .org-row .info { flex: 1; min-width: 0; }
+    .org-row .info h5 { margin: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .org-row .info span { font-size: 11px; color: var(--text-secondary); }
+    .org-row .heart { border: 0; background: transparent; font-size: 18px; color: var(--text-secondary); flex: 0 0 auto; }
+    .org-row .heart.active { color: var(--accent-favorite); }
     .library-head h4 { margin: 0; font-size: 15px; }
     .library-head span { color: var(--text-secondary); font-size: 11px; }
     .media-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
     .media-card { min-width: 0; }
-    .thumbnail { position: relative; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 6px; background: var(--surface-component); }
+    .thumbnail { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; background: var(--surface-component); }
     .thumbnail img { width: 100%; height: 100%; object-fit: cover; }
     .duration { position: absolute; right: 6px; bottom: 6px; padding: 3px 5px; border-radius: 3px; background: rgb(0 0 0 / 0.74); color: #ffffff; font-size: 9px; }
     .watch-progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: rgb(255 255 255 / 0.32); }
@@ -707,6 +721,7 @@
     .menu button i { font-size: 19px; }
     .dialog { max-width: 380px; padding: 22px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-3); }
     .dialog-icon { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: 16px; border-radius: 50%; background: var(--error-container); color: var(--error); font-size: 22px; }
+    .dialog-icon.neutral { background: var(--surface-component); color: var(--text-secondary); }
     .dialog h4 { margin: 0 0 8px; font-size: 17px; }
     .dialog p { margin: 0 0 20px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
     .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -1011,7 +1026,7 @@
           <div class="panel-head"><h3>视频页 · 浅色/深色共用语义</h3><span>页面、搜索、筛选、媒体卡、底部导航</span></div>
           <div class="app-preview">
             <header class="app-bar">
-              <div class="app-name"><strong>视频</strong><span>248 个视频</span></div>
+              <div class="app-name"><strong>视频库</strong><span>248 个视频</span></div>
               <button class="icon-btn" type="button" title="处理中心" aria-label="处理中心"><i class="ti ti-progress-check" aria-hidden="true"></i></button>
               <button class="icon-btn" type="button" title="设置" aria-label="设置"><i class="ti ti-settings" aria-hidden="true"></i></button>
             </header>
@@ -1037,6 +1052,42 @@
             </nav>
           </div>
         </div>
+        <div class="component-panel wide">
+          <div class="panel-head"><h3>整理页 · 标签色与收藏强调色</h3><span>子导航、彩色标签、--accent-favorite</span></div>
+          <div class="app-preview">
+            <header class="app-bar">
+              <div class="app-name"><strong>整理</strong></div>
+            </header>
+            <div class="preview-content">
+              <div class="chip-row">
+                <button class="chip" type="button" aria-pressed="true">收藏</button>
+                <button class="chip" type="button" aria-pressed="false">播放列表</button>
+                <button class="chip" type="button" aria-pressed="false">合集</button>
+                <button class="chip" type="button" aria-pressed="false">标签</button>
+              </div>
+              <div class="org-row">
+                <div class="cover"><img src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&amp;fit=crop&amp;w=160&amp;q=80" alt="山海之间缩略图"></div>
+                <div class="info"><h5>山海之间</h5><span class="tag tag-blue" style="margin-top:4px;display:inline-flex">旅行</span></div>
+                <button class="heart active" type="button" title="取消收藏" aria-label="取消收藏" aria-pressed="true"><i class="ti ti-heart-filled" aria-hidden="true"></i></button>
+              </div>
+              <div class="org-row">
+                <div class="cover"><img src="https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&amp;fit=crop&amp;w=160&amp;q=80" alt="夜行记录缩略图"></div>
+                <div class="info"><h5>夜行记录</h5><span class="tag tag-rose" style="margin-top:4px;display:inline-flex">人物</span></div>
+                <button class="heart active" type="button" title="取消收藏" aria-label="取消收藏" aria-pressed="true"><i class="ti ti-heart-filled" aria-hidden="true"></i></button>
+              </div>
+              <div class="org-row">
+                <div class="cover"><img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&amp;fit=crop&amp;w=160&amp;q=80" alt="海岸散步缩略图"></div>
+                <div class="info"><h5>海岸散步</h5><span class="tag tag-amber" style="margin-top:4px;display:inline-flex">待整理</span></div>
+                <button class="heart" type="button" title="收藏" aria-label="收藏" aria-pressed="false"><i class="ti ti-heart" aria-hidden="true"></i></button>
+              </div>
+            </div>
+            <nav class="bottom-nav" aria-label="一级导航">
+              <button type="button"><i class="ti ti-home" aria-hidden="true"></i><span>首页</span></button>
+              <button type="button"><i class="ti ti-video" aria-hidden="true"></i><span>视频</span></button>
+              <button type="button" aria-current="page"><i class="ti ti-tags" aria-hidden="true"></i><span>整理</span></button>
+            </nav>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1053,7 +1104,7 @@
             <button class="btn btn-secondary" type="button">取消</button>
             <button class="btn btn-tonal" type="button"><i class="ti ti-filter" aria-hidden="true"></i>筛选</button>
             <button class="btn btn-ghost" type="button">清除</button>
-            <button class="btn btn-danger" type="button"><i class="ti ti-trash" aria-hidden="true"></i>删除</button>
+            <button class="btn btn-danger" type="button"><i class="ti ti-trash" aria-hidden="true"></i>永久删除</button>
             <button class="btn" type="button" disabled>不可用</button>
           </div>
           <div class="subheading">图标按钮</div>
@@ -1134,7 +1185,7 @@
             <span style="flex:1;font-size:13px;font-weight:650">已选择 12 项</span>
             <button class="icon-btn" type="button" title="添加标签" aria-label="添加标签"><i class="ti ti-tag-plus" aria-hidden="true"></i></button>
             <button class="icon-btn" type="button" title="移动" aria-label="移动"><i class="ti ti-folder-symlink" aria-hidden="true"></i></button>
-            <button class="icon-btn" type="button" title="删除" aria-label="删除" style="color:var(--error)"><i class="ti ti-trash" aria-hidden="true"></i></button>
+            <button class="icon-btn" type="button" title="移入回收站" aria-label="移入回收站"><i class="ti ti-trash" aria-hidden="true"></i></button>
           </div>
         </div>
       </div>
@@ -1199,13 +1250,13 @@
               <button type="button" role="menuitem"><i class="ti ti-tag-plus" aria-hidden="true"></i>添加标签</button>
               <button type="button" role="menuitem"><i class="ti ti-pencil" aria-hidden="true"></i>重命名</button>
               <button type="button" role="menuitem"><i class="ti ti-cut" aria-hidden="true"></i>创建切片</button>
-              <button class="danger" type="button" role="menuitem"><i class="ti ti-trash" aria-hidden="true"></i>删除视频</button>
+              <button type="button" role="menuitem"><i class="ti ti-trash" aria-hidden="true"></i>移入回收站</button>
             </div>
             <div class="dialog" role="dialog" aria-labelledby="deleteTitle" aria-describedby="deleteDescription">
-              <div class="dialog-icon"><i class="ti ti-trash" aria-hidden="true"></i></div>
-              <h4 id="deleteTitle">删除 3 个视频？</h4>
-              <p id="deleteDescription">文件将从设备存储中删除。该操作无法通过影里撤销。</p>
-              <div class="dialog-actions"><button class="btn btn-secondary" type="button">取消</button><button class="btn btn-danger js-notify" type="button">确认删除</button></div>
+              <div class="dialog-icon neutral"><i class="ti ti-trash" aria-hidden="true"></i></div>
+              <h4 id="deleteTitle">移入回收站？</h4>
+              <p id="deleteDescription">3 个文件将移动到回收站，30 天后自动清空。</p>
+              <div class="dialog-actions"><button class="btn btn-secondary" type="button">取消</button><button class="btn btn-primary js-notify" type="button">移入回收站</button></div>
             </div>
           </div>
         </div>
@@ -1292,6 +1343,7 @@
       ['信息','--info'], ['信息容器','--info-container'], ['信息容器文字','--info-on-container'], ['警告','--warning'],
       ['警告容器','--warning-container'], ['警告容器文字','--warning-on-container'], ['错误','--error'], ['错误容器','--error-container'],
       ['错误容器文字','--error-on-container'], ['成功','--success'], ['成功容器','--success-container'], ['成功容器文字','--success-on-container'],
+      ['收藏强调色（装饰性，非状态语义）','--accent-favorite'],
       ['播放主控件','--player-control-100'], ['播放次级控件','--player-control-70'], ['播放缓冲','--player-buffer'], ['播放边缘 Scrim','--player-scrim-edge']
     ];
 
@@ -1327,7 +1379,8 @@
     const extendedTokenMap = {
       info: '--info', infoContainer: '--info-container', onInfoContainer: '--info-on-container',
       warning: '--warning', warningContainer: '--warning-container', onWarningContainer: '--warning-on-container',
-      success: '--success', successContainer: '--success-container', onSuccessContainer: '--success-on-container'
+      success: '--success', successContainer: '--success-container', onSuccessContainer: '--success-on-container',
+      favorite: '--accent-favorite'
     };
 
     const scaleList = document.getElementById('scaleList');
@@ -1503,7 +1556,7 @@
       const darkExtended = captureTheme('dark', extendedTokenMap);
       const formatScheme = (name, factory, values) => `val ${name} = ${factory}(\n${Object.entries(values).map(([key, value]) => `    ${key} = ${composeColor(value)}`).join(',\n')}\n)`;
       const formatExtended = (name, values) => `val ${name} = YingLiExtendedColors(\n${Object.entries(values).map(([key, value]) => `    ${key} = ${composeColor(value)}`).join(',\n')}\n)`;
-      return `import androidx.compose.material3.darkColorScheme\nimport androidx.compose.material3.lightColorScheme\nimport androidx.compose.runtime.Immutable\nimport androidx.compose.ui.graphics.Color\n\n${formatScheme('YingLiLightColorScheme', 'lightColorScheme', lightScheme)}\n\n${formatScheme('YingLiDarkColorScheme', 'darkColorScheme', darkScheme)}\n\n@Immutable\ndata class YingLiExtendedColors(\n    val info: Color,\n    val infoContainer: Color,\n    val onInfoContainer: Color,\n    val warning: Color,\n    val warningContainer: Color,\n    val onWarningContainer: Color,\n    val success: Color,\n    val successContainer: Color,\n    val onSuccessContainer: Color\n)\n\n${formatExtended('YingLiLightExtendedColors', lightExtended)}\n\n${formatExtended('YingLiDarkExtendedColors', darkExtended)}\n`;
+      return `import androidx.compose.material3.darkColorScheme\nimport androidx.compose.material3.lightColorScheme\nimport androidx.compose.runtime.Immutable\nimport androidx.compose.ui.graphics.Color\n\n${formatScheme('YingLiLightColorScheme', 'lightColorScheme', lightScheme)}\n\n${formatScheme('YingLiDarkColorScheme', 'darkColorScheme', darkScheme)}\n\n@Immutable\ndata class YingLiExtendedColors(\n    val info: Color,\n    val infoContainer: Color,\n    val onInfoContainer: Color,\n    val warning: Color,\n    val warningContainer: Color,\n    val onWarningContainer: Color,\n    val success: Color,\n    val successContainer: Color,\n    val onSuccessContainer: Color,\n    val favorite: Color\n)\n\n${formatExtended('YingLiLightExtendedColors', lightExtended)}\n\n${formatExtended('YingLiDarkExtendedColors', darkExtended)}\n`;
     }
 
     function xmlName(name) {

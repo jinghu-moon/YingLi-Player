@@ -23,6 +23,7 @@ import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.navigation.AppRoute
 import seeyuer.yingli.player.domain.navigation.NavigationState
 import seeyuer.yingli.player.domain.navigation.RootDestination
+import seeyuer.yingli.player.feature.library.MediaLibraryUiState
 
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Suppress("DEPRECATION")
@@ -31,7 +32,7 @@ class AdaptiveAppShellTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun compactUsesThreeItemBottomNavigationAndTopActions() {
+    fun compactUsesSettingsInBottomNavigationAndProcessingInTopBar() {
         setShell(WindowWidthSizeClass.Compact)
 
         composeRule.onNodeWithTag(ShellTestTags.BOTTOM_NAVIGATION).assertExists()
@@ -39,10 +40,12 @@ class AdaptiveAppShellTest {
         composeRule.onNode(hasText("首页") and isSelected()).assertExists()
         composeRule.onNodeWithText("视频").assertExists()
         composeRule.onNodeWithText("整理").assertExists()
+        composeRule.onNodeWithText("设置").assertExists()
         composeRule.onNodeWithText("处理").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("首页", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithContentDescription("打开处理中心").assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithContentDescription("打开设置").assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithContentDescription("设置", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithContentDescription("打开设置").assertDoesNotExist()
     }
 
     @Test
@@ -73,6 +76,17 @@ class AdaptiveAppShellTest {
     }
 
     @Test
+    fun libraryUsesTopOverflowForViewSettings() {
+        setShell(
+            width = WindowWidthSizeClass.Compact,
+            navigationState = NavigationState(currentRoot = RootDestination.LIBRARY),
+        )
+
+        composeRule.onNodeWithContentDescription("视频视图设置").assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithContentDescription("打开设置").assertDoesNotExist()
+    }
+
+    @Test
     fun playerRouteHidesPrimaryNavigation() {
         val state = NavigationState(
             stacks = NavigationState.initialStacks() + (
@@ -90,6 +104,19 @@ class AdaptiveAppShellTest {
     }
 
     @Test
+    fun onboardingHidesPrimaryNavigationAndUsesAppNameTopBar() {
+        setShell(
+            width = WindowWidthSizeClass.Compact,
+            mediaState = MediaLibraryUiState(onboarding = true),
+        )
+
+        composeRule.onNodeWithTag(ShellTestTags.BOTTOM_NAVIGATION).assertDoesNotExist()
+        composeRule.onNodeWithTag(ShellTestTags.NAVIGATION_RAIL).assertDoesNotExist()
+        composeRule.onNodeWithText("影里").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("关闭").assertDoesNotExist()
+    }
+
+    @Test
     fun settingsRemainUsableAtTwoHundredPercentFontScale() {
         setShell(
             width = WindowWidthSizeClass.Compact,
@@ -98,6 +125,7 @@ class AdaptiveAppShellTest {
         )
 
         composeRule.onNodeWithText("外观").assertIsDisplayed()
+        composeRule.onNode(hasText("设置") and isSelected()).assertExists()
         composeRule.onNodeWithText("将处理中心固定到主导航").performScrollTo().assertIsDisplayed()
     }
 
@@ -105,6 +133,7 @@ class AdaptiveAppShellTest {
         width: WindowWidthSizeClass,
         navigationState: NavigationState = NavigationState(),
         settings: AppearanceSettings = AppearanceSettings(),
+        mediaState: MediaLibraryUiState = MediaLibraryUiState(onboarding = false),
         fontScale: Float = 1f,
     ) {
         composeRule.setContent {
@@ -113,12 +142,12 @@ class AdaptiveAppShellTest {
                     AdaptiveAppShell(
                         navigationState = navigationState,
                         settings = settings,
+                        mediaState = mediaState,
                         windowWidthSizeClass = width,
                         onRootSelected = {},
                         onGlobalAction = {},
                         onBack = {},
                         onThemePreferenceChanged = {},
-                        onDynamicColorChanged = {},
                         onProcessingPinnedChanged = {},
                     )
                 }

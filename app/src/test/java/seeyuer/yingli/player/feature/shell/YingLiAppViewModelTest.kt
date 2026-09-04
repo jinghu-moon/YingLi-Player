@@ -35,11 +35,9 @@ class YingLiAppViewModelTest {
         val viewModel = YingLiAppViewModel(repository, SavedStateHandle())
 
         viewModel.setThemePreference(ThemePreference.DARK)
-        viewModel.setDynamicColorEnabled(true)
         advanceUntilIdle()
 
         val settings = repository.settings.first()
         assertEquals(ThemePreference.DARK, settings.themePreference)
-        assertEquals(true, settings.dynamicColorEnabled)
     }
 }

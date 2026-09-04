@@ -9,7 +9,7 @@
 | 任务 | Red | Green | Refactor / 证据 |
 |---|---|---|---|
 | 2.1 | 原型颜色散落且没有对比度、状态层和播放器配对门禁 | 三层 Token 覆盖 13 级中性灰、浅 B/深 A、状态层、Scrim 和纯黑播放器 | `YingLiTokenTest` 自动验证数量、透明度、4.5:1/3:1、深色海拔与播放器无彩映射 |
-| 2.2 | 主题无法切换或跨进程保存，系统栏没有场景区分 | DataStore 保存 Light/Dark/System、动态中性色和处理入口偏好 | 应用、深色、播放器三套系统栏；动态色只影响去饱和表面 |
+| 2.2 | 主题无法切换或跨进程保存，系统栏没有场景区分 | DataStore 保存 Light/Dark/System 和处理入口偏好 | 应用、深色、播放器三套系统栏；固定使用项目语义色，不接入 Material 动态配色 |
 | 2.3 | 重复点击、未知深链和跨一级页返回会污染同一栈 | `SavedStateNavigationStateStore` 保存独立根栈、稳定 ID 和来源 | 播放/锁页隐藏导航；关闭第四入口安全迁回标准根页面 |
 | 2.4 | 单一底栏不能适配平板和分屏 | Material Window Size Class 驱动 Compact 底栏与 Medium/Expanded 导航轨 | 两种形态共享目的地、图标和 selected 语义 |
 | 2.5 | 滚动、视图和筛选在页面间混用 | `SavedStatePageViewStateStore` 使用页面、分组、版本复合 Key | 持久视图状态与会话筛选分离；删除分组和无效版本回默认 |

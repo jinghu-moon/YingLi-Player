@@ -1,0 +1,1139 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-theme-choice="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>影里 · 布局与排版设计</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
+  <style>
+    :root {
+      color-scheme: light;
+
+      /* Primitive: neutral（与配色文档共享同一套骨架） */
+      --neutral-0: #ffffff;
+      --neutral-50: #fafafa;
+      --neutral-100: #f5f5f5;
+      --neutral-200: #eeeeee;
+      --neutral-300: #e0e0e0;
+      --neutral-400: #c7c7c7;
+      --neutral-500: #a3a3a3;
+      --neutral-600: #737373;
+      --neutral-700: #525252;
+      --neutral-800: #333333;
+      --neutral-900: #1f1f1f;
+      --neutral-950: #121212;
+      --neutral-1000: #000000;
+
+      /* Semantic：仅取本页需要的子集 */
+      --page: var(--neutral-100);
+      --surface: var(--neutral-0);
+      --surface-subtle: var(--neutral-50);
+      --surface-component: var(--neutral-200);
+      --surface-component-hover: var(--neutral-300);
+      --surface-inverse: var(--neutral-950);
+      --text-primary: var(--neutral-900);
+      --text-secondary: var(--neutral-700);
+      --text-disabled: var(--neutral-500);
+      --text-inverse: var(--neutral-0);
+      --border-divider: var(--neutral-200);
+      --border-default: var(--neutral-300);
+      --border-control: var(--neutral-600);
+      --focus-ring: #477b94;
+      --action-primary: var(--neutral-900);
+      --action-primary-hover: var(--neutral-800);
+      --action-on-primary: var(--neutral-0);
+      --action-primary-soft: var(--neutral-200);
+      --selection-structural: var(--neutral-900);
+      --selection-on-structural: var(--neutral-0);
+      --state-hover: rgb(0 0 0 / 0.06);
+      --state-pressed: rgb(0 0 0 / 0.10);
+      --error: #c75146;
+      --scrollbar-thumb: var(--neutral-500);
+      --scrollbar-track: transparent;
+      --shadow-1: 0 1px 2px rgb(0 0 0 / 0.08), 0 6px 20px rgb(0 0 0 / 0.06);
+      --shadow-2: 0 12px 36px rgb(0 0 0 / 0.16);
+      --shadow-3: 0 18px 56px rgb(0 0 0 / 0.22);
+
+      /* ---- 类型阶 · Type Scale（15 角色，改编自 Material 3，字距统一为 0） ---- */
+      --type-display-l-size: 40px; --type-display-l-line: 48px; --type-display-l-weight: 670;
+      --type-display-m-size: 32px; --type-display-m-line: 40px; --type-display-m-weight: 670;
+      --type-display-s-size: 28px; --type-display-s-line: 36px; --type-display-s-weight: 660;
+      --type-headline-l-size: 24px; --type-headline-l-line: 30px; --type-headline-l-weight: 660;
+      --type-headline-m-size: 21px; --type-headline-m-line: 28px; --type-headline-m-weight: 650;
+      --type-headline-s-size: 19px; --type-headline-s-line: 26px; --type-headline-s-weight: 650;
+      --type-title-l-size: 17px; --type-title-l-line: 24px; --type-title-l-weight: 620;
+      --type-title-m-size: 15px; --type-title-m-line: 22px; --type-title-m-weight: 620;
+      --type-title-s-size: 13px; --type-title-s-line: 18px; --type-title-s-weight: 620;
+      --type-body-l-size: 15px; --type-body-l-line: 22px; --type-body-l-weight: 400;
+      --type-body-m-size: 13px; --type-body-m-line: 20px; --type-body-m-weight: 400;
+      --type-body-s-size: 12px; --type-body-s-line: 18px; --type-body-s-weight: 400;
+      --type-label-l-size: 13px; --type-label-l-line: 18px; --type-label-l-weight: 600;
+      --type-label-m-size: 12px; --type-label-m-line: 16px; --type-label-m-weight: 600;
+      --type-label-s-size: 11px; --type-label-s-line: 14px; --type-label-s-weight: 600;
+
+      /* ---- 间距 · Spacing（4dp 基线网格） ---- */
+      --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px;
+      --space-lg: 20px; --space-xl: 24px; --space-2xl: 32px; --space-3xl: 40px; --space-4xl: 48px; --space-5xl: 64px;
+
+      /* ---- 圆角 · Radius ---- */
+      --radius-none: 0px; --radius-xs: 4px; --radius-sm: 8px; --radius-md: 12px;
+      --radius-lg: 16px; --radius-xl: 24px; --radius-full: 999px;
+
+      /* ---- 组件尺寸 · Component sizing ---- */
+      --size-touch-min: 48px; --size-bottom-nav: 80px; --size-topbar: 64px;
+      --size-button-default: 48px; --size-button-compact: 40px; --size-icon-button: 48px; --size-input: 48px;
+      --size-list-single: 56px; --size-list-media: 104px; --size-chip: 32px; --size-chip-touch: 48px;
+      --size-fab: 56px; --size-switch-w: 52px; --size-switch-h: 32px; --size-segmented: 40px;
+      --size-badge-dot: 8px; --size-seekbar-track: 4px; --size-seekbar-thumb: 12px; --size-player-bar: 72px;
+      --size-dialog-margin: 32px; --size-sheet-handle-w: 32px; --size-sheet-handle-h: 4px; --size-menu-item: 48px;
+
+      /* ---- 图标 · Icon sizes ---- */
+      --icon-xs: 16px; --icon-sm: 20px; --icon-md: 24px; --icon-lg: 28px; --icon-xl: 32px;
+
+      /* ---- 动效 · Motion ---- */
+      --duration-fast: 100ms; --duration-medium: 200ms; --duration-slow: 300ms;
+      --easing-standard: cubic-bezier(.2,0,0,1); --easing-emphasized: cubic-bezier(.3,0,.1,1);
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --page: #0f0f0f;
+      --surface: #171717;
+      --surface-subtle: #1f1f1f;
+      --surface-component: #292929;
+      --surface-component-hover: #333333;
+      --surface-inverse: var(--neutral-100);
+      --text-primary: #f5f5f5;
+      --text-secondary: #b8b8b8;
+      --text-disabled: #5f5f5f;
+      --text-inverse: var(--neutral-950);
+      --border-divider: #292929;
+      --border-default: #353535;
+      --border-control: #707070;
+      --focus-ring: #98c3d5;
+      --action-primary: var(--neutral-100);
+      --action-primary-hover: var(--neutral-0);
+      --action-on-primary: var(--neutral-950);
+      --action-primary-soft: #2b2b2b;
+      --selection-structural: var(--neutral-100);
+      --selection-on-structural: var(--neutral-950);
+      --state-hover: rgb(255 255 255 / 0.08);
+      --state-pressed: rgb(255 255 255 / 0.12);
+      --error: #f5aaa3;
+      --scrollbar-thumb: var(--neutral-700);
+      --scrollbar-track: transparent;
+      --shadow-1: 0 1px 2px rgb(0 0 0 / 0.28), 0 8px 24px rgb(0 0 0 / 0.24);
+      --shadow-2: 0 12px 40px rgb(0 0 0 / 0.48);
+      --shadow-3: 0 20px 64px rgb(0 0 0 / 0.62);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--page);
+      color: var(--text-primary);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+    button, input, select { font: inherit; letter-spacing: 0; }
+    button { color: inherit; }
+    ::selection { background: rgb(71 123 148 / .28); }
+    * { scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); scrollbar-width: thin; }
+
+    .topbar {
+      position: sticky; z-index: 30; top: 0; min-height: 72px;
+      display: flex; align-items: center; gap: 20px;
+      padding: 12px max(20px, calc((100vw - 1440px) / 2));
+      border-bottom: 1px solid var(--border-divider);
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      backdrop-filter: blur(16px);
+    }
+    .brand { min-width: 220px; }
+    .brand strong { display: block; font-size: 17px; font-weight: 650; }
+    .brand span { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 12px; }
+    .section-nav { min-width: 0; flex: 1; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+    .section-nav::-webkit-scrollbar { display: none; }
+    .section-nav a {
+      flex: 0 0 auto; min-height: 40px; display: inline-flex; align-items: center;
+      padding: 0 12px; border-radius: 6px; color: var(--text-secondary); font-size: 13px; text-decoration: none;
+    }
+    .section-nav a:hover { background: var(--surface-component); color: var(--text-primary); }
+    .theme-switch {
+      flex: 0 0 auto; display: grid; grid-template-columns: repeat(3, 40px); gap: 2px; padding: 3px;
+      border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-component);
+    }
+    .theme-switch button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+    .theme-switch button[aria-pressed="true"] { background: var(--surface); color: var(--text-primary); box-shadow: var(--shadow-1); }
+
+    .shell { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding-bottom: 80px; }
+    .intro {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 460px); gap: 48px; align-items: end;
+      padding: 48px 0 36px; border-bottom: 1px solid var(--border-divider);
+    }
+    .eyebrow { color: var(--text-secondary); font-size: 12px; font-weight: 650; text-transform: uppercase; }
+    .intro h1 { margin: 8px 0 12px; font-size: 44px; line-height: 1.1; font-weight: 670; }
+    .intro p { max-width: 760px; margin: 0; color: var(--text-secondary); font-size: 15px; line-height: 1.75; }
+    .rule-list { display: grid; gap: 10px; }
+    .rule { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: center; min-height: 50px; padding: 8px 0; border-bottom: 1px solid var(--border-divider); font-size: 13px; }
+    .rule:last-child { border-bottom: 0; }
+    .rule i { font-size: 22px; color: var(--text-secondary); }
+    .rule strong { display: block; margin-bottom: 2px; font-weight: 650; }
+    .rule span { color: var(--text-secondary); }
+
+    .showcase-section { scroll-margin-top: 92px; padding: 42px 0; border-bottom: 1px solid var(--border-divider); }
+    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+    .section-heading h2 { margin: 0; font-size: 22px; font-weight: 660; }
+    .section-heading p { max-width: 640px; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.65; text-align: right; }
+    .subheading { margin: 28px 0 12px; color: var(--text-secondary); font-size: 12px; font-weight: 650; }
+    .note { margin: 8px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+
+    .found-callout {
+      display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin-bottom: 24px;
+      border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-subtle);
+    }
+    .found-callout i { font-size: 20px; color: var(--text-secondary); margin-top: 1px; }
+    .found-callout strong { display: block; margin-bottom: 2px; font-weight: 650; font-size: 13px; }
+    .found-callout span { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+
+    /* 类型阶 */
+    .type-list { display: grid; gap: 0; border: 1px solid var(--border-default); border-radius: 8px; overflow: hidden; background: var(--surface); }
+    .type-row { display: grid; grid-template-columns: 150px minmax(0,1fr) 200px; gap: 20px; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--border-divider); }
+    .type-row:last-child { border-bottom: 0; }
+    .type-meta strong { display: block; font-size: 13px; font-weight: 650; }
+    .type-meta span { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 11px; }
+    .type-sample { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .type-specs { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+    .spec-chip {
+      display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 999px;
+      border: 1px solid var(--border-default); background: var(--surface-subtle); color: var(--text-secondary);
+      font-size: 10px; font-family: "Cascadia Code", Consolas, monospace; cursor: pointer;
+    }
+    .spec-chip:hover { background: var(--surface-component); color: var(--text-primary); }
+
+    /* 间距 */
+    .spacing-list { display: grid; gap: 10px; }
+    .spacing-row { display: grid; grid-template-columns: 110px 260px minmax(0,1fr); gap: 16px; align-items: center; }
+    .spacing-row .spacing-label { font-size: 13px; }
+    .spacing-row .spacing-label strong { display: block; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; font-weight: 650; }
+    .spacing-row .spacing-label span { color: var(--text-secondary); font-size: 11px; }
+    .spacing-track { height: 28px; display: flex; align-items: center; background: var(--surface-subtle); border: 1px solid var(--border-divider); border-radius: 6px; padding: 0 8px; }
+    .spacing-bar { height: 12px; background: var(--action-primary); border-radius: 3px; cursor: pointer; }
+    .spacing-usage { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+
+    /* 圆角 */
+    .radius-list { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 12px; }
+    .radius-item { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+    .radius-box { width: 100%; aspect-ratio: 1; background: var(--action-primary); cursor: pointer; }
+    .radius-item strong { font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; font-weight: 650; }
+    .radius-item span { color: var(--text-secondary); font-size: 10px; line-height: 1.4; }
+
+    /* 布局网格 */
+    .bp-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
+    .bp-card { border: 1px solid var(--border-default); border-radius: 8px; overflow: hidden; background: var(--surface); }
+    .bp-head { padding: 14px 16px; border-bottom: 1px solid var(--border-divider); }
+    .bp-head strong { display: block; font-size: 13px; font-weight: 650; }
+    .bp-head span { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 11px; }
+    .bp-frame { padding: 14px; background: var(--surface-subtle); }
+    .bp-frame.is-player { padding: 28px 14px; }
+    .bp-cols { display: grid; gap: 6px; }
+    .bp-cell { aspect-ratio: 16/9; background: var(--surface-component); border-radius: 4px; }
+    .bp-player { aspect-ratio: 16/9; display: grid; place-items: center; background: #000; border-radius: 4px; }
+    .bp-rail-layout { display: flex; gap: 6px; }
+    .bp-rail { flex: 0 0 auto; width: 26px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px 0; background: var(--surface); border-radius: 4px; }
+    .bp-rail i { font-size: 13px; color: var(--text-secondary); }
+    .bp-rail-layout .bp-cols { flex: 1; min-width: 0; }
+    .bp-player i { font-size: 32px; color: #fff; opacity: .85; }
+    .bp-foot { display: grid; gap: 4px; padding: 12px 16px; font-size: 11px; color: var(--text-secondary); font-family: "Cascadia Code", Consolas, monospace; }
+
+    /* 手机模型：真实设备尺寸（360×780dp），内部可滚动展示全部组件 */
+    .phone-model { width: 380px; max-width: 100%; margin: 0 auto; }
+    .phone-model .device {
+      position: relative; padding: 14px 10px; background: linear-gradient(155deg, #2b2b2b, #101010);
+      border-radius: 44px; box-shadow: var(--shadow-3), inset 0 0 0 1px rgb(255 255 255 / .06);
+    }
+    .phone-model .screen { position: relative; width: 360px; height: 780px; display: flex; flex-direction: column; border-radius: 30px; overflow: hidden; background: var(--page); }
+    .phone-model .camera { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 10px; height: 10px; border-radius: 50%; background: #000; box-shadow: 0 0 0 2px rgb(255 255 255 / .04) inset, 0 0 3px rgb(255 255 255 / .12); z-index: 5; }
+    .phone-model .statusbar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; height: 34px; padding: 0 20px; font-size: 11px; font-weight: 650; color: var(--text-primary); }
+    .phone-model .statusbar .icons { display: flex; align-items: center; gap: 4px; }
+    .phone-model .statusbar .icons i { font-size: 13px; }
+    .phone-model .home-indicator { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; height: 22px; }
+    .phone-model .home-indicator::after { content: ''; width: 108px; height: 4px; border-radius: 999px; background: var(--text-primary); opacity: .55; }
+    .model-appbar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; height: var(--size-topbar); padding: 0 16px; border-bottom: 1px solid var(--border-divider); background: var(--surface); }
+    .model-appbar strong { font-size: var(--type-title-l-size); font-weight: var(--type-title-l-weight); }
+    .model-appbar span { display: block; font-size: 10px; color: var(--text-secondary); }
+
+    /* 滚动区：全部组件按顺序纵向排列，是手机模型内部真正的内容 */
+    .model-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; background: var(--page); }
+    .catalog-item { padding: 12px 16px; border-bottom: 1px solid var(--border-divider); }
+    .catalog-item.is-bleed { padding: 12px 0; }
+    .catalog-item.is-bleed .catalog-label { padding: 0 16px; }
+    .catalog-item.is-bleed .catalog-note { padding: 0 16px; }
+    .catalog-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .catalog-label span { font-size: 12px; font-weight: 650; }
+    .catalog-label code { flex: 0 0 auto; font-size: 10px; color: var(--text-secondary); font-family: "Cascadia Code", Consolas, monospace; white-space: nowrap; }
+    .catalog-demo { display: flex; align-items: center; }
+    .catalog-note { margin: 8px 0 0; font-size: 10px; color: var(--text-secondary); line-height: 1.5; }
+    .mini-btn { display: inline-flex; align-items: center; gap: 6px; padding: 0 16px; border-radius: 6px; background: var(--action-primary); color: var(--action-on-primary); font-size: 13px; font-weight: 620; border: 0; }
+    .mini-btn.compact { font-size: 12px; padding: 0 12px; }
+    .mini-btn.ghost { background: var(--surface); border: 1px solid var(--border-control); color: var(--text-primary); }
+    .mini-icon-btn { display: grid; place-items: center; border-radius: 999px; background: var(--surface-component); border: 0; }
+    .mini-icon-btn i { font-size: var(--icon-md); }
+    .mini-input { display: flex; align-items: center; padding: 0 14px; border: 1px solid var(--border-control); border-radius: 6px; background: var(--surface); color: var(--text-disabled); font-size: 13px; width: 100%; }
+    .mini-list-item { display: flex; align-items: center; gap: 12px; padding: 0 12px; width: 100%; border: 1px solid var(--border-divider); border-radius: 6px; background: var(--surface); }
+    .mini-list-item .thumb { width: 142px; height: 80px; border-radius: 4px; background: var(--surface-component); flex: 0 0 auto; }
+    .mini-list-item .lines { display: grid; gap: 4px; min-width: 0; }
+    .mini-list-item .lines b { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mini-list-item .lines span { font-size: 10px; color: var(--text-secondary); }
+    .mini-chip { display: inline-flex; align-items: center; padding: 0 12px; border-radius: 999px; background: var(--surface-component); font-size: 11px; font-weight: 600; }
+    .chip-touch-wrap { position: relative; display: inline-flex; align-items: center; height: var(--size-chip-touch); padding: 0 4px; }
+    .chip-touch-wrap::after { content: ''; position: absolute; inset: 0; border: 1px dashed var(--border-control); border-radius: 999px; }
+    .mini-topbar { display: flex; align-items: center; padding: 0 16px; width: 100%; background: var(--surface); border-bottom: 1px solid var(--border-divider); font-size: 15px; font-weight: 650; }
+    .mini-bottomnav { display: flex; align-items: center; justify-content: space-around; width: 100%; background: var(--surface); border-top: 1px solid var(--border-divider); }
+    .mini-bottomnav i { font-size: var(--icon-md); color: var(--text-secondary); }
+    .mini-bottomnav .active i { color: var(--text-primary); }
+    .touch-demo { position: relative; width: var(--size-touch-min); height: var(--size-touch-min); border-radius: 999px; }
+    .touch-demo::before { content: ''; position: absolute; inset: 0; margin: auto; width: 24px; height: 24px; border-radius: 999px; background: var(--action-primary); }
+    .touch-demo::after { content: ''; position: absolute; inset: 0; border: 1px dashed var(--border-control); border-radius: 999px; }
+
+    .mini-thumb-card { width: 160px; }
+    .mini-thumb-row { display: flex; gap: 8px; width: 100%; }
+    .mini-thumb-row .mini-thumb-card { flex: 1; min-width: 0; width: auto; }
+    .mini-thumb-card .thumb { position: relative; aspect-ratio: 16/9; border-radius: var(--radius-sm); background: var(--surface-component); overflow: hidden; }
+    .mini-thumb-card .dur { position: absolute; right: 6px; bottom: 6px; padding: 2px 6px; border-radius: 4px; background: rgb(0 0 0 / .72); color: #fff; font-size: 10px; font-weight: 600; }
+    .mini-thumb-card b { display: block; margin-top: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mini-seekbar { position: relative; width: 100%; height: var(--size-seekbar-thumb); display: flex; align-items: center; }
+    .mini-seekbar .track { position: relative; width: 100%; height: var(--size-seekbar-track); border-radius: 999px; background: var(--surface-component); }
+    .mini-seekbar .fill { position: absolute; inset: 0; width: 42%; border-radius: 999px; background: var(--action-primary); }
+    .mini-seekbar .thumb { position: absolute; left: 42%; top: 50%; width: var(--size-seekbar-thumb); height: var(--size-seekbar-thumb); margin: calc(var(--size-seekbar-thumb) / -2) 0 0 calc(var(--size-seekbar-thumb) / -2); border-radius: 999px; background: var(--action-primary); box-shadow: var(--shadow-1); }
+    .mini-player-bar { width: 100%; height: var(--size-player-bar); display: flex; align-items: center; gap: 10px; padding: 0 14px; background: #000; color: #fff; }
+    .mini-player-bar i { font-size: var(--icon-md); }
+    .mini-player-bar .mini-seekbar .track { background: rgb(255 255 255 / .28); }
+    .mini-player-bar .mini-seekbar .fill, .mini-player-bar .mini-seekbar .thumb { background: #fff; }
+    .mini-player-bar span { font-size: 11px; font-family: "Cascadia Code", Consolas, monospace; }
+    .mini-fab { width: var(--size-fab); height: var(--size-fab); border: 0; border-radius: 999px; display: grid; place-items: center; background: var(--action-primary); color: var(--action-on-primary); box-shadow: var(--shadow-2); }
+    .mini-fab i { font-size: var(--icon-md); }
+    .mini-switch { position: relative; width: var(--size-switch-w); height: var(--size-switch-h); border-radius: 999px; background: var(--action-primary); padding: 4px; }
+    .mini-switch::after { content: ''; position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 999px; background: var(--action-on-primary); }
+    .mini-segmented { display: inline-flex; height: var(--size-segmented); padding: 3px; border-radius: 8px; background: var(--surface-component); gap: 2px; }
+    .mini-segmented .seg { display: flex; align-items: center; padding: 0 14px; border-radius: 5px; font-size: 12px; font-weight: 620; color: var(--text-secondary); }
+    .mini-segmented .seg.active { background: var(--surface); color: var(--text-primary); box-shadow: var(--shadow-1); }
+    .mini-badge-wrap { position: relative; width: 40px; height: 40px; display: grid; place-items: center; }
+    .mini-badge-dot { position: absolute; top: 6px; right: 6px; width: var(--size-badge-dot); height: var(--size-badge-dot); border-radius: 999px; background: var(--error); border: 2px solid var(--surface); }
+    .mini-badge-count { position: absolute; top: 0; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--error); color: #fff; font-size: 9px; font-weight: 700; display: grid; place-items: center; transform: translate(30%, -30%); }
+    .mini-divider { width: 220px; height: 1px; background: var(--border-divider); }
+
+    .mini-dialog { width: calc(100% - var(--size-dialog-margin) * 2); margin: 0 auto; padding: var(--space-xl); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-2); }
+    .mini-dialog h5 { margin: 0 0 var(--space-sm); font-size: var(--type-title-m-size); font-weight: var(--type-title-m-weight); }
+    .mini-dialog p { margin: 0 0 var(--space-xl); font-size: var(--type-body-m-size); color: var(--text-secondary); line-height: 1.5; }
+    .mini-dialog .actions { display: flex; justify-content: flex-end; gap: var(--space-xs); }
+    .mini-dialog .actions button { min-height: 40px; padding: 0 14px; border-radius: 6px; font-size: 12px; font-weight: 620; border: 1px solid transparent; background: transparent; color: var(--text-primary); }
+    .mini-dialog .actions button.primary { background: var(--action-primary); color: var(--action-on-primary); }
+
+    .mini-snackbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); width: 100%; height: var(--size-touch-min); padding: 0 var(--space-md); border-radius: var(--radius-sm); background: var(--surface-inverse); color: var(--text-inverse); font-size: 12px; }
+    .mini-snackbar .action { font-weight: 650; white-space: nowrap; }
+
+    .mini-sheet { width: 100%; background: var(--surface); border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: var(--space-sm) 0 var(--space-md); }
+    .mini-sheet .handle { width: var(--size-sheet-handle-w); height: var(--size-sheet-handle-h); border-radius: 999px; background: var(--border-control); margin: 0 auto var(--space-md); }
+    .mini-sheet .item { display: flex; align-items: center; gap: var(--space-sm); height: var(--size-menu-item); padding: 0 var(--space-lg); font-size: 13px; }
+    .mini-sheet .item i { font-size: 20px; color: var(--text-secondary); }
+
+    .mini-menu { width: 180px; background: var(--surface); border-radius: var(--radius-md); box-shadow: var(--shadow-2); overflow: hidden; }
+    .mini-menu .item { display: flex; align-items: center; gap: var(--space-sm); height: var(--size-menu-item); padding: 0 var(--space-md); font-size: 13px; border-top: 1px solid var(--border-divider); }
+    .mini-menu .item:first-child { border-top: 0; }
+    .mini-menu .item i { font-size: 18px; color: var(--text-secondary); }
+
+    /* 图标 */
+    .icon-row { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; }
+    .icon-item { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .icon-item i { color: var(--text-primary); }
+    .icon-item span { font-size: 11px; color: var(--text-secondary); font-family: "Cascadia Code", Consolas, monospace; }
+
+    /* 动效 */
+    .motion-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .motion-table th, .motion-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-divider); text-align: left; }
+    .motion-table th { color: var(--text-secondary); font-weight: 650; font-size: 11px; }
+    .motion-table code { font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; }
+    .motion-demo-row { display: flex; gap: 32px; margin-top: 18px; flex-wrap: wrap; }
+    .motion-demo { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .motion-box { width: 120px; height: 48px; border-radius: 8px; background: var(--action-primary); cursor: pointer; transition: transform var(--duration-medium) var(--easing-standard); }
+    .motion-box.emphasized { transition-duration: var(--duration-slow); transition-timing-function: var(--easing-emphasized); }
+    .motion-demo:hover .motion-box { transform: translateY(-10px); }
+    .motion-demo span { font-size: 11px; color: var(--text-secondary); }
+
+    /* 页面配方 */
+    .recipe-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
+    .recipe-card { border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); overflow: hidden; }
+    .recipe-preview { width: 100%; aspect-ratio: 360 / 780; overflow: hidden; background: var(--page); display: flex; flex-direction: column; border-bottom: 1px solid var(--border-divider); }
+    .recipe-preview .rp-appbar { flex: 0 0 auto; display: flex; align-items: center; padding: 0 12px; height: 15%; font-size: 13px; font-weight: 650; background: var(--surface); border-bottom: 1px solid var(--border-divider); }
+    .recipe-preview .rp-body { flex: 1; min-height: 0; overflow: hidden; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+    .recipe-preview .rp-nav { flex: 0 0 auto; height: 11%; display: flex; align-items: center; justify-content: space-around; background: var(--surface); border-top: 1px solid var(--border-divider); }
+    .recipe-preview .rp-nav i { font-size: 15px; color: var(--text-secondary); }
+    .recipe-preview .rp-nav i.active { color: var(--text-primary); }
+    .recipe-preview .rp-label { font-size: 10px; font-weight: 650; color: var(--text-secondary); }
+    .recipe-preview .rp-hscroll { display: flex; gap: 6px; overflow: hidden; }
+    .recipe-preview .rp-card { flex: 0 0 auto; width: 74px; }
+    .recipe-preview .rp-thumb { aspect-ratio: 16/9; border-radius: 4px; background: var(--surface-component); }
+    .recipe-preview .rp-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px; }
+    .recipe-preview .rp-line { height: 5px; border-radius: 3px; background: var(--surface-component); }
+    .recipe-preview .rp-line.short { width: 55%; }
+    .recipe-preview .rp-chip { flex: 0 0 auto; height: 16px; padding: 0 8px; border-radius: 999px; background: var(--surface-component); font-size: 8px; display: flex; align-items: center; }
+    .recipe-preview .rp-chip.active { background: var(--action-primary); color: var(--action-on-primary); }
+    .recipe-preview .rp-chiprow { display: flex; gap: 4px; }
+    .recipe-preview .rp-listitem { display: flex; align-items: center; gap: 6px; height: 15%; flex: 0 0 auto; }
+    .recipe-preview .rp-cover { width: 20px; height: 20px; border-radius: 3px; background: var(--surface-component); flex: 0 0 auto; }
+    .recipe-preview .rp-switch { margin-left: auto; width: 20px; height: 12px; border-radius: 999px; background: var(--action-primary); position: relative; flex: 0 0 auto; }
+    .recipe-preview .rp-switch::after { content: ''; position: absolute; top: 1.5px; right: 1.5px; width: 9px; height: 9px; border-radius: 999px; background: var(--action-on-primary); }
+    .recipe-preview .rp-progress { height: 3px; border-radius: 2px; background: var(--surface-component); overflow: hidden; }
+    .recipe-preview .rp-progress span { display: block; height: 100%; background: var(--action-primary); }
+    .recipe-preview .rp-canvas { flex: 0 0 auto; aspect-ratio: 16/9; background: #000; display: grid; place-items: center; }
+    .recipe-preview .rp-canvas i { color: #fff; font-size: 20px; opacity: .85; }
+    .recipe-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border-divider); background: var(--surface-subtle); }
+    .recipe-head i { font-size: var(--icon-md); color: var(--text-secondary); }
+    .recipe-head strong { font-size: 14px; font-weight: 650; }
+    .recipe-specs { margin: 0; padding: 12px 16px; display: grid; gap: 8px; }
+    .recipe-specs div { display: grid; grid-template-columns: 68px 1fr; gap: 8px; align-items: baseline; }
+    .recipe-specs dt { margin: 0; font-size: 10px; color: var(--text-secondary); font-weight: 650; }
+    .recipe-specs dd { margin: 0; font-size: 12px; line-height: 1.5; }
+
+
+    /* 通用组件（复用配色文档同款） */
+    .component-panel { min-width: 0; padding: 20px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .panel-head h3 { margin: 0; font-size: 15px; font-weight: 650; }
+    .panel-head span { color: var(--text-secondary); font-size: 11px; }
+    .btn { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 18px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 620; }
+    .btn i { font-size: 19px; }
+    .btn-primary { background: var(--action-primary); color: var(--action-on-primary); }
+    .btn-primary:hover { background: var(--action-primary-hover); }
+    .btn-secondary { border-color: var(--border-control); background: var(--surface); }
+    .btn-secondary:hover { background: var(--surface-component); }
+    .btn-tonal { background: var(--action-primary-soft); }
+    .export-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .code-preview { min-height: 260px; max-height: 460px; overflow: auto; margin: 0; padding: 16px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--page); color: var(--text-primary); font: 11px/1.65 "Cascadia Code", Consolas, monospace; white-space: pre; }
+
+    .toast {
+      position: fixed; z-index: 60; left: 50%; bottom: 24px; transform: translate(-50%, 12px);
+      display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px;
+      background: var(--surface-inverse); color: var(--text-inverse); font-size: 12px;
+      opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 1100px) {
+      .topbar { padding: 12px 20px; }
+      .intro { grid-template-columns: 1fr; gap: 24px; }
+      .type-row { grid-template-columns: 1fr; gap: 8px; }
+      .type-specs { justify-content: flex-start; }
+    }
+    @media (max-width: 820px) {
+      .shell { width: min(100% - 24px, 680px); }
+      .section-heading { display: block; }
+      .section-heading p { text-align: left; margin-top: 8px; }
+      .bp-grid { grid-template-columns: 1fr; }
+      .radius-list { grid-template-columns: repeat(4, minmax(0,1fr)); }
+      .recipe-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+    @media (max-width: 520px) {
+      .section-nav { display: none; }
+      .shell { width: min(100% - 20px, 440px); }
+      .intro h1 { font-size: 32px; }
+      .radius-list { grid-template-columns: repeat(3, minmax(0,1fr)); }
+      .recipe-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>影里 · 布局与排版设计</strong>
+      <span>4dp 基线网格 · 15 级类型阶</span>
+    </div>
+    <nav class="section-nav" aria-label="页面章节">
+      <a href="#alignment">Token 对齐</a>
+      <a href="#scale">类型阶</a>
+      <a href="#spacing">间距</a>
+      <a href="#radius">圆角</a>
+      <a href="#layout">布局网格</a>
+      <a href="#components">组件尺寸</a>
+      <a href="#states">组件状态</a>
+      <a href="#icons">图标</a>
+      <a href="#motion">动效</a>
+      <a href="#recipes">页面配方</a>
+      <a href="#android">Android</a>
+      <a href="#checklist">验收清单</a>
+    </nav>
+    <div class="theme-switch" role="group" aria-label="主题模式">
+      <button type="button" data-theme-mode="system" aria-pressed="true" title="跟随系统" aria-label="跟随系统"><i class="ti ti-device-desktop" aria-hidden="true"></i></button>
+      <button type="button" data-theme-mode="light" aria-pressed="false" title="浅色" aria-label="浅色"><i class="ti ti-sun" aria-hidden="true"></i></button>
+      <button type="button" data-theme-mode="dark" aria-pressed="false" title="深色" aria-label="深色"><i class="ti ti-moon" aria-hidden="true"></i></button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="intro">
+      <div>
+        <span class="eyebrow">YingLi Layout &amp; Type System · Draft 01</span>
+        <h1>让文字有分寸，<br>让留白会呼吸。</h1>
+        <p>类型阶、间距、圆角与组件尺寸全部由固定数值刻度生成，组件不得随意取值。中文界面字距统一为 0，层级由字重承担而非字距；间距对齐 4dp 基线网格，保证跨设备像素级一致；一切可点击元素不小于 48×48dp。与《组件配色设计》共用同一套语义表面与文字 Token。</p>
+      </div>
+      <div class="rule-list">
+        <div class="rule"><i class="ti ti-ruler-2" aria-hidden="true"></i><div><strong>刻度驱动</strong><span>类型阶、间距、圆角均来自固定数值刻度</span></div></div>
+        <div class="rule"><i class="ti ti-grid-dots" aria-hidden="true"></i><div><strong>4dp 基线网格</strong><span>所有间距与尺寸对齐 4 的倍数</span></div></div>
+        <div class="rule"><i class="ti ti-language" aria-hidden="true"></i><div><strong>中文优先排版</strong><span>字距统一为 0，字重承担层级</span></div></div>
+        <div class="rule"><i class="ti ti-hand-click" aria-hidden="true"></i><div><strong>触控优先</strong><span>可点击元素不小于 48×48dp</span></div></div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="alignment">
+      <div class="section-heading">
+        <h2>Token 对齐矩阵 Alignment Matrix</h2>
+        <p>01、02 与实际 Kotlin 实现曾各自演化出不同数值。下表是本轮核对后的结论；本页面无法直接读取本地代码库，Kotlin 一栏的数值取自你提供的审计结果，如有出入请直接告知，改一行即可。</p>
+      </div>
+      <div class="matrix-wrap">
+        <table class="motion-table">
+          <thead><tr><th>项目</th><th>01（更新前）</th><th>02 原型</th><th>Kotlin 实际值</th><th>决策结果</th><th>负责人 / 目标版本</th></tr></thead>
+          <tbody>
+            <tr><td>顶部应用栏</td><td>56dp</td><td>64px</td><td>64dp</td><td>01 改为 64dp，以 Kotlin 为准</td><td>—（待填写）</td></tr>
+            <tr><td>底部导航栏</td><td>64dp</td><td>72px</td><td>80dp</td><td>01 改为 80dp，以 Kotlin 为准</td><td>—（待填写）</td></tr>
+            <tr><td>图标按钮触控区</td><td>40dp</td><td>48px</td><td>最小触控目标 48dp</td><td>01 改为 48dp，与 02、Kotlin 一致</td><td>—（待填写）</td></tr>
+            <tr><td>Chip</td><td>32dp</td><td>40px</td><td>分段选项实际 48dp</td><td>拆分两级：静态展示保留 32dp，可交互 Chip 新增 48dp 触控区（内边距扩展，视觉尺寸不变）</td><td>—（待填写）</td></tr>
+            <tr><td>缩略图比例</td><td>16∶9</td><td>16∶10 → 已修正为 16∶9</td><td>默认 16∶9</td><td>02 的 16∶10 是搭建时的笔误，已改为 16∶9，三处一致</td><td>—（待填写）</td></tr>
+            <tr><td>列表媒体行</td><td>72dp</td><td>未定义</td><td>104dp</td><td>01 改为 104dp，以 Kotlin 为准；缩略图预览同步放大到 142×80</td><td>—（待填写）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">这份矩阵只覆盖本轮核对到的 6 项。往后每当 01、02、Kotlin 三处出现新的数值分歧，都应该先加一行到这张表，再决定改哪一处——而不是直接改文档了事。</p>
+    </section>
+
+    <section class="showcase-section" id="scale">
+      <div class="section-heading">
+        <h2>类型阶 Type Scale</h2>
+        <p>改编自 Material 3 的 15 角色类型阶，按信息密度向下收紧一档；字重沿用既有的 620 / 650 / 660 / 670 语汇。点击任意规格可复制 CSS 变量。</p>
+      </div>
+      <div class="found-callout">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        <div><strong>为什么需要这份刻度</strong><span>审计《02-组件配色设计》发现其中散落着 19 种不同字号、9 种不同圆角，均为搭建过程中随手取值，没有统一刻度。这份文档定义的刻度将作为后续收紧 02 文档取值的依据。</span></div>
+      </div>
+      <div class="type-list" id="typeList"></div>
+      <div class="subheading">与 Kotlin 实现的落差</div>
+      <div class="found-callout">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        <div><strong>15 个设计角色，实现只配置了 12 个</strong><span>YingLiTheme.kt 里的 Typography 只覆盖了 12 个 Material 3 角色，字号也和这里不同。最可能被跳过的是 displayLarge / displayMedium / displaySmall——影里信息密度高，全屏级别的大字很少用到，这 3 个角色很可能从未被任何页面引用，直接用了 Material 3 默认值。这只是推测，需要对照 YingLiTheme.kt 实际字段确认，而不是当作结论。</span></div>
+      </div>
+      <p class="note">建议核对顺序：① 打开 YingLiTheme.kt，列出实际配置的 12 个角色；② 对照下方表格逐个确认字号是否要收敛到这里的刻度，还是这里的刻度要向实现让步；③ Display 三个角色如果确认未使用，从 Typography() 里去掉，不必强行配置摆设 Token。</p>
+    </section>
+
+    <section class="showcase-section" id="spacing">
+      <div class="section-heading">
+        <h2>间距 Spacing</h2>
+        <p>4dp 基线网格，11 级刻度。点击色条可复制变量。“边距”取页面/卡片级别的大间距档位，“间距”取元素之间的小间距档位，二者共用同一套刻度。</p>
+      </div>
+      <div class="spacing-list" id="spacingList"></div>
+      <p class="note"><strong>基线例外（明确允许，不是疏漏）：</strong>space-3xs 的 2dp 是光学微调，只用于图标与紧邻徽标这类视觉重心的贴合调整，不作为布局间距使用；分割线固定 1px，不随密度或刻度缩放。这两处不遵守 4 的倍数，是刻意的例外，而不是需要被"修正"到 4dp 网格上的漏项。</p>
+    </section>
+
+    <section class="showcase-section" id="radius">
+      <div class="section-heading">
+        <h2>圆角 Radius</h2>
+        <p>7 级刻度，从锐角到全圆角。播放画面本身及全屏内容使用 radius-none，不裁切视频画面。</p>
+      </div>
+      <div class="radius-list" id="radiusList"></div>
+      <p class="note">圆角映射见每级下方的用途说明（按钮/输入框→sm，卡片/下拉菜单→md，底部面板/对话框→lg，播放画面→none）。02 原型早于这套刻度搭建，里面仍散落着 3/5/6/7px 等未收敛的圆角值，这次只修正了明确的比例 bug（缩略图 16∶10 → 16∶9），逐组件收敛圆角到这套刻度是下一轮单独的工作，这里先不做。</p>
+      <p class="note">阴影 / Elevation：--shadow-1/2/3 由《02-组件配色设计》定义和维护，01 只消费这三个 Token 渲染自己的预览组件（如 FAB、导出面板），不重复定义 Elevation 层级，避免两处各写一套阴影值。</p>
+    </section>
+
+    <section class="showcase-section" id="layout">
+      <div class="section-heading">
+        <h2>布局网格 Layout Grid</h2>
+        <p>手机是唯一目标设备，不为平板 / 折叠屏单独设计——但同一部手机在横屏或分屏（Multi-window）时，窗口宽度会跨进 Medium / Expanded 区间，这是应用里真实存在、且已有测试覆盖的状态，不能用"竖屏锁定"一句话打发。</p>
+      </div>
+      <div class="found-callout">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        <div><strong>纠正上一版的简化</strong><span>上一版写"除播放页外锁定竖屏，不提供横屏版本"，这与实际实现不符——应用在非 Compact 窗口下会切换到 NavigationRail，且有测试专门覆盖 Expanded 状态。"手机是唯一目标设备"这个前提依然成立：没有为平板做专门优化；但窗口尺寸分级不是平板专属的概念，同一部手机横屏或分屏时，宽度一样会跨进 Medium / Expanded 区间，浏览类页面需要跟着响应，不只是播放页。</span></div>
+      </div>
+      <div class="subheading">窗口尺寸分级与导航切换</div>
+      <div class="matrix-wrap">
+        <table class="motion-table">
+          <thead><tr><th>窗口分级</th><th>宽度阈值</th><th>典型触发场景</th><th>一级导航</th></tr></thead>
+          <tbody>
+            <tr><td>Compact</td><td>&lt; 600dp</td><td>手机竖屏（绝大多数时间）</td><td>底部导航栏，80dp</td></tr>
+            <tr><td>Medium</td><td>600–839dp</td><td>手机横屏、分屏 Multi-window</td><td>NavigationRail，侧边</td></tr>
+            <tr><td>Expanded</td><td>≥ 840dp</td><td>大屏手机横屏、分屏展开</td><td>NavigationRail，侧边</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">3 项主导航（如"首页 / 视频 / 整理"）在 Compact 下等宽分布；达到 4 项时改为左对齐、图标+文字，避免等宽挤压导致触控区小于 48dp——这条规则需要和实际 <code>YingLiApp.kt</code> 的实现再核对一遍，这里先给出一个不违反触控基线的方向，不代表已confirm 的最终规则。</p>
+      <div class="bp-grid" id="bpGrid"></div>
+      <div class="subheading">安全边距、Edge-to-edge 与内容宽度</div>
+      <div class="matrix-wrap">
+        <table class="motion-table">
+          <thead><tr><th>场景</th><th>左右安全边距</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>Compact</td><td>16dp</td><td>内容撑满，随 NavigationBar/手势条走 safeDrawing 底部 inset</td></tr>
+            <tr><td>Medium / Expanded</td><td>24dp</td><td>NavigationRail 占用左侧固定宽度（80dp），内容区在剩余宽度内居中排布</td></tr>
+            <tr><td>播放页横屏</td><td>0，画面撑满安全区</td><td>沉浸式全屏，状态栏与导航栏自动隐藏，与窗口分级无关，播放页始终如此</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">媒体网格列数：<code>columns = floor((可用宽度 + 列间距) / (最小卡片宽度 + 列间距))</code>，最小卡片宽度取 150dp，列间距 8dp（紧凑）/ 12dp（标准）。Compact 竖屏通常落在 2 列，Medium 横屏 4 列左右，Expanded 5–6 列——具体以这条公式实时计算，而不是写死断点对应列数。</p>
+      <p class="note">播放页旋转：竖屏时标题栏、进度条、控制按钮为常规高度（见下节"横屏播放控制栏"）；转横屏后顶部栏隐藏，控制栏合并为沉浸式底部条，3 秒无操作后连同状态栏一起隐藏，点击画面唤出。</p>
+    </section>
+
+    <section class="showcase-section" id="components">
+      <div class="section-heading">
+        <h2>组件尺寸 Component Sizing</h2>
+        <p>触控目标最小 48×48dp，是 Android 无障碍基线，也是本套系统里除密集列表外几乎所有可点击元素的默认高度。手机模型按真实 360×780dp 屏幕比例做的，内部可滚动，装的是下面全部组件，不是单独截一张示意图。</p>
+      </div>
+      <div class="phone-model">
+        <div class="device">
+          <div class="screen">
+            <div class="camera"></div>
+            <div class="statusbar">
+              <span>9:41</span>
+              <div class="icons"><i class="ti ti-antenna-bars-5" aria-hidden="true"></i><i class="ti ti-wifi" aria-hidden="true"></i><i class="ti ti-battery-3" aria-hidden="true"></i></div>
+            </div>
+            <div class="model-appbar">
+              <div><strong>组件目录</strong><span>23 项 · 向下滚动查看全部</span></div>
+            </div>
+            <div class="model-scroll" id="compCatalog"></div>
+            <div class="home-indicator"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="states">
+      <div class="section-heading">
+        <h2>组件状态 States</h2>
+        <p>默认规则是：状态只叠加颜色层，不改变几何尺寸——hover / 按下 / 聚焦如果连带改变大小或位置，会让点击变得不可预测，列表也会跳动。</p>
+      </div>
+      <table class="motion-table">
+        <thead><tr><th>状态</th><th>几何变化</th><th>视觉变化</th></tr></thead>
+        <tbody>
+          <tr><td>默认 Default</td><td>—</td><td>组件基础样式</td></tr>
+          <tr><td>悬停 Hover</td><td>无</td><td>叠加 <code>--state-hover</code>（约 6% 不透明度）</td></tr>
+          <tr><td>按下 Pressed</td><td>无</td><td>叠加 <code>--state-pressed</code>（约 10% 不透明度）</td></tr>
+          <tr><td>聚焦 Focus</td><td>无</td><td><code>--focus-ring</code> 外描边，2dp 描边宽度，偏移 2dp</td></tr>
+          <tr><td>禁用 Disabled</td><td>无</td><td>前景替换为 <code>--text-disabled</code>，不叠加状态层（不可交互，不需要 hover/press 反馈）</td></tr>
+          <tr><td>加载 Loading</td><td>见下方例外</td><td>内容替换为骨架屏或 Spinner</td></tr>
+        </tbody>
+      </table>
+      <p class="note"><strong>唯一允许改变几何尺寸的例外：</strong>播放进度条滑块默认 12dp，拖拽时放大到 16dp，便于精确抓取（已在「组件尺寸」章节标注）。需要显示文字标签的场景用 Extended FAB（更宽的胶囊形状）承载，不是让默认 56dp 圆形 FAB 变形去塞文字。除此之外，任何组件在任何状态下的宽高都应该和默认态一致。</p>
+      <p class="note"><strong>骨架屏：</strong>占位块尺寸与真实内容完全一致（如缩略图骨架用 142×80，和「列表项（含缩略图）」的缩略图同尺寸），背景色 <code>--surface-component</code>，配合 duration-slow（300ms）的呼吸动画，不单独定义尺寸 Token。</p>
+    </section>
+
+    <section class="showcase-section" id="icons">
+      <div class="section-heading">
+        <h2>图标 Icon Sizes</h2>
+        <p>5 级刻度，24dp 为工具栏与按钮默认尺寸，与既有组件里 Tabler 图标的实际使用尺寸一致。</p>
+      </div>
+      <div class="icon-row" id="iconRow"></div>
+    </section>
+
+    <section class="showcase-section" id="motion">
+      <div class="section-heading">
+        <h2>动效 Motion</h2>
+        <p>时长与缓动曲线的最小集合，供状态切换、展开折叠与页面转场使用。悬停下方色块查看两种缓动的区别。</p>
+      </div>
+      <table class="motion-table">
+        <thead><tr><th>Token</th><th>值</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><code>--duration-fast</code></td><td>100ms</td><td>状态切换、涟漪反馈、勾选</td></tr>
+          <tr><td><code>--duration-medium</code></td><td>200ms</td><td>展开折叠、元素进出、Snackbar</td></tr>
+          <tr><td><code>--duration-slow</code></td><td>300ms</td><td>页面转场、共享元素动画</td></tr>
+          <tr><td><code>--easing-standard</code></td><td>cubic-bezier(.2,0,0,1)</td><td>默认曲线，覆盖大多数场景</td></tr>
+          <tr><td><code>--easing-emphasized</code></td><td>cubic-bezier(.3,0,.1,1)</td><td>大范围位移、强调性动作</td></tr>
+        </tbody>
+      </table>
+      <div class="motion-demo-row">
+        <div class="motion-demo"><div class="motion-box"></div><span>standard · 200ms</span></div>
+        <div class="motion-demo"><div class="motion-box emphasized"></div><span>emphasized · 300ms</span></div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="recipes">
+      <div class="section-heading">
+        <h2>页面配方 Page Recipes</h2>
+        <p>把前面的 Token 拼成六个真实页面。这里只列关键决策——页面边距、顶部区、区块间距、卡片/网格、导航形式、空态与加载态位置，不是逐像素还原，实际视觉细节以 02 的组件配色文档为准。</p>
+      </div>
+      <div class="recipe-grid" id="recipeGrid"></div>
+    </section>
+
+    <section class="showcase-section" id="android">
+      <div class="section-heading">
+        <h2>Android 落地与导出</h2>
+        <p>Compose 侧生成 YingLiTypography / YingLiShapes / YingLiComponentTokens；传统 View 侧提供 dimens.xml。对象命名已对齐实际项目里的 <code>core.designsystem.tokens.YingLiComponentTokens</code> 与 <code>YingLiShapes</code>，字段级别是否完全一致还需要你对照真实文件确认——这个环境读不到本地代码库。</p>
+      </div>
+      <div class="component-panel">
+        <div class="export-toolbar" role="group" aria-label="导出格式">
+          <button class="btn btn-secondary" type="button" data-export-view="compose" aria-pressed="true"><i class="ti ti-brand-kotlin" aria-hidden="true"></i>Compose</button>
+          <button class="btn btn-secondary" type="button" data-export-view="xml" aria-pressed="false">XML dimens</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-tonal" id="copyExport" type="button"><i class="ti ti-copy" aria-hidden="true"></i>复制</button>
+          <button class="btn btn-primary" id="downloadExport" type="button"><i class="ti ti-download" aria-hidden="true"></i>下载</button>
+        </div>
+        <pre class="code-preview" id="exportCode" tabindex="0" aria-label="导出代码"></pre>
+      </div>
+      <p class="note">未覆盖：Token 是否已在源码里实际使用、有没有被硬编码值绕开（比如代码里直接写 8.dp 而不是引用 Token）、命名是否与 CSS/Compose/XML 三端规则一致——这些需要跑一遍代码搜索才能回答，不是这份文档能替代的。</p>
+    </section>
+
+    <section class="showcase-section" id="checklist">
+      <div class="section-heading">
+        <h2>验收清单 Acceptance Checklist</h2>
+        <p>发布前过一遍，覆盖窗口分级、字体缩放、触控目标与 Token 使用一致性。多数项需要在真机或测试里验证，这里只列检查项，不代表已经跑过。</p>
+      </div>
+      <div class="type-list">
+        <div class="type-row" style="grid-template-columns:1fr"><div class="type-meta"><strong>响应式</strong><span>Compact / Medium / Expanded 三档截图核对；手机横屏与分屏各截一次</span></div></div>
+        <div class="type-row" style="grid-template-columns:1fr"><div class="type-meta"><strong>播放页</strong><span>竖屏 ↔ 横屏旋转前后，控制栏、标题、进度条位置正确；3 秒无操作后沉浸式隐藏</span></div></div>
+        <div class="type-row" style="grid-template-columns:1fr"><div class="type-meta"><strong>字体缩放</strong><span>系统字体大小 100% / 130% / 200% 下，各页面无文字截断或布局挤压</span></div></div>
+        <div class="type-row" style="grid-template-columns:1fr"><div class="type-meta"><strong>极端文本</strong><span>超长中文标题、超长英文文件名、深层路径名不溢出、不破坏布局</span></div></div>
+        <div class="type-row" style="grid-template-columns:1fr"><div class="type-meta"><strong>触控目标</strong><span>所有可点击元素（含视觉尺寸小于 48dp 的 Chip、图标按钮）触控区 ≥ 48×48dp</span></div></div>
+        <div class="type-row" style="grid-template-columns:1fr"><div class="type-meta"><strong>Token 一致性</strong><span>抽查间距 / 圆角 / 字号是否引用 Token，而非硬编码字面量（8.dp、12.dp 等）</span></div></div>
+        <div class="type-row" style="grid-template-columns:1fr"><div class="type-meta"><strong>动效</strong><span>过渡动画统一使用 duration/easing Token；系统开启"减弱动画"时相应降级</span></div></div>
+        <div class="type-row" style="grid-template-columns:1fr"><div class="type-meta"><strong>无障碍</strong><span>TalkBack 能读出所有交互元素的名称与状态</span></div></div>
+        <div class="type-row" style="grid-template-columns:1fr"><div class="type-meta"><strong>导出同步</strong><span>本页 Compose/XML 导出内容与源码实际 Token 值逐项核对，发现差异先回填到「Token 对齐矩阵」</span></div></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><i class="ti ti-check" aria-hidden="true"></i><span id="toastText">已复制</span></div>
+
+  <script>
+    const typeScale = [
+      ['display-l', 'Display Large', '空状态大数字、统计巨屏', '12,483'],
+      ['display-m', 'Display Medium', '引导页 / 首次启动标题', '欢迎回到影里'],
+      ['display-s', 'Display Small', '统计卡片大字', '已观看 128 部'],
+      ['headline-l', 'Headline Large', '首页问候语、页面主标题', '下午好'],
+      ['headline-m', 'Headline Medium', '底部表单 / 弹窗标题', '创建播放列表'],
+      ['headline-s', 'Headline Small', '区块标题', '最近添加'],
+      ['title-l', 'Title Large', '顶部栏标题、分组标题', '影里'],
+      ['title-m', 'Title Medium', '卡片标题、对话框标题', '混沌都市·第二季·第08集'],
+      ['title-s', 'Title Small', '次级标题、Tab', '本地文件夹'],
+      ['body-l', 'Body Large', '正文说明', '文件将从设备存储中删除，该操作无法撤销。'],
+      ['body-m', 'Body Medium', '列表次要信息', '上次播放到 24:36'],
+      ['body-s', 'Body Small', '时间戳、元数据', '2 小时前 · 1.2 GB'],
+      ['label-l', 'Label Large', '按钮文字', '确认删除'],
+      ['label-m', 'Label Medium', 'Chip、标签', '已看完'],
+      ['label-s', 'Label Small', '极小角标', '4K']
+    ];
+
+    const spacingScale = [
+      ['space-3xs', 2, '图标与紧邻徽标的贴合间距'],
+      ['space-2xs', 4, '图标与紧邻文字的间距、Chip 内部最小留白'],
+      ['space-xs', 8, '同组内相关元素间距，如按钮组、标签组内部'],
+      ['space-sm', 12, '卡片内小元素堆叠间距'],
+      ['space-md', 16, '卡片 / 列表项标准内边距，多数容器默认 padding'],
+      ['space-lg', 20, '区块内子分组之间的间距'],
+      ['space-xl', 24, '区块与区块之间的间距、手机页面左右安全边距'],
+      ['space-2xl', 32, '大区块分隔、空状态插画上下留白'],
+      ['space-3xl', 40, '页面顶部 / 底部大留白'],
+      ['space-4xl', 48, '与触控目标对齐的强调间距'],
+      ['space-5xl', 64, '空状态 / 引导页大留白']
+    ];
+
+    const radiusScale = [
+      ['radius-none', 0, '视频画面、全屏播放内容'],
+      ['radius-xs', 4, '小徽标、迷你 Chip 内部元素'],
+      ['radius-sm', 8, '标准按钮、输入框、缩略图、小卡片'],
+      ['radius-md', 12, '卡片、下拉菜单'],
+      ['radius-lg', 16, '大卡片、底部弹层顶部圆角、对话框'],
+      ['radius-xl', 24, '大型底部表单、大图容器'],
+      ['radius-full', 999, '胶囊按钮、圆形头像、播放按钮底']
+    ];
+
+    const pageRecipes = [
+      { icon: 'ti-home', name: '首页', preview: `
+        <div class="rp-body">
+          <div class="rp-label">下午好</div>
+          <div class="rp-line short"></div>
+          <div class="rp-hscroll">
+            <div class="rp-card"><div class="rp-thumb"></div></div>
+            <div class="rp-card"><div class="rp-thumb"></div></div>
+            <div class="rp-card"><div class="rp-thumb"></div></div>
+          </div>
+          <div class="rp-label" style="margin-top:4px">最近添加</div>
+          <div class="rp-grid2">
+            <div class="rp-thumb"></div><div class="rp-thumb"></div>
+          </div>
+        </div>
+        <div class="rp-nav"><i class="ti ti-home active" aria-hidden="true"></i><i class="ti ti-video" aria-hidden="true"></i><i class="ti ti-tags" aria-hidden="true"></i></div>`,
+        specs: [
+        ['边距', '16dp（Medium+ 24dp）'],
+        ['顶部区', '无固定 AppBar，问候语用 Headline Large，随滚动淡出'],
+        ['区块', '继续观看 → 最近添加 → 统计，区块间距 32dp'],
+        ['卡片', '继续观看横向滚动，卡片宽约 220dp，16∶9 缩略图'],
+        ['导航', 'Compact 底部导航 80dp / Medium+ NavigationRail'],
+        ['空态', '无观看记录时「继续观看」区块整体隐藏；媒体库为空时居中展示 + 「导入视频」'],
+        ['加载', '骨架卡片，尺寸与真实卡片一致']
+      ]},
+      { icon: 'ti-video', name: '视频库', preview: `
+        <div class="rp-appbar">视频库</div>
+        <div class="rp-body">
+          <div class="rp-chiprow">
+            <div class="rp-chip active">全部</div><div class="rp-chip">文件夹</div><div class="rp-chip">最近添加</div>
+          </div>
+          <div class="rp-grid2">
+            <div class="rp-thumb"></div><div class="rp-thumb"></div>
+            <div class="rp-thumb"></div><div class="rp-thumb"></div>
+          </div>
+        </div>
+        <div class="rp-nav"><i class="ti ti-home" aria-hidden="true"></i><i class="ti ti-video active" aria-hidden="true"></i><i class="ti ti-tags" aria-hidden="true"></i></div>`,
+        specs: [
+        ['边距', '16dp'],
+        ['顶部区', '64dp，标题 + 数量 + 处理中心/设置图标按钮'],
+        ['筛选', '搜索栏 48dp + Chip 行，Chip 触控区 48dp'],
+        ['卡片', '网格 / 列表 / 瀑布流三种视图；网格按列数公式，瀑布流 2 列不裁切原始比例'],
+        ['导航', '同首页'],
+        ['空态', '未找到视频，居中图标 + 「选择文件夹」'],
+        ['加载', '骨架网格或骨架行，随当前视图切换']
+      ]},
+      { icon: 'ti-tags', name: '整理页', preview: `
+        <div class="rp-appbar">整理</div>
+        <div class="rp-body">
+          <div class="rp-chiprow">
+            <div class="rp-chip active">收藏</div><div class="rp-chip">播放列表</div><div class="rp-chip">合集</div>
+          </div>
+          <div class="rp-listitem"><div class="rp-cover"></div><div class="rp-line" style="flex:1"></div></div>
+          <div class="rp-listitem"><div class="rp-cover"></div><div class="rp-line" style="flex:1"></div></div>
+          <div class="rp-listitem"><div class="rp-cover"></div><div class="rp-line" style="flex:1"></div></div>
+        </div>
+        <div class="rp-nav"><i class="ti ti-home" aria-hidden="true"></i><i class="ti ti-video" aria-hidden="true"></i><i class="ti ti-tags active" aria-hidden="true"></i></div>`,
+        specs: [
+        ['边距', '16dp'],
+        ['顶部区', '64dp'],
+        ['子导航', '分段控制器切换标签 / 收藏 / 播放列表 / 合集，40dp'],
+        ['列表', '单行 56dp + 左侧 40dp 方形封面（区别于视频缩略图的 16∶9 104dp 行）'],
+        ['区块', '分组间距 24dp'],
+        ['空态', '各子视图独立空态，如「还没有收藏」'],
+        ['加载', '骨架列表行']
+      ]},
+      { icon: 'ti-progress-check', name: '处理中心', preview: `
+        <div class="rp-appbar">处理中心</div>
+        <div class="rp-body">
+          <div class="rp-label">进行中</div>
+          <div class="rp-listitem" style="flex-direction:column;align-items:stretch;height:auto;gap:3px">
+            <div class="rp-line short"></div>
+            <div class="rp-progress"><span style="width:64%"></span></div>
+          </div>
+          <div class="rp-listitem" style="flex-direction:column;align-items:stretch;height:auto;gap:3px">
+            <div class="rp-line short"></div>
+            <div class="rp-progress"><span style="width:30%"></span></div>
+          </div>
+          <div class="rp-label" style="margin-top:4px">已完成</div>
+          <div class="rp-listitem"><div class="rp-line" style="flex:1"></div><div class="rp-chip">完成</div></div>
+        </div>
+        <div class="rp-nav"><i class="ti ti-home" aria-hidden="true"></i><i class="ti ti-video" aria-hidden="true"></i><i class="ti ti-tags" aria-hidden="true"></i></div>`,
+        specs: [
+        ['边距', '16dp'],
+        ['顶部区', '64dp + 「清空已完成」'],
+        ['列表', '任务卡片：4dp 进度条 + 状态 Chip（info/success/error）+ 文件名'],
+        ['区块', '按进行中 / 已完成 / 失败分组，组间 24dp，组内 8dp'],
+        ['空态', '「没有进行中的任务」'],
+        ['加载', '不用骨架屏，任务列表实时更新']
+      ]},
+      { icon: 'ti-settings', name: '设置页', preview: `
+        <div class="rp-appbar">设置</div>
+        <div class="rp-body">
+          <div class="rp-label">播放</div>
+          <div class="rp-listitem"><div class="rp-line" style="flex:1"></div><div class="rp-switch"></div></div>
+          <div class="rp-listitem"><div class="rp-line" style="flex:1"></div><div class="rp-switch"></div></div>
+          <div class="rp-label" style="margin-top:4px">安全</div>
+          <div class="rp-listitem"><div class="rp-line" style="flex:1"></div><div class="rp-switch"></div></div>
+        </div>
+        <div class="rp-nav"><i class="ti ti-home" aria-hidden="true"></i><i class="ti ti-video" aria-hidden="true"></i><i class="ti ti-tags" aria-hidden="true"></i></div>`,
+        specs: [
+        ['边距', '16dp'],
+        ['顶部区', '64dp'],
+        ['分组', '组标题 Label Large + 8dp 间距，组内列表项 56dp'],
+        ['控件', '开关 52×32dp，靠右对齐'],
+        ['区块', '分组间距 24dp'],
+        ['空态 / 加载', '不适用，静态配置页']
+      ]},
+      { icon: 'ti-player-play', name: '播放页', preview: `
+        <div class="rp-canvas"><i class="ti ti-player-play-filled" aria-hidden="true"></i></div>
+        <div class="rp-body">
+          <div class="rp-line short"></div>
+          <div class="rp-line" style="width:80%"></div>
+          <div class="rp-line" style="width:60%"></div>
+        </div>
+        <div class="rp-nav" style="justify-content:center;gap:10px">
+          <i class="ti ti-player-skip-back" aria-hidden="true"></i><i class="ti ti-player-pause-filled active" aria-hidden="true"></i><i class="ti ti-player-skip-forward" aria-hidden="true"></i>
+        </div>`,
+        specs: [
+        ['边距', '竖屏信息区 16dp / 横屏 0'],
+        ['顶部区', '竖屏 64dp 返回+标题；横屏隐藏，沉浸式'],
+        ['控制栏', '72dp，进度条拖拽 12→16dp'],
+        ['信息区', '画面下方标题/简介/字幕轨道，可滚动，与画面间距 16dp'],
+        ['导航', '无底部导航，全屏优先'],
+        ['加载', '画面区显示 Spinner，控制栏保持可见但按钮禁用']
+      ]}
+    ];
+
+    const breakpoints = [
+      { name: 'Compact', width: '< 600dp', type: 'grid-nav', cols: 2, desc: '手机竖屏 · 视频网格 2 列 · 底部导航' },
+      { name: 'Medium / Expanded', width: '600–930dp', type: 'grid-rail', cols: 4, desc: '手机横屏 / 分屏 · 视频网格 4 列 · NavigationRail' },
+      { name: '播放页横屏', width: '640–930dp', type: 'player', desc: '仅播放页 · 沉浸式全屏 · 与窗口分级无关，恒定隐藏导航' }
+    ];
+
+    const iconSizes = [
+      ['icon-xs', 16, '密集列表内联小图标'],
+      ['icon-sm', 20, '次级操作图标'],
+      ['icon-md', 24, '工具栏 / 按钮默认图标'],
+      ['icon-lg', 28, '强调图标'],
+      ['icon-xl', 32, '空状态大图标']
+    ];
+
+    const toast = document.getElementById('toast');
+    const toastText = document.getElementById('toastText');
+    let toastTimer;
+    let activeExportView = 'compose';
+
+    function showToast(message, icon = 'ti-check') {
+      toast.querySelector('i').className = `ti ${icon}`;
+      toastText.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    async function copyText(value, label = value) {
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch (_) {
+        const area = document.createElement('textarea');
+        area.value = value;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+      }
+      showToast(`已复制 ${label}`);
+    }
+
+    function renderTypeScale() {
+      const list = document.getElementById('typeList');
+      list.innerHTML = typeScale.map(([slug, label, usage, sample]) => `
+        <div class="type-row">
+          <div class="type-meta"><strong>${label}</strong><span>${usage}</span></div>
+          <div class="type-sample" style="font-size:var(--type-${slug}-size);line-height:var(--type-${slug}-line);font-weight:var(--type-${slug}-weight)">${sample}</div>
+          <div class="type-specs">
+            <button class="spec-chip" type="button" data-copy="--type-${slug}-size" data-label="--type-${slug}-size">Size ${getComputedStyle(document.documentElement).getPropertyValue(`--type-${slug}-size`).trim()}</button>
+            <button class="spec-chip" type="button" data-copy="--type-${slug}-line" data-label="--type-${slug}-line">Line ${getComputedStyle(document.documentElement).getPropertyValue(`--type-${slug}-line`).trim()}</button>
+            <button class="spec-chip" type="button" data-copy="--type-${slug}-weight" data-label="--type-${slug}-weight">Weight ${getComputedStyle(document.documentElement).getPropertyValue(`--type-${slug}-weight`).trim()}</button>
+          </div>
+        </div>`).join('');
+      list.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.copy, button.dataset.label)));
+    }
+
+    function renderSpacing() {
+      const list = document.getElementById('spacingList');
+      const max = spacingScale[spacingScale.length - 1][1];
+      list.innerHTML = spacingScale.map(([token, value, usage]) => `
+        <div class="spacing-row">
+          <div class="spacing-label"><strong>--${token}</strong><span>${value}dp</span></div>
+          <div class="spacing-track"><div class="spacing-bar" style="width:${(value / max * 100).toFixed(1)}%" data-copy="var(--${token})" data-label="--${token}" title="复制 var(--${token})"></div></div>
+          <div class="spacing-usage">${usage}</div>
+        </div>`).join('');
+      list.querySelectorAll('[data-copy]').forEach(bar => bar.addEventListener('click', () => copyText(bar.dataset.copy, bar.dataset.label)));
+    }
+
+    function renderRadius() {
+      const list = document.getElementById('radiusList');
+      list.innerHTML = radiusScale.map(([token, value, usage]) => `
+        <div class="radius-item">
+          <div class="radius-box" style="border-radius:${value >= 999 ? '999px' : value + 'px'}" data-copy="var(--${token})" data-label="--${token}" title="复制 var(--${token})"></div>
+          <strong>${value}${value >= 999 ? '' : 'dp'}</strong>
+          <span>${usage}</span>
+        </div>`).join('');
+      list.querySelectorAll('[data-copy]').forEach(box => box.addEventListener('click', () => copyText(box.dataset.copy, box.dataset.label)));
+    }
+
+    function renderPageRecipes() {
+      const grid = document.getElementById('recipeGrid');
+      grid.innerHTML = pageRecipes.map(page => `
+        <div class="recipe-card">
+          <div class="recipe-head"><i class="ti ${page.icon}" aria-hidden="true"></i><strong>${page.name}</strong></div>
+          <div class="recipe-preview">${page.preview}</div>
+          <dl class="recipe-specs">${page.specs.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>
+        </div>`).join('');
+    }
+
+    function renderBreakpoints() {
+      const grid = document.getElementById('bpGrid');
+      grid.innerHTML = breakpoints.map(bp => {
+        const cellGrid = `<div class="bp-cols" style="grid-template-columns:repeat(${bp.cols},minmax(0,1fr))">${Array.from({ length: bp.cols * 3 }).map(() => '<div class="bp-cell"></div>').join('')}</div>`;
+        let frame;
+        if (bp.type === 'player') frame = '<div class="bp-player"><i class="ti ti-player-play-filled" aria-hidden="true"></i></div>';
+        else if (bp.type === 'grid-rail') frame = `<div class="bp-rail-layout"><div class="bp-rail"><i class="ti ti-home"></i><i class="ti ti-video"></i><i class="ti ti-tags"></i></div>${cellGrid}</div>`;
+        else frame = cellGrid;
+        const foot = bp.type === 'player' ? '<span>画面 16∶9，撑满可用宽度</span>' : `<span>缩略图 16∶9</span><span>媒体网格 ${bp.cols} 列</span>`;
+        return `
+        <div class="bp-card">
+          <div class="bp-head"><strong>${bp.name}</strong><span>${bp.desc}</span></div>
+          <div class="bp-frame ${bp.type === 'player' ? 'is-player' : ''}">${frame}</div>
+          <div class="bp-foot"><span>可用宽度 ${bp.width}</span>${foot}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderIcons() {
+      const row = document.getElementById('iconRow');
+      row.innerHTML = iconSizes.map(([token, value, usage]) => `
+        <div class="icon-item"><i class="ti ti-player-play" style="font-size:${value}px" aria-hidden="true"></i><span>${token} · ${value}dp</span></div>`).join('')
+        + iconSizes.map(() => '').join('');
+      // 附加用途说明作为 title
+      row.querySelectorAll('.icon-item').forEach((item, index) => { item.title = iconSizes[index][2]; });
+    }
+
+    function renderComponents() {
+      const list = document.getElementById('compCatalog');
+      const rows = [
+        { label: '触控目标最小', token: '--size-touch-min', value: '48×48dp', note: 'Android 无障碍基线，一切可点击元素不得小于此值', preview: '<div class="touch-demo"></div>' },
+        { label: '底部导航栏', token: '--size-bottom-nav', value: '80dp', note: '含图标 + Label 双行', bleed: true, preview: '<div class="mini-bottomnav" style="height:var(--size-bottom-nav)"><div class="active"><i class="ti ti-home"></i></div><div><i class="ti ti-movie"></i></div><div><i class="ti ti-folder"></i></div></div>' },
+        { label: '顶部应用栏', token: '--size-topbar', value: '64dp', note: '横屏播放页无顶部栏，沉浸式全屏', bleed: true, preview: '<div class="mini-topbar" style="height:var(--size-topbar)">影里</div>' },
+        { label: '按钮（默认）', token: '--size-button-default', value: '48dp', note: '与触控目标对齐，是 02 文档里 .btn 的实际高度', preview: '<button class="mini-btn" style="height:var(--size-button-default)">确认删除</button>' },
+        { label: '按钮（紧凑）', token: '--size-button-compact', value: '40dp', note: '密集列表内联操作、次级场景', preview: '<button class="mini-btn compact ghost" style="height:var(--size-button-compact)">重命名</button>' },
+        { label: '图标按钮', token: '--size-icon-button', value: '48dp 触控区 / 24dp 图标', note: '', preview: '<button class="mini-icon-btn" style="width:var(--size-icon-button);height:var(--size-icon-button)"><i class="ti ti-dots-vertical"></i></button>' },
+        { label: '输入框', token: '--size-input', value: '48dp', note: '', preview: '<div class="mini-input" style="height:var(--size-input)">搜索本地视频</div>' },
+        { label: '列表项（单行）', token: '--size-list-single', value: '56dp', note: '仅文字，无缩略图', preview: '<div class="mini-list-item" style="height:var(--size-list-single)"><div class="lines"><b>本地文件夹</b></div></div>' },
+        { label: '列表项（含缩略图）', token: '--size-list-media', value: '104dp', note: '视频列表默认行高', preview: '<div class="mini-list-item" style="height:var(--size-list-media)"><div class="thumb"></div><div class="lines"><b>混沌都市·第08集</b><span>24:36 · 1.2 GB</span></div></div>' },
+        { label: 'Chip（静态展示）', token: '--size-chip', value: '32dp', note: '仅展示状态，不可点击', preview: '<span class="mini-chip" style="height:var(--size-chip)">已看完</span>' },
+        { label: 'Chip（可点击/筛选）', token: '--size-chip-touch', value: '32dp 视觉高度 · 48dp 触控区', note: '筛选、分段选项等可交互 Chip，视觉不变但触控区通过内边距扩展到 48dp', preview: '<div class="chip-touch-wrap"><span class="mini-chip" style="height:var(--size-chip)">文件夹</span></div>' },
+        { label: '视频缩略图卡片', token: 'radius-sm', value: '16∶9，圆角 8dp', note: '360dp 屏宽、16dp 边距、8dp 列间距下的真实 2 列宽度', preview: '<div class="mini-thumb-row"><div class="mini-thumb-card"><div class="thumb"><span class="dur">24:36</span></div><b>混沌都市·第08集</b></div><div class="mini-thumb-card"><div class="thumb"><span class="dur">18:02</span></div><b>星海回响·第03集</b></div></div>' },
+        { label: '播放进度条', token: '--size-seekbar-track / -thumb', value: '4dp 轨道 · 12dp 滑块', note: '拖拽时滑块放大到 16dp，便于抓取', preview: '<div class="mini-seekbar"><div class="track"><div class="fill"></div><div class="thumb"></div></div></div>' },
+        { label: '横屏播放控制栏', token: '--size-player-bar', value: '72dp', note: '仅横屏播放页使用', bleed: true, preview: '<div class="mini-player-bar"><i class="ti ti-player-pause-filled"></i><div class="mini-seekbar"><div class="track"><div class="fill"></div><div class="thumb"></div></div></div><span>24:36</span></div>' },
+        { label: '悬浮操作按钮 FAB', token: '--size-fab', value: '56dp，图标 24dp', note: '如「新建播放列表」', preview: '<button class="mini-fab"><i class="ti ti-plus"></i></button>' },
+        { label: '开关 Switch', token: '--size-switch-w / -h', value: '52×32dp', note: '设置页开关项', preview: '<div class="mini-switch"></div>' },
+        { label: '视图切换分段控制器', token: '--size-segmented', value: '40dp', note: '网格 / 列表视图切换', preview: '<div class="mini-segmented"><span class="seg active">网格</span><span class="seg">列表</span></div>' },
+        { label: '角标 Badge', token: '--size-badge-dot', value: '8dp 圆点 · 16dp 数字角标', note: '未读 / 新增提示', preview: '<div style="display:flex;gap:24px"><div class="mini-badge-wrap"><i class="ti ti-bell" style="font-size:var(--icon-md)"></i><div class="mini-badge-dot"></div></div><div class="mini-badge-wrap"><i class="ti ti-folder" style="font-size:var(--icon-md)"></i><div class="mini-badge-count">3</div></div></div>' },
+        { label: '分割线 Divider', token: '—', value: '1px 定宽，不随密度缩放', note: '列表分组、卡片内分隔', preview: '<div class="mini-divider"></div>' },
+        { label: '对话框 Dialog', token: '--size-dialog-margin', value: '左右边距 32dp，内边距 24dp', note: '圆角 radius-lg 16dp；标题→正文 12dp，正文→按钮 24dp，按钮间 8dp', preview: '<div class="mini-dialog"><h5>永久删除？</h5><p>此操作无法撤销，文件将从设备上永久移除。</p><div class="actions"><button type="button">取消</button><button class="primary" type="button">永久删除</button></div></div>' },
+        { label: 'Snackbar', token: '--size-touch-min', value: '48dp，两侧边距 16dp', note: '圆角 radius-sm 8dp，背景用反色 surface-inverse；两行文案+操作时可到约 68dp', preview: '<div class="mini-snackbar"><span>已移入回收站</span><span class="action">撤销</span></div>' },
+        { label: '底部弹层 Bottom Sheet', token: '--size-sheet-handle-w / -h', value: '拖拽把手 32×4dp，顶部圆角 radius-lg 16dp', note: '大型表单场景用 radius-xl 24dp；列表项高度与菜单一致，48dp', bleed: true, preview: '<div class="mini-sheet"><div class="handle"></div><div class="item"><i class="ti ti-share" aria-hidden="true"></i>分享</div><div class="item"><i class="ti ti-pencil" aria-hidden="true"></i>重命名</div><div class="item"><i class="ti ti-trash" aria-hidden="true"></i>移入回收站</div></div>' },
+        { label: '下拉菜单 Menu', token: '--size-menu-item', value: '列表项 48dp，圆角 radius-md 12dp', note: '宽度按内容自适应，不是固定 Token', preview: '<div class="mini-menu"><div class="item"><i class="ti ti-folder-symlink" aria-hidden="true"></i>移动到</div><div class="item"><i class="ti ti-pencil" aria-hidden="true"></i>重命名</div><div class="item"><i class="ti ti-trash" aria-hidden="true"></i>移入回收站</div></div>' }
+      ];
+      list.innerHTML = rows.map(row => `
+        <div class="catalog-item${row.bleed ? ' is-bleed' : ''}">
+          <div class="catalog-label"><span>${row.label}</span><code>${row.value}</code></div>
+          <div class="catalog-demo">${row.preview}</div>
+          ${row.note ? `<p class="catalog-note">${row.note}</p>` : ''}
+        </div>`).join('');
+    }
+
+    const m3ParamNames = {
+      'display-l': 'displayLarge', 'display-m': 'displayMedium', 'display-s': 'displaySmall',
+      'headline-l': 'headlineLarge', 'headline-m': 'headlineMedium', 'headline-s': 'headlineSmall',
+      'title-l': 'titleLarge', 'title-m': 'titleMedium', 'title-s': 'titleSmall',
+      'body-l': 'bodyLarge', 'body-m': 'bodyMedium', 'body-s': 'bodySmall',
+      'label-l': 'labelLarge', 'label-m': 'labelMedium', 'label-s': 'labelSmall'
+    };
+
+    const sizeScale = [
+      ['touch-min', 'touchMin'], ['bottom-nav', 'bottomNav'], ['topbar', 'topBar'],
+      ['button-default', 'buttonDefault'], ['button-compact', 'buttonCompact'], ['icon-button', 'iconButton'], ['input', 'input'],
+      ['list-single', 'listSingle'], ['list-media', 'listMedia'], ['chip', 'chip'], ['chip-touch', 'chipTouch'],
+      ['fab', 'fab'], ['switch-w', 'switchWidth'], ['switch-h', 'switchHeight'], ['segmented', 'segmented'],
+      ['badge-dot', 'badgeDot'], ['seekbar-track', 'seekbarTrack'], ['seekbar-thumb', 'seekbarThumb'], ['player-bar', 'playerBar'],
+      ['dialog-margin', 'dialogMargin'], ['sheet-handle-w', 'sheetHandleWidth'], ['sheet-handle-h', 'sheetHandleHeight'], ['menu-item', 'menuItem']
+    ];
+
+    function buildComposeExport() {
+      const typeLines = typeScale.map(([slug, label]) => {
+        const param = m3ParamNames[slug];
+        return `    ${param} = TextStyle(fontSize = ${getComputedStyle(document.documentElement).getPropertyValue(`--type-${slug}-size`).trim().replace('px', '')}.sp, lineHeight = ${getComputedStyle(document.documentElement).getPropertyValue(`--type-${slug}-line`).trim().replace('px', '')}.sp, fontWeight = FontWeight(${getComputedStyle(document.documentElement).getPropertyValue(`--type-${slug}-weight`).trim()}), letterSpacing = 0.sp), // ${label}`;
+      }).join('\n');
+      const spacingLines = spacingScale.map(([token, value]) => `    val ${token.replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase())} = ${value}.dp`).join('\n');
+      const radiusLines = radiusScale.map(([token, value]) => `    val ${token.replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase())} = ${value >= 999 ? '50.dp // capped — Compose clips to min(width,height)/2, no need for a literal 999' : value + '.dp'}`).join('\n');
+      const sizeLines = sizeScale.map(([cssSuffix, camel]) => {
+        const px = getComputedStyle(document.documentElement).getPropertyValue(`--size-${cssSuffix}`).trim().replace('px', '');
+        return `    val ${camel} = ${px}.dp`;
+      }).join('\n');
+      return `// 命名对齐现有 seeyuer.yingli.player.core.designsystem.tokens.YingLiComponentTokens / YingLiShapes\n// 字段需与实际文件核对，这里只保证与本页 Token 刻度一致\nimport androidx.compose.material3.Typography\nimport androidx.compose.ui.text.TextStyle\nimport androidx.compose.ui.text.font.FontWeight\nimport androidx.compose.ui.unit.dp\nimport androidx.compose.ui.unit.sp\n\nval YingLiTypography = Typography(\n${typeLines}\n)\n\nobject YingLiShapes {\n${radiusLines}\n}\n\nobject YingLiComponentTokens {\n${spacingLines}\n${sizeLines}\n}\n`;
+    }
+
+    function xmlName(name) {
+      return `yingli_${name.replace(/-/g, '_')}`;
+    }
+
+    function buildXmlExport() {
+      const lines = [];
+      lines.push('    <!-- Type scale -->');
+      typeScale.forEach(([slug]) => {
+        const size = getComputedStyle(document.documentElement).getPropertyValue(`--type-${slug}-size`).trim().replace('px', 'sp');
+        const line = getComputedStyle(document.documentElement).getPropertyValue(`--type-${slug}-line`).trim().replace('px', 'sp');
+        lines.push(`    <dimen name="${xmlName('type_' + slug + '_size')}">${size}</dimen>`);
+        lines.push(`    <dimen name="${xmlName('type_' + slug + '_line')}">${line}</dimen>`);
+      });
+      lines.push('    <!-- Spacing -->');
+      spacingScale.forEach(([token, value]) => lines.push(`    <dimen name="${xmlName(token)}">${value}dp</dimen>`));
+      lines.push('    <!-- Radius -->');
+      radiusScale.forEach(([token, value]) => lines.push(`    <dimen name="${xmlName(token)}">${value >= 999 ? 999 : value}dp</dimen>`));
+      lines.push('    <!-- Component sizing -->');
+      sizeScale.forEach(([cssSuffix]) => {
+        const dp = getComputedStyle(document.documentElement).getPropertyValue(`--size-${cssSuffix}`).trim().replace('px', 'dp');
+        lines.push(`    <dimen name="${xmlName('size-' + cssSuffix)}">${dp}</dimen>`);
+      });
+      return `<?xml version="1.0" encoding="utf-8"?>\n<!-- res/values/dimens.xml -->\n<resources>\n${lines.join('\n')}\n</resources>\n`;
+    }
+
+    function currentExport() {
+      if (activeExportView === 'xml') return { content: buildXmlExport(), filename: 'dimens.xml', type: 'application/xml' };
+      return { content: buildComposeExport(), filename: 'YingLiLayoutSystem.kt', type: 'text/plain' };
+    }
+
+    function renderExport() {
+      document.getElementById('exportCode').textContent = currentExport().content;
+    }
+
+    function downloadText(content, filename, type) {
+      const url = URL.createObjectURL(new Blob([content], { type }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast(`已导出 ${filename}`, 'ti-download');
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    function applyTheme(mode) {
+      const dark = mode === 'dark' || (mode === 'system' && mediaQuery.matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.dataset.themeChoice = mode;
+      document.querySelectorAll('[data-theme-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeMode === mode)));
+    }
+    document.querySelectorAll('[data-theme-mode]').forEach(button => button.addEventListener('click', () => applyTheme(button.dataset.themeMode)));
+    mediaQuery.addEventListener('change', () => {
+      if (document.documentElement.dataset.themeChoice === 'system') applyTheme('system');
+    });
+
+    document.querySelectorAll('[data-export-view]').forEach(button => button.addEventListener('click', () => {
+      activeExportView = button.dataset.exportView;
+      document.querySelectorAll('[data-export-view]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      renderExport();
+    }));
+    document.getElementById('copyExport').addEventListener('click', () => {
+      const file = currentExport();
+      copyText(file.content, file.filename);
+    });
+    document.getElementById('downloadExport').addEventListener('click', () => {
+      const file = currentExport();
+      downloadText(file.content, file.filename, file.type);
+    });
+
+    applyTheme('system');
+    renderTypeScale();
+    renderSpacing();
+    renderRadius();
+    renderBreakpoints();
+    renderIcons();
+    renderComponents();
+    renderPageRecipes();
+    renderExport();
+  </script>
+</body>
+</html>

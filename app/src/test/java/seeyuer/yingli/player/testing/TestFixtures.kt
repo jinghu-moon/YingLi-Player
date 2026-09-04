@@ -7,6 +7,7 @@ import seeyuer.yingli.player.core.foundation.AppLogRecord
 import seeyuer.yingli.player.core.foundation.AppLogSink
 import seeyuer.yingli.player.core.foundation.AppLogger
 import seeyuer.yingli.player.core.foundation.DefaultAppContainer
+import seeyuer.yingli.player.core.foundation.RollingDiagnosticLogStore
 import seeyuer.yingli.player.core.foundation.IdGenerator
 import seeyuer.yingli.player.core.foundation.RedactingAppLogger
 import seeyuer.yingli.player.core.foundation.SensitiveValueRedactor
@@ -62,12 +63,12 @@ class FakeThemeRepository(
     private val mutableSettings = MutableStateFlow(initial)
     override val settings: Flow<AppearanceSettings> = mutableSettings
 
-    override suspend fun setThemePreference(preference: ThemePreference) {
-        mutableSettings.value = mutableSettings.value.copy(themePreference = preference)
+    override suspend fun update(transform: (AppearanceSettings) -> AppearanceSettings) {
+        mutableSettings.value = transform(mutableSettings.value)
     }
 
-    override suspend fun setDynamicColorEnabled(enabled: Boolean) {
-        mutableSettings.value = mutableSettings.value.copy(dynamicColorEnabled = enabled)
+    override suspend fun setThemePreference(preference: ThemePreference) {
+        mutableSettings.value = mutableSettings.value.copy(themePreference = preference)
     }
 
     override suspend fun setProcessingPinned(pinned: Boolean) {
@@ -91,6 +92,7 @@ class AppContainerFixtureBuilder : FixtureBuilder<AppContainer> {
             clock = clock,
             idGenerator = idGenerator,
             logger = logger,
+            diagnosticLogStore = RollingDiagnosticLogStore(),
             failureMapper = failureMapper,
             themeRepository = themeRepository,
         )

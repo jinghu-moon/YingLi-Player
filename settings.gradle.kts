@@ -16,6 +16,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "YingLi-Player"
 include(":app")
+include(":benchmark")
 
 gradle.beforeProject {
     pluginManager.withPlugin("org.jetbrains.kotlin.android") {

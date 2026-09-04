@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,14 +31,20 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -60,17 +68,31 @@ import seeyuer.yingli.player.domain.navigation.RootDestination
 import seeyuer.yingli.player.domain.playback.PlaybackSourceContext
 import seeyuer.yingli.player.domain.playback.PlaybackRecoveryAction
 import seeyuer.yingli.player.domain.playback.PlaybackState
-import seeyuer.yingli.player.feature.home.HomeScreen
-import seeyuer.yingli.player.feature.library.LibraryScreen
+import seeyuer.yingli.player.domain.playback.PlayerPreferences
+import seeyuer.yingli.player.feature.home.HomeRoute
+import seeyuer.yingli.player.feature.home.HomeViewModel
+import seeyuer.yingli.player.feature.library.LibraryRoute
+import seeyuer.yingli.player.feature.library.LibraryViewModel
 import seeyuer.yingli.player.feature.library.MediaLibraryEffect
 import seeyuer.yingli.player.feature.library.MediaLibraryUiState
 import seeyuer.yingli.player.feature.library.MediaLibraryViewModel
-import seeyuer.yingli.player.feature.organize.OrganizeScreen
-import seeyuer.yingli.player.feature.processing.ProcessingScreen
+import seeyuer.yingli.player.feature.organize.OrganizeRoute
+import seeyuer.yingli.player.feature.organize.OrganizeViewModel
+import seeyuer.yingli.player.feature.processing.ProcessingRoute
+import seeyuer.yingli.player.feature.processing.ProcessingViewModel
 import seeyuer.yingli.player.feature.player.PlayerScreen
 import seeyuer.yingli.player.feature.player.PlayerViewModel
 import seeyuer.yingli.player.feature.player.MiniPlayerBar
 import seeyuer.yingli.player.feature.settings.SettingsScreen
+import seeyuer.yingli.player.feature.settings.SettingsEffect
+import seeyuer.yingli.player.feature.settings.SettingsToolActions
+import seeyuer.yingli.player.feature.settings.SettingsViewModel
+import seeyuer.yingli.player.feature.settings.SecuritySettingsActions
+import seeyuer.yingli.player.feature.security.AppLockRoute
+import seeyuer.yingli.player.feature.security.SecurityViewModel
+import seeyuer.yingli.player.feature.security.VaultRoute
+import seeyuer.yingli.player.feature.security.VaultViewModel
+import seeyuer.yingli.player.domain.security.VaultItemId
 
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
@@ -78,10 +100,23 @@ fun YingLiApp(
     viewModel: YingLiAppViewModel,
     mediaLibraryViewModel: MediaLibraryViewModel,
     playerViewModel: PlayerViewModel,
+    libraryViewModel: LibraryViewModel,
+    organizeViewModel: OrganizeViewModel,
+    homeViewModel: HomeViewModel,
+    settingsViewModel: SettingsViewModel,
+    processingViewModel: ProcessingViewModel,
+    securityViewModel: SecurityViewModel,
+    vaultViewModel: VaultViewModel,
     windowWidthSizeClass: WindowWidthSizeClass,
     videoSurface: @Composable () -> Unit,
+    onToggleOrientation: () -> Unit = {},
+    onSecureContentChanged: (Boolean) -> Unit = {},
+    onSecureSessionLocked: () -> Unit = {},
+    biometricAvailable: Boolean = false,
+    onBiometricUnlock: () -> Unit = {},
 ) {
     val settings by viewModel.appearanceSettings.collectAsStateWithLifecycle()
+    val securityState by securityViewModel.state.collectAsStateWithLifecycle()
     val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
     val darkTheme = when (settings.themePreference) {
         ThemePreference.LIGHT -> false
@@ -98,7 +133,30 @@ fun YingLiApp(
     val safLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         mediaLibraryViewModel.onSafTreeSelected(uri?.toString())
     }
+    val backupCreateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) {
+        settingsViewModel.onDocumentCreated(it?.toString())
+    }
+    val diagnosticsCreateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) {
+        settingsViewModel.onDocumentCreated(it?.toString())
+    }
+    val backupOpenLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
+        settingsViewModel.onRestoreDocumentSelected(it?.toString())
+    }
+    val vaultImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        vaultViewModel.import(uri?.toString())
+    }
+    var pendingVaultExport by remember { mutableStateOf<VaultItemId?>(null) }
+    val vaultExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
+        pendingVaultExport?.let { itemId -> vaultViewModel.export(itemId, uri?.toString()) }
+        pendingVaultExport = null
+    }
     LaunchedEffect(mediaLibraryViewModel) {
+        mediaLibraryViewModel.initialize()
         mediaLibraryViewModel.effect.collect { effect ->
             when (effect) {
                 MediaLibraryEffect.OpenAllFilesSettings -> allFilesLauncher.launch(Intent(
@@ -110,16 +168,44 @@ fun YingLiApp(
             }
         }
     }
+    LaunchedEffect(settingsViewModel) {
+        settingsViewModel.effect.collect { effect ->
+            when (effect) {
+                is SettingsEffect.CreateDocument -> if (effect.mimeType == "application/json") {
+                    backupCreateLauncher.launch(effect.displayName)
+                } else {
+                    diagnosticsCreateLauncher.launch(effect.displayName)
+                }
+                SettingsEffect.OpenBackupDocument -> backupOpenLauncher.launch(arrayOf("application/json", "text/json"))
+            }
+        }
+    }
 
-    YingLiTheme(
-        darkTheme = darkTheme,
-        dynamicColor = settings.dynamicColorEnabled,
-    ) {
+    if (securityState.locked) {
+        YingLiTheme(darkTheme = darkTheme) {
+            SideEffect {
+                onSecureContentChanged(true)
+                onSecureSessionLocked()
+            }
+            YingLiSystemBars(if (darkTheme) SystemBarMode.DARK_APP else SystemBarMode.LIGHT_APP)
+            AppLockRoute(securityViewModel, onBiometric = onBiometricUnlock)
+        }
+        return
+    }
+
+    YingLiTheme(darkTheme = darkTheme) {
         val navigationState by viewModel.navigationState.collectAsStateWithLifecycle()
         val mediaState by mediaLibraryViewModel.state.collectAsStateWithLifecycle()
         val playerState by playerViewModel.state.collectAsStateWithLifecycle()
+        val settingsToolsState by settingsViewModel.state.collectAsStateWithLifecycle()
+        SideEffect {
+            onSecureContentChanged(
+                navigationState.currentRoute == AppRoute.Vault || navigationState.currentRoute is AppRoute.VaultPlayer,
+            )
+        }
         val systemBarMode = when {
-            navigationState.currentRoute is AppRoute.Player -> SystemBarMode.PLAYER
+            navigationState.currentRoute is AppRoute.Player || navigationState.currentRoute is AppRoute.VaultPlayer ->
+                SystemBarMode.PLAYER
             darkTheme -> SystemBarMode.DARK_APP
             else -> SystemBarMode.LIGHT_APP
         }
@@ -128,14 +214,56 @@ fun YingLiApp(
         AdaptiveAppShell(
             navigationState = navigationState,
             settings = settings,
+            playerPreferences = playerState.preferences,
             windowWidthSizeClass = windowWidthSizeClass,
             onRootSelected = viewModel::selectRoot,
             onGlobalAction = viewModel::openGlobalAction,
             onBack = viewModel::navigateBack,
             onThemePreferenceChanged = viewModel::setThemePreference,
-            onDynamicColorChanged = viewModel::setDynamicColorEnabled,
             onProcessingPinnedChanged = viewModel::setProcessingPinned,
+            onMiniPlayerChanged = playerViewModel::setMiniPlayerEnabled,
+            onAutoPipChanged = playerViewModel::setAutoPictureInPicture,
+            settingsTools = SettingsToolActions(
+                state = settingsToolsState,
+                onLibraryLayoutChanged = viewModel::setLibraryLayout,
+                onThumbnailScaleChanged = viewModel::setThumbnailScale,
+                onTrashRetentionDaysChanged = viewModel::setTrashRetentionDays,
+                onBackupSelectionChanged = settingsViewModel::setSelection,
+                onBackup = settingsViewModel::requestBackup,
+                onRestore = settingsViewModel::requestRestore,
+                onConfirmRestore = settingsViewModel::confirmRestore,
+                onDismissRestore = settingsViewModel::dismissRestorePreview,
+                onDiagnostics = settingsViewModel::requestDiagnostics,
+                onCheckUpdates = settingsViewModel::checkForUpdates,
+                onOpenRelease = { url -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
+            ),
+            securitySettings = SecuritySettingsActions(
+                lockEnabled = securityState.enabled,
+                statusCode = securityState.statusCode,
+                onEnablePin = securityViewModel::enablePin,
+                onDisableLock = securityViewModel::disable,
+                biometricAvailable = biometricAvailable,
+                onEnableBiometric = securityViewModel::enableBiometric,
+                onOpenVault = viewModel::openVault,
+            ),
+            processingViewModel = processingViewModel,
+            vaultViewModel = vaultViewModel,
+            onVaultImport = { vaultImportLauncher.launch(arrayOf("video/*")) },
+            onVaultPlay = { viewModel.openVaultPlayer(it.value) },
+            onVaultExport = { itemId ->
+                pendingVaultExport = itemId
+                vaultExportLauncher.launch("YingLi-vault-export.mp4")
+            },
+            onOpenProcessingOutput = { token ->
+                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(Uri.parse(token), "video/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                })
+            },
             mediaState = mediaState,
+            libraryViewModel = libraryViewModel,
+            organizeViewModel = organizeViewModel,
+            homeViewModel = homeViewModel,
             onRecommendedSource = mediaLibraryViewModel::addRecommendedSource,
             onSafSource = mediaLibraryViewModel::addSafSource,
             onSkipMediaOnboarding = mediaLibraryViewModel::skipOnboarding,
@@ -169,6 +297,46 @@ fun YingLiApp(
                         }
                     },
                     videoSurface = videoSurface,
+                    onSeekBackward = { playerViewModel.seekBackward() },
+                    onSeekForward = { playerViewModel.seekForward() },
+                    onToggleOverlay = playerViewModel::toggleOverlay,
+                    onToggleLock = playerViewModel::toggleLock,
+                    onSetSpeed = { playerViewModel.setSpeed(it) },
+                    onSetScaleMode = { playerViewModel.setScaleMode(it) },
+                    onSelectAudioTrack = { playerViewModel.selectAudioTrack(it) },
+                    onSelectSubtitleTrack = { playerViewModel.selectSubtitleTrack(it) },
+                    onPictureInPicture = { playerViewModel.enterPictureInPicture() },
+                    onScreenshot = playerViewModel::captureScreenshot,
+                    onToggleOrientation = onToggleOrientation,
+                )
+            },
+            vaultPlayerContent = { route, onBack ->
+                val vaultTitle = stringResource(R.string.vault_title)
+                LaunchedEffect(route.itemId) { playerViewModel.openVault(route.itemId, vaultTitle) }
+                DisposableEffect(route.itemId) {
+                    onDispose(playerViewModel::closeVault)
+                }
+                PlayerScreen(
+                    state = playerState,
+                    onBack = onBack,
+                    onPlay = { playerViewModel.play() },
+                    onPause = { playerViewModel.pause() },
+                    onSeek = playerViewModel::seekTo,
+                    onReplay = { playerViewModel.replay() },
+                    onRetry = { playerViewModel.retry() },
+                    onRecovery = { onBack() },
+                    videoSurface = videoSurface,
+                    onSeekBackward = { playerViewModel.seekBackward() },
+                    onSeekForward = { playerViewModel.seekForward() },
+                    onToggleOverlay = playerViewModel::toggleOverlay,
+                    onToggleLock = playerViewModel::toggleLock,
+                    onSetSpeed = { playerViewModel.setSpeed(it) },
+                    onSetScaleMode = { playerViewModel.setScaleMode(it) },
+                    onSelectAudioTrack = { playerViewModel.selectAudioTrack(it) },
+                    onSelectSubtitleTrack = { playerViewModel.selectSubtitleTrack(it) },
+                    onToggleOrientation = onToggleOrientation,
+                    allowPictureInPicture = false,
+                    allowScreenshot = false,
                 )
             },
             miniPlayerContent = {
@@ -176,7 +344,10 @@ fun YingLiApp(
                 if (mediaId != null &&
                     playerState.playback !is PlaybackState.Idle &&
                     playerState.playback !is PlaybackState.Failed &&
+                    playerState.preferences.miniPlayerEnabled &&
                     navigationState.currentRoute !is AppRoute.Player
+                    && navigationState.currentRoute !is AppRoute.VaultPlayer
+                    && navigationState.currentRoute != AppRoute.Vault
                 ) {
                     MiniPlayerBar(
                         state = playerState,
@@ -204,14 +375,27 @@ private fun mediaReadPermissions(): Array<String> = when {
 internal fun AdaptiveAppShell(
     navigationState: NavigationState,
     settings: AppearanceSettings,
+    playerPreferences: PlayerPreferences = PlayerPreferences(),
     windowWidthSizeClass: WindowWidthSizeClass,
     onRootSelected: (RootDestination) -> Unit,
     onGlobalAction: (GlobalAppAction) -> Unit,
     onBack: () -> Unit,
     onThemePreferenceChanged: (ThemePreference) -> Unit,
-    onDynamicColorChanged: (Boolean) -> Unit,
     onProcessingPinnedChanged: (Boolean) -> Unit,
+    onMiniPlayerChanged: (Boolean) -> Unit = {},
+    onAutoPipChanged: (Boolean) -> Unit = {},
+    settingsTools: SettingsToolActions = SettingsToolActions(),
+    securitySettings: SecuritySettingsActions = SecuritySettingsActions(),
+    processingViewModel: ProcessingViewModel? = null,
+    vaultViewModel: VaultViewModel? = null,
+    onVaultImport: () -> Unit = {},
+    onVaultPlay: (VaultItemId) -> Unit = {},
+    onVaultExport: (VaultItemId) -> Unit = {},
+    onOpenProcessingOutput: (String) -> Unit = {},
     mediaState: MediaLibraryUiState = MediaLibraryUiState(onboarding = false),
+    libraryViewModel: LibraryViewModel? = null,
+    organizeViewModel: OrganizeViewModel? = null,
+    homeViewModel: HomeViewModel? = null,
     onRecommendedSource: () -> Unit = {},
     onSafSource: () -> Unit = {},
     onSkipMediaOnboarding: () -> Unit = {},
@@ -220,13 +404,17 @@ internal fun AdaptiveAppShell(
     playerContent: @Composable (AppRoute.Player, () -> Unit) -> Unit = { _, onBack ->
         FullScreenPlayerPlaceholder(onBack)
     },
+    vaultPlayerContent: @Composable (AppRoute.VaultPlayer, () -> Unit) -> Unit = { _, onBack ->
+        FullScreenPlayerPlaceholder(onBack)
+    },
     miniPlayerContent: @Composable () -> Unit = {},
 ) {
-    val usesNavigationRail = windowWidthSizeClass != WindowWidthSizeClass.Compact
+    val mediaOnboarding = navigationState.currentRoute == AppRoute.Root(RootDestination.HOME) && mediaState.onboarding
+    val usesNavigationRail = !mediaOnboarding && windowWidthSizeClass != WindowWidthSizeClass.Compact
     val destinations = navigationState.primaryDestinations
 
     if (!navigationState.showPrimaryNavigation) {
-        FullScreenRoute(navigationState.currentRoute, onBack, playerContent)
+        FullScreenRoute(navigationState.currentRoute, onBack, playerContent, vaultPlayerContent)
         return
     }
 
@@ -236,16 +424,32 @@ internal fun AdaptiveAppShell(
                 destinations = destinations,
                 selected = navigationState.currentRoot,
                 onSelected = onRootSelected,
+                settingsSelected = navigationState.currentRoute == AppRoute.Settings,
+                onSettingsSelected = { onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
             )
             AppScaffold(
                 navigationState = navigationState,
                 settings = settings,
+                playerPreferences = playerPreferences,
                 onGlobalAction = onGlobalAction,
                 onBack = onBack,
                 onThemePreferenceChanged = onThemePreferenceChanged,
-                onDynamicColorChanged = onDynamicColorChanged,
                 onProcessingPinnedChanged = onProcessingPinnedChanged,
+                onMiniPlayerChanged = onMiniPlayerChanged,
+                onAutoPipChanged = onAutoPipChanged,
+                settingsTools = settingsTools,
+                securitySettings = securitySettings,
+                processingViewModel = processingViewModel,
+                vaultViewModel = vaultViewModel,
+                onVaultImport = onVaultImport,
+                onVaultPlay = onVaultPlay,
+                onVaultExport = onVaultExport,
+                onOpenProcessingOutput = onOpenProcessingOutput,
                 mediaState = mediaState,
+                libraryViewModel = libraryViewModel,
+                organizeViewModel = organizeViewModel,
+                homeViewModel = homeViewModel,
+                libraryIsWide = usesNavigationRail,
                 onRecommendedSource = onRecommendedSource,
                 onSafSource = onSafSource,
                 onSkipMediaOnboarding = onSkipMediaOnboarding,
@@ -259,12 +463,26 @@ internal fun AdaptiveAppShell(
         AppScaffold(
             navigationState = navigationState,
             settings = settings,
+            playerPreferences = playerPreferences,
             onGlobalAction = onGlobalAction,
             onBack = onBack,
             onThemePreferenceChanged = onThemePreferenceChanged,
-            onDynamicColorChanged = onDynamicColorChanged,
             onProcessingPinnedChanged = onProcessingPinnedChanged,
+            onMiniPlayerChanged = onMiniPlayerChanged,
+            onAutoPipChanged = onAutoPipChanged,
+            settingsTools = settingsTools,
+            securitySettings = securitySettings,
+            processingViewModel = processingViewModel,
+            vaultViewModel = vaultViewModel,
+            onVaultImport = onVaultImport,
+            onVaultPlay = onVaultPlay,
+            onVaultExport = onVaultExport,
+            onOpenProcessingOutput = onOpenProcessingOutput,
             mediaState = mediaState,
+            libraryViewModel = libraryViewModel,
+            organizeViewModel = organizeViewModel,
+            homeViewModel = homeViewModel,
+            libraryIsWide = usesNavigationRail,
             onRecommendedSource = onRecommendedSource,
             onSafSource = onSafSource,
             onSkipMediaOnboarding = onSkipMediaOnboarding,
@@ -277,6 +495,8 @@ internal fun AdaptiveAppShell(
                     destinations = destinations,
                     selected = navigationState.currentRoot,
                     onSelected = onRootSelected,
+                    settingsSelected = navigationState.currentRoute == AppRoute.Settings,
+                    onSettingsSelected = { onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
                 )
                 }
             },
@@ -289,12 +509,26 @@ internal fun AdaptiveAppShell(
 private fun AppScaffold(
     navigationState: NavigationState,
     settings: AppearanceSettings,
+    playerPreferences: PlayerPreferences,
     onGlobalAction: (GlobalAppAction) -> Unit,
     onBack: () -> Unit,
     onThemePreferenceChanged: (ThemePreference) -> Unit,
-    onDynamicColorChanged: (Boolean) -> Unit,
     onProcessingPinnedChanged: (Boolean) -> Unit,
+    onMiniPlayerChanged: (Boolean) -> Unit,
+    onAutoPipChanged: (Boolean) -> Unit,
+    settingsTools: SettingsToolActions,
+    securitySettings: SecuritySettingsActions,
+    processingViewModel: ProcessingViewModel?,
+    vaultViewModel: VaultViewModel?,
+    onVaultImport: () -> Unit,
+    onVaultPlay: (VaultItemId) -> Unit,
+    onVaultExport: (VaultItemId) -> Unit,
+    onOpenProcessingOutput: (String) -> Unit,
     mediaState: MediaLibraryUiState,
+    libraryViewModel: LibraryViewModel?,
+    organizeViewModel: OrganizeViewModel?,
+    homeViewModel: HomeViewModel?,
+    libraryIsWide: Boolean,
     onRecommendedSource: () -> Unit,
     onSafSource: () -> Unit,
     onSkipMediaOnboarding: () -> Unit,
@@ -304,12 +538,34 @@ private fun AppScaffold(
     bottomBar: @Composable () -> Unit = {},
 ) {
     val route = navigationState.currentRoute
+    val mediaOnboarding = route == AppRoute.Root(RootDestination.HOME) && mediaState.onboarding
+    var homeSearchExpanded by remember(route) { mutableStateOf(false) }
+    var homeSearchQuery by remember(route) { mutableStateOf("") }
     Scaffold(
         modifier = modifier,
         containerColor = YingLiTheme.colors.page,
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text(route.title()) },
+            if (mediaOnboarding) {
+                androidx.compose.material3.TopAppBar(
+                    title = { Text(stringResource(R.string.app_name)) },
+                )
+            } else CenterAlignedTopAppBar(
+                title = {
+                    if (route == AppRoute.Root(RootDestination.HOME) && homeSearchExpanded) {
+                        OutlinedTextField(
+                            value = homeSearchQuery,
+                            onValueChange = {
+                                homeSearchQuery = it
+                                homeViewModel?.setKeyword(it)
+                            },
+                            placeholder = { Text(stringResource(R.string.library_search)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        Text(route.title())
+                    }
+                },
                 navigationIcon = {
                     if (navigationState.canNavigateBack) {
                         YingLiIconButton(
@@ -327,25 +583,52 @@ private fun AppScaffold(
                             onClick = { onGlobalAction(GlobalAppAction.OPEN_PROCESSING) },
                         )
                     }
-                    if (route != AppRoute.Settings) {
+                    if (route == AppRoute.Root(RootDestination.HOME)) {
                         YingLiIconButton(
-                            icon = YingLiIcon.SETTINGS,
-                            contentDescription = stringResource(R.string.action_open_settings),
-                            onClick = { onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
+                            icon = if (homeSearchExpanded) YingLiIcon.BACK else YingLiIcon.SEARCH,
+                            contentDescription = stringResource(R.string.library_search),
+                            onClick = {
+                                homeSearchExpanded = !homeSearchExpanded
+                                if (!homeSearchExpanded) {
+                                    homeSearchQuery = ""
+                                    homeViewModel?.setKeyword("")
+                                }
+                            },
+                        )
+                    }
+                    if (route == AppRoute.Root(RootDestination.LIBRARY)) {
+                        YingLiIconButton(
+                            icon = YingLiIcon.OVERFLOW,
+                            contentDescription = stringResource(R.string.library_view_settings),
+                            onClick = { libraryViewModel?.toggleFilterPanel() },
                         )
                     }
                 },
             )
         },
-        bottomBar = bottomBar,
+        bottomBar = if (mediaOnboarding) ({}) else bottomBar,
     ) { padding ->
         RouteContent(
             route = route,
             settings = settings,
+            playerPreferences = playerPreferences,
             onThemePreferenceChanged = onThemePreferenceChanged,
-            onDynamicColorChanged = onDynamicColorChanged,
             onProcessingPinnedChanged = onProcessingPinnedChanged,
+            onMiniPlayerChanged = onMiniPlayerChanged,
+            onAutoPipChanged = onAutoPipChanged,
+            settingsTools = settingsTools,
+            securitySettings = securitySettings,
+            processingViewModel = processingViewModel,
+            vaultViewModel = vaultViewModel,
+            onVaultImport = onVaultImport,
+            onVaultPlay = onVaultPlay,
+            onVaultExport = onVaultExport,
+            onOpenProcessingOutput = onOpenProcessingOutput,
             mediaState = mediaState,
+            libraryViewModel = libraryViewModel,
+            organizeViewModel = organizeViewModel,
+            homeViewModel = homeViewModel,
+            libraryIsWide = libraryIsWide,
             onRecommendedSource = onRecommendedSource,
             onSafSource = onSafSource,
             onSkipMediaOnboarding = onSkipMediaOnboarding,
@@ -360,10 +643,24 @@ private fun AppScaffold(
 private fun RouteContent(
     route: AppRoute,
     settings: AppearanceSettings,
+    playerPreferences: PlayerPreferences,
     onThemePreferenceChanged: (ThemePreference) -> Unit,
-    onDynamicColorChanged: (Boolean) -> Unit,
     onProcessingPinnedChanged: (Boolean) -> Unit,
+    onMiniPlayerChanged: (Boolean) -> Unit,
+    onAutoPipChanged: (Boolean) -> Unit,
+    settingsTools: SettingsToolActions,
+    securitySettings: SecuritySettingsActions,
+    processingViewModel: ProcessingViewModel?,
+    vaultViewModel: VaultViewModel?,
+    onVaultImport: () -> Unit,
+    onVaultPlay: (VaultItemId) -> Unit,
+    onVaultExport: (VaultItemId) -> Unit,
+    onOpenProcessingOutput: (String) -> Unit,
     mediaState: MediaLibraryUiState,
+    libraryViewModel: LibraryViewModel?,
+    organizeViewModel: OrganizeViewModel?,
+    homeViewModel: HomeViewModel?,
+    libraryIsWide: Boolean,
     onRecommendedSource: () -> Unit,
     onSafSource: () -> Unit,
     onSkipMediaOnboarding: () -> Unit,
@@ -372,35 +669,69 @@ private fun RouteContent(
     modifier: Modifier = Modifier,
 ) {
     when (route) {
-        AppRoute.Processing, AppRoute.Root(RootDestination.PROCESSING) -> ProcessingScreen(modifier)
+        AppRoute.Processing, AppRoute.Root(RootDestination.PROCESSING) -> processingViewModel?.let {
+            ProcessingRoute(it, onOpenProcessingOutput, modifier)
+        } ?: ProcessingPlaceholder(modifier)
         AppRoute.Settings -> SettingsScreen(
             settings = settings,
             onThemePreferenceChanged = onThemePreferenceChanged,
-            onDynamicColorChanged = onDynamicColorChanged,
             onProcessingPinnedChanged = onProcessingPinnedChanged,
+            playerPreferences = playerPreferences,
+            onMiniPlayerChanged = onMiniPlayerChanged,
+            onAutoPipChanged = onAutoPipChanged,
+            tools = settingsTools,
+            security = securitySettings,
             modifier = modifier,
         )
+        AppRoute.Vault -> vaultViewModel?.let {
+            VaultRoute(it, onVaultImport, onVaultPlay, onVaultExport, modifier)
+        } ?: YingLiEmptyState(
+            title = stringResource(R.string.vault_empty_title),
+            message = stringResource(R.string.vault_empty_message),
+            modifier = modifier.fillMaxSize(),
+        )
         is AppRoute.Root -> when (route.destination) {
-            RootDestination.HOME -> HomeScreen(
-                mediaState,
-                onRecommendedSource,
-                onSafSource,
-                onSkipMediaOnboarding,
-                onRescan,
-                modifier,
-                onMediaSelected,
-            )
-            RootDestination.LIBRARY -> LibraryScreen(modifier)
-            RootDestination.ORGANIZE -> OrganizeScreen(modifier)
-            RootDestination.PROCESSING -> ProcessingScreen(modifier)
+            RootDestination.HOME -> homeViewModel?.let { viewModel ->
+                HomeRoute(
+                    mediaState,
+                    viewModel,
+                    onRecommendedSource,
+                    onSafSource,
+                    onSkipMediaOnboarding,
+                    onRescan,
+                    onMediaSelected,
+                    modifier,
+                )
+            } ?: Unit
+            RootDestination.LIBRARY -> libraryViewModel?.let { viewModel ->
+                LibraryRoute(
+                    viewModel = viewModel,
+                    isWide = libraryIsWide,
+                    onMediaSelected = onMediaSelected,
+                    modifier = modifier,
+                )
+            } ?: Unit
+            RootDestination.ORGANIZE -> organizeViewModel?.let { OrganizeRoute(it, modifier) } ?: Unit
+            RootDestination.PROCESSING -> processingViewModel?.let {
+                ProcessingRoute(it, onOpenProcessingOutput, modifier)
+            } ?: ProcessingPlaceholder(modifier)
         }
         is AppRoute.Detail -> YingLiEmptyState(
             title = stringResource(R.string.detail_title),
             message = stringResource(R.string.detail_placeholder),
             modifier = modifier.fillMaxSize(),
         )
-        is AppRoute.Player, AppRoute.AppLock -> FullScreenRoute(route, onBack = {})
+        is AppRoute.Player, is AppRoute.VaultPlayer, AppRoute.AppLock -> FullScreenRoute(route, onBack = {})
     }
+}
+
+@Composable
+private fun ProcessingPlaceholder(modifier: Modifier = Modifier) {
+    YingLiEmptyState(
+        title = stringResource(R.string.processing_empty_title),
+        message = stringResource(R.string.processing_empty_message),
+        modifier = modifier.fillMaxSize(),
+    )
 }
 
 @Composable
@@ -410,9 +741,13 @@ private fun FullScreenRoute(
     playerContent: @Composable (AppRoute.Player, () -> Unit) -> Unit = { _, back ->
         FullScreenPlayerPlaceholder(back)
     },
+    vaultPlayerContent: @Composable (AppRoute.VaultPlayer, () -> Unit) -> Unit = { _, back ->
+        FullScreenPlayerPlaceholder(back)
+    },
 ) {
     when (route) {
         is AppRoute.Player -> playerContent(route, onBack)
+        is AppRoute.VaultPlayer -> vaultPlayerContent(route, onBack)
         AppRoute.AppLock -> Surface(
             modifier = Modifier.fillMaxSize(),
             color = YingLiTheme.colors.page,
@@ -467,6 +802,8 @@ private fun PrimaryBottomNavigation(
     destinations: List<RootDestination>,
     selected: RootDestination,
     onSelected: (RootDestination) -> Unit,
+    settingsSelected: Boolean,
+    onSettingsSelected: () -> Unit,
 ) {
     NavigationBar(
         modifier = Modifier
@@ -477,7 +814,7 @@ private fun PrimaryBottomNavigation(
         destinations.forEach { destination ->
             val label = destination.label()
             NavigationBarItem(
-                selected = destination == selected,
+                selected = destination == selected && !settingsSelected,
                 onClick = { onSelected(destination) },
                 icon = {
                     Icon(
@@ -496,6 +833,25 @@ private fun PrimaryBottomNavigation(
                 ),
             )
         }
+        NavigationBarItem(
+            selected = settingsSelected,
+            onClick = onSettingsSelected,
+            icon = {
+                Icon(
+                    imageVector = YingLiIcon.SETTINGS.imageVector,
+                    contentDescription = stringResource(R.string.nav_settings),
+                    modifier = Modifier.size(YingLiTheme.components.iconSize),
+                )
+            },
+            label = { Text(stringResource(R.string.nav_settings), maxLines = 1) },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = YingLiTheme.colors.selectionOnStructural,
+                selectedTextColor = YingLiTheme.colors.textPrimary,
+                indicatorColor = YingLiTheme.colors.selectionStructural,
+                unselectedIconColor = YingLiTheme.colors.textSecondary,
+                unselectedTextColor = YingLiTheme.colors.textSecondary,
+            ),
+        )
     }
 }
 
@@ -504,6 +860,8 @@ private fun PrimaryNavigationRail(
     destinations: List<RootDestination>,
     selected: RootDestination,
     onSelected: (RootDestination) -> Unit,
+    settingsSelected: Boolean,
+    onSettingsSelected: () -> Unit,
 ) {
     NavigationRail(
         modifier = Modifier
@@ -515,7 +873,7 @@ private fun PrimaryNavigationRail(
         destinations.forEach { destination ->
             val label = destination.label()
             NavigationRailItem(
-                selected = destination == selected,
+                selected = destination == selected && !settingsSelected,
                 onClick = { onSelected(destination) },
                 icon = {
                     Icon(
@@ -534,6 +892,26 @@ private fun PrimaryNavigationRail(
                 ),
             )
         }
+        Spacer(Modifier.weight(1f))
+        NavigationRailItem(
+            selected = settingsSelected,
+            onClick = onSettingsSelected,
+            icon = {
+                Icon(
+                    imageVector = YingLiIcon.SETTINGS.imageVector,
+                    contentDescription = stringResource(R.string.nav_settings),
+                    modifier = Modifier.size(YingLiTheme.components.iconSize),
+                )
+            },
+            label = { Text(stringResource(R.string.nav_settings), maxLines = 1) },
+            colors = NavigationRailItemDefaults.colors(
+                selectedIconColor = YingLiTheme.colors.selectionOnStructural,
+                selectedTextColor = YingLiTheme.colors.textPrimary,
+                indicatorColor = YingLiTheme.colors.selectionStructural,
+                unselectedIconColor = YingLiTheme.colors.textSecondary,
+                unselectedTextColor = YingLiTheme.colors.textSecondary,
+            ),
+        )
     }
 }
 
@@ -559,8 +937,10 @@ private fun AppRoute.title(): String = when (this) {
     is AppRoute.Root -> destination.label()
     AppRoute.Processing -> stringResource(R.string.nav_processing)
     AppRoute.Settings -> stringResource(R.string.nav_settings)
+    AppRoute.Vault -> stringResource(R.string.vault_title)
     is AppRoute.Detail -> stringResource(R.string.detail_title)
     is AppRoute.Player -> stringResource(R.string.player_placeholder)
+    is AppRoute.VaultPlayer -> stringResource(R.string.vault_title)
     AppRoute.AppLock -> stringResource(R.string.app_lock_title)
 }
 

@@ -64,6 +64,9 @@ interface MediaCatalogDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTags(tags: List<MediaTagEntity>)
 
+    @Query("DELETE FROM media_tags WHERE tag = :tag")
+    suspend fun deleteTagValue(tag: String)
+
     @Query("SELECT COUNT(DISTINCT media_item_locations.mediaItemId) FROM media_item_locations INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId WHERE media_locations.sourceId = :sourceId AND media_locations.missingScanCount = 0")
     suspend fun availableItemCount(sourceId: String): Int
 

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import seeyuer.yingli.player.core.datastore.AppearanceSettings
 import seeyuer.yingli.player.core.datastore.ThemePreference
+import seeyuer.yingli.player.core.datastore.LibraryLayoutPreference
 import seeyuer.yingli.player.core.datastore.ThemeRepository
 import seeyuer.yingli.player.domain.navigation.GlobalAppAction
 import seeyuer.yingli.player.domain.navigation.NavigationState
@@ -47,18 +48,44 @@ class YingLiAppViewModel(
 
     fun openPlayer(mediaId: String) = navigationStore.openPlayer(mediaId)
 
+    fun openVault() = navigationStore.openVault()
+
+    fun openVaultPlayer(itemId: String) = navigationStore.openVaultPlayer(itemId)
+
     fun navigateBack(): Boolean = navigationStore.navigateBack()
 
     fun setThemePreference(preference: ThemePreference) {
         viewModelScope.launch { themeRepository.setThemePreference(preference) }
     }
 
-    fun setDynamicColorEnabled(enabled: Boolean) {
-        viewModelScope.launch { themeRepository.setDynamicColorEnabled(enabled) }
-    }
-
     fun setProcessingPinned(pinned: Boolean) {
         viewModelScope.launch { themeRepository.setProcessingPinned(pinned) }
+    }
+
+    fun setLibraryLayout(layout: LibraryLayoutPreference) {
+        viewModelScope.launch { themeRepository.update { it.copy(libraryLayout = layout) } }
+    }
+
+    fun setThumbnailScale(scale: Float) {
+        viewModelScope.launch {
+            themeRepository.update {
+                it.copy(thumbnailScale = scale.coerceIn(
+                    AppearanceSettings.MIN_THUMBNAIL_SCALE,
+                    AppearanceSettings.MAX_THUMBNAIL_SCALE,
+                ))
+            }
+        }
+    }
+
+    fun setTrashRetentionDays(days: Int) {
+        viewModelScope.launch {
+            themeRepository.update {
+                it.copy(trashRetentionDays = days.coerceIn(
+                    AppearanceSettings.MIN_TRASH_RETENTION_DAYS,
+                    AppearanceSettings.MAX_TRASH_RETENTION_DAYS,
+                ))
+            }
+        }
     }
 
     companion object {

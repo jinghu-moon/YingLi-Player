@@ -11,7 +11,7 @@ class YingLiIconTest {
         val fallbacks = YingLiIcon.entries.filter { it.provider == IconProvider.MATERIAL_FALLBACK }
 
         assertTrue(tablerIcons.size > fallbacks.size)
-        assertEquals(listOf(YingLiIcon.DYNAMIC_COLOR), fallbacks)
+        assertEquals(emptyList<YingLiIcon>(), fallbacks)
     }
 
     @Test

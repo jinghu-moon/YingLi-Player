@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-theme-choice="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>影里 · 空状态与异常状态设计</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --neutral-0: #ffffff; --neutral-50: #fafafa; --neutral-100: #f5f5f5; --neutral-200: #eeeeee;
+      --neutral-300: #e0e0e0; --neutral-400: #c7c7c7; --neutral-500: #a3a3a3; --neutral-600: #737373;
+      --neutral-700: #525252; --neutral-800: #333333; --neutral-900: #1f1f1f; --neutral-950: #121212;
+
+      --page: var(--neutral-100); --surface: var(--neutral-0); --surface-subtle: var(--neutral-50);
+      --surface-component: var(--neutral-200); --surface-inverse: var(--neutral-950);
+      --text-primary: var(--neutral-900); --text-secondary: var(--neutral-700); --text-disabled: var(--neutral-500); --text-inverse: var(--neutral-0);
+      --border-divider: var(--neutral-200); --border-default: var(--neutral-300); --border-control: var(--neutral-600);
+      --action-primary: var(--neutral-900); --action-primary-hover: var(--neutral-800); --action-on-primary: var(--neutral-0);
+      --warning: #b37622; --warning-container: #f3e2c3;
+      --error: #c75146; --error-container: #f6dad7;
+      --shadow-1: 0 1px 2px rgb(0 0 0 / 0.08), 0 6px 20px rgb(0 0 0 / 0.06);
+      --shadow-2: 0 12px 36px rgb(0 0 0 / 0.16); --shadow-3: 0 20px 56px rgb(0 0 0 / 0.2);
+
+      --type-headline-s-size: 19px; --type-headline-s-line: 26px; --type-headline-s-weight: 650;
+      --type-title-l-size: 17px; --type-title-l-line: 24px; --type-title-l-weight: 620;
+      --type-title-m-size: 15px; --type-title-m-line: 22px; --type-title-m-weight: 620;
+      --type-body-m-size: 13px; --type-body-m-line: 20px; --type-body-m-weight: 400;
+      --type-body-s-size: 12px; --type-body-s-line: 18px; --type-body-s-weight: 400;
+
+      --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 20px; --space-xl: 24px;
+      --icon-xl: 32px; --size-touch-min: 48px; --size-button-default: 48px;
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --page: #0f0f0f; --surface: #171717; --surface-subtle: #1f1f1f; --surface-component: #292929; --surface-inverse: var(--neutral-100);
+      --text-primary: #f5f5f5; --text-secondary: #b8b8b8; --text-disabled: #5f5f5f; --text-inverse: var(--neutral-950);
+      --border-divider: #292929; --border-default: #353535; --border-control: #707070;
+      --action-primary: var(--neutral-100); --action-primary-hover: var(--neutral-0); --action-on-primary: var(--neutral-950);
+      --warning: #f7c44d; --warning-container: #4a3311;
+      --error: #f5aaa3; --error-container: #5c2c27;
+      --shadow-1: 0 1px 2px rgb(0 0 0 / 0.28), 0 8px 24px rgb(0 0 0 / 0.24);
+      --shadow-2: 0 12px 40px rgb(0 0 0 / 0.48); --shadow-3: 0 18px 56px rgb(0 0 0 / .55);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; min-width: 320px; background: var(--page); color: var(--text-primary); font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif; letter-spacing: 0; }
+    button { font: inherit; letter-spacing: 0; color: inherit; }
+    ::selection { background: rgb(71 123 148 / .28); }
+    * { scrollbar-color: var(--neutral-500) transparent; scrollbar-width: thin; }
+
+    .topbar { position: sticky; z-index: 30; top: 0; min-height: 72px; display: flex; align-items: center; gap: 20px; padding: 12px max(20px, calc((100vw - 1440px) / 2)); border-bottom: 1px solid var(--border-divider); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(16px); }
+    .brand { min-width: 220px; }
+    .brand strong { display: block; font-size: 17px; font-weight: 650; }
+    .brand span { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 12px; }
+    .section-nav { min-width: 0; flex: 1; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+    .section-nav::-webkit-scrollbar { display: none; }
+    .section-nav a { flex: 0 0 auto; min-height: 40px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 6px; color: var(--text-secondary); font-size: 13px; text-decoration: none; }
+    .section-nav a:hover { background: var(--surface-component); color: var(--text-primary); }
+    .theme-switch { flex: 0 0 auto; display: grid; grid-template-columns: repeat(3, 40px); gap: 2px; padding: 3px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-component); }
+    .theme-switch button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+    .theme-switch button[aria-pressed="true"] { background: var(--surface); color: var(--text-primary); box-shadow: var(--shadow-1); }
+
+    .shell { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding-bottom: 80px; }
+    .intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 460px); gap: 48px; align-items: end; padding: 48px 0 36px; border-bottom: 1px solid var(--border-divider); }
+    .eyebrow { color: var(--text-secondary); font-size: 12px; font-weight: 650; text-transform: uppercase; }
+    .intro h1 { margin: 8px 0 12px; font-size: 44px; line-height: 1.1; font-weight: 670; }
+    .intro p { max-width: 760px; margin: 0; color: var(--text-secondary); font-size: 15px; line-height: 1.75; }
+    .rule-list { display: grid; gap: 10px; }
+    .rule { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: center; min-height: 50px; padding: 8px 0; border-bottom: 1px solid var(--border-divider); font-size: 13px; }
+    .rule:last-child { border-bottom: 0; }
+    .rule i { font-size: 22px; color: var(--text-secondary); }
+    .rule strong { display: block; margin-bottom: 2px; font-weight: 650; }
+    .rule span { color: var(--text-secondary); }
+
+    .showcase-section { scroll-margin-top: 92px; padding: 42px 0; border-bottom: 1px solid var(--border-divider); }
+    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+    .section-heading h2 { margin: 0; font-size: 22px; font-weight: 660; }
+    .section-heading p { max-width: 640px; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.65; text-align: right; }
+    .subheading { margin: 28px 0 12px; color: var(--text-secondary); font-size: 12px; font-weight: 650; }
+    .note { margin: 8px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+    table.spec-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.spec-table th, table.spec-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-divider); text-align: left; vertical-align: top; }
+    table.spec-table th { color: var(--text-secondary); font-weight: 650; font-size: 11px; }
+    table.spec-table code { font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; }
+
+    /* 层级体系 */
+    .tier-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+    .tier-card { padding: 16px; border: 1px solid var(--border-default); border-radius: 10px; background: var(--surface); }
+    .tier-card .letter { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 999px; background: var(--surface-component); font-size: 11px; font-weight: 700; margin-bottom: 10px; }
+    .tier-card strong { display: block; font-size: 13px; font-weight: 650; margin-bottom: 4px; }
+    .tier-card span { color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+
+    /* 徽标锚点样式（图标 + 圆形底） */
+    .state-badge { display: grid; place-items: center; border-radius: 999px; flex: 0 0 auto; }
+    .state-badge.size-full { width: 96px; height: 96px; }
+    .state-badge.size-section { width: 64px; height: 64px; }
+    .state-badge.size-inline { width: 40px; height: 40px; }
+    .state-badge i { font-size: var(--icon-xl); }
+    .state-badge.size-inline i { font-size: 18px; }
+    .state-badge.tone-neutral { background: var(--surface-component); color: var(--text-secondary); }
+    .state-badge.tone-warning { background: var(--warning-container); color: var(--warning); }
+    .state-badge.tone-error { background: var(--error-container); color: var(--error); }
+
+    /* 状态卡片目录 */
+    .state-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+    .state-card { padding: 18px; border: 1px solid var(--border-default); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 12px; }
+    .state-card .tier-tag { align-self: flex-start; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--surface-component); color: var(--text-secondary); }
+    .state-card h4 { margin: 0; font-size: var(--type-title-m-size); font-weight: var(--type-title-m-weight); }
+    .state-card .en { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+    .state-card p { margin: 0; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+    .state-card .en-body { font-size: 11px; opacity: .8; margin-top: -8px; }
+    .state-card .actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+    .state-card .actions button { min-height: 34px; padding: 0 14px; border-radius: 6px; font-size: 12px; font-weight: 620; border: 1px solid transparent; cursor: default; }
+    .state-card .actions .primary { background: var(--action-primary); color: var(--action-on-primary); }
+    .state-card .actions .primary.danger { background: var(--error); color: #fff; }
+    .state-card .actions .secondary { border-color: var(--border-control); background: var(--surface); }
+    .state-card.no-render { align-items: center; text-align: center; border-style: dashed; color: var(--text-secondary); }
+    .state-card.no-render i { font-size: 28px; margin-bottom: 4px; }
+
+    /* 手机模型 */
+    .phone-model { width: 380px; max-width: 100%; margin: 0 auto; }
+    .phone-model .device { position: relative; padding: 14px 10px; background: linear-gradient(155deg, #2b2b2b, #101010); border-radius: 44px; box-shadow: var(--shadow-3), inset 0 0 0 1px rgb(255 255 255 / .06); }
+    .phone-model .screen { position: relative; width: 360px; height: 780px; display: flex; flex-direction: column; border-radius: 30px; overflow: hidden; background: var(--page); }
+    .phone-model .camera { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 10px; height: 10px; border-radius: 50%; background: #000; box-shadow: 0 0 0 2px rgb(255 255 255 / .04) inset; z-index: 5; }
+    .phone-model .statusbar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; height: 34px; padding: 0 20px; font-size: 11px; font-weight: 650; }
+    .phone-model .home-indicator { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; height: 22px; }
+    .phone-model .home-indicator::after { content: ''; width: 108px; height: 4px; border-radius: 999px; background: var(--text-primary); opacity: .55; }
+    .phone-model .content { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: var(--space-lg); padding: 0 32px; }
+    .phone-model .content.section-mode { justify-content: flex-start; padding-top: 60px; }
+    .phone-model .content .body-text { max-width: 240px; font-size: var(--type-body-m-size); color: var(--text-secondary); line-height: 1.6; }
+    .phone-model .content h3 { margin: 0; font-size: var(--type-headline-s-size); font-weight: var(--type-headline-s-weight); }
+    .model-caption { text-align: center; margin-top: 10px; font-size: 11px; color: var(--text-secondary); }
+    .phone-model .content.list-mode { justify-content: flex-start; align-items: stretch; text-align: left; padding: 16px; gap: 10px; }
+    .demo-list-row { display: flex; align-items: center; gap: 10px; }
+    .demo-list-row .thumb { width: 56px; height: 32px; border-radius: 4px; background: var(--surface-component); flex: 0 0 auto; }
+    .demo-list-row .thumb.broken { background: var(--warning-container); color: var(--warning); display: grid; place-items: center; }
+    .demo-list-row .thumb.broken i { font-size: 16px; }
+    .demo-list-row .lines { flex: 1; min-width: 0; }
+    .demo-list-row .lines .line { height: 8px; border-radius: 4px; background: var(--surface-component); margin-bottom: 5px; }
+    .demo-list-row .lines .line.short { width: 55%; }
+    .demo-list-row .caption { font-size: 10px; color: var(--warning); margin-top: 2px; }
+    .demo-row { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 20px; }
+
+    .toast { position: fixed; z-index: 60; left: 50%; bottom: 24px; transform: translate(-50%, 12px); display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; background: var(--surface-inverse); color: var(--text-inverse); font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 1100px) {
+      .topbar { padding: 12px 20px; }
+      .intro { grid-template-columns: 1fr; gap: 24px; }
+      .tier-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .demo-row { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+    @media (max-width: 820px) {
+      .shell { width: min(100% - 24px, 680px); }
+      .section-heading { display: block; }
+      .section-heading p { text-align: left; margin-top: 8px; }
+    }
+    @media (max-width: 520px) {
+      .section-nav { display: none; }
+      .shell { width: min(100% - 20px, 440px); }
+      .intro h1 { font-size: 32px; }
+      .tier-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>影里 · 空状态与异常状态设计</strong>
+      <span>18 个真实场景 · 图标 / 插图风格</span>
+    </div>
+    <nav class="section-nav" aria-label="页面章节">
+      <a href="#taxonomy">分类体系</a>
+      <a href="#style">图标风格</a>
+      <a href="#empty">空状态</a>
+      <a href="#error">异常状态</a>
+      <a href="#demo">手机模型</a>
+      <a href="#checklist">验收清单</a>
+    </nav>
+    <div class="theme-switch" role="group" aria-label="主题模式">
+      <button type="button" data-theme-mode="system" aria-pressed="true" title="跟随系统" aria-label="跟随系统"><i class="ti ti-device-desktop" aria-hidden="true"></i></button>
+      <button type="button" data-theme-mode="light" aria-pressed="false" title="浅色" aria-label="浅色"><i class="ti ti-sun" aria-hidden="true"></i></button>
+      <button type="button" data-theme-mode="dark" aria-pressed="false" title="深色" aria-label="深色"><i class="ti ti-moon" aria-hidden="true"></i></button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="intro">
+      <div>
+        <span class="eyebrow">YingLi Empty &amp; Error States · Draft 01</span>
+        <h1>没有内容，<br>也要说清楚为什么。</h1>
+        <p>空状态是"这里还没有东西，但一切正常"；异常状态是"出问题了，需要你知道"。两者用不同的视觉语言区分——空状态用中性灰阶徽标，异常状态用语义色徽标，插图统一用线性图标而不是彩色插画角色，和 02 文档"克制、灰阶为主"的气质保持一致，也不需要额外维护一套插画资产。</p>
+      </div>
+      <div class="rule-list">
+        <div class="rule"><i class="ti ti-circle-dashed" aria-hidden="true"></i><div><strong>空状态 ≠ 异常状态</strong><span>没有内容是正常状态，不用警示色</span></div></div>
+        <div class="rule"><i class="ti ti-stack-2" aria-hidden="true"></i><div><strong>四级呈现</strong><span>全屏 / 区块内 / 列表内联 / 对话框，按影响范围选</span></div></div>
+        <div class="rule"><i class="ti ti-icons" aria-hidden="true"></i><div><strong>线性图标，不做插画</strong><span>复用 icon-xl（32dp）Token，不新增插画资产</span></div></div>
+        <div class="rule"><i class="ti ti-message-2" aria-hidden="true"></i><div><strong>文案跟 03 走</strong><span>什么 + 为什么 + 怎么办，中英双语</span></div></div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="taxonomy">
+      <div class="section-heading">
+        <h2>分类体系 Taxonomy</h2>
+        <p>状态出现的位置决定它的呈现方式——不是每种空状态或异常都要弹一个对话框。</p>
+      </div>
+      <div class="tier-grid" id="tierGrid"></div>
+      <p class="note">判断顺序：先看影响范围（整个页面 / 页面里的一块 / 列表里的一项 / 单次操作的反馈），再决定用哪一级呈现，而不是先想好一个组件样式再到处套用。</p>
+    </section>
+
+    <section class="showcase-section" id="style">
+      <div class="section-heading">
+        <h2>图标与插图风格 Icon &amp; Illustration Style</h2>
+        <p>不做彩色插画角色——一是和"克制、灰阶为主"的视觉气质不搭，二是省掉一整套插画资产的绘制和维护成本。</p>
+      </div>
+      <table class="spec-table">
+        <thead><tr><th>层级</th><th>徽标尺寸</th><th>图标尺寸</th><th>徽标底色</th></tr></thead>
+        <tbody>
+          <tr><td>全屏 Full-page</td><td>96dp 圆形</td><td>32dp（icon-xl，沿用 01 已有 Token）</td><td>空状态：中性灰 <code>--surface-component</code>；异常：语义色容器 <code>--error-container</code> / <code>--warning-container</code></td></tr>
+          <tr><td>区块内 Section</td><td>64dp 圆形</td><td>32dp</td><td>同上</td></tr>
+          <tr><td>列表内联 List-inline</td><td>40dp 圆形</td><td>18dp</td><td>同上，但视觉更轻，通常直接嵌在列表项里而不单独起一行</td></tr>
+        </tbody>
+      </table>
+      <p class="note">对话框/Toast 级异常不用圆形徽标——直接用 02 文档定义的语义色图标（<code>--error</code> / <code>--warning</code>），跟对话框标题左对齐即可，不需要额外的徽标底。</p>
+    </section>
+
+    <section class="showcase-section" id="empty">
+      <div class="section-heading">
+        <h2>空状态 Empty States</h2>
+        <p>8 个场景。徽标统一用中性灰阶，语气平静，不强推操作——大部分空状态本来就不需要按钮。</p>
+      </div>
+      <div class="state-grid" id="emptyGrid"></div>
+    </section>
+
+    <section class="showcase-section" id="error">
+      <div class="section-heading">
+        <h2>异常状态 Error &amp; Exception States</h2>
+        <p>9 个场景，按严重程度分 warning（可恢复、不紧急）和 error（阻塞操作）两档，文案遵循 03 文档"什么 + 为什么 + 怎么办"。</p>
+      </div>
+      <div class="state-grid" id="errorGrid"></div>
+      <p class="note">影里的定位是离线优先、不接入网络媒体源，所以这份目录里没有"网络连接失败"这类场景——如果之后加同步或云端功能，需要单独补一组网络异常状态。</p>
+    </section>
+
+    <section class="showcase-section" id="demo">
+      <div class="section-heading">
+        <h2>手机模型演示 In Context</h2>
+        <p>四个层级各挑一个场景放进真机模型（360×780dp，与 01 文档同一个真实设备尺寸）里看实际效果，尤其是"列表内联"——它不是弹窗也不是整块空状态，只影响列表里的一行。</p>
+      </div>
+      <div class="demo-row" id="demoRow"></div>
+    </section>
+
+    <section class="showcase-section" id="checklist">
+      <div class="section-heading">
+        <h2>验收清单 Acceptance Checklist</h2>
+        <p>发布前过一遍。</p>
+      </div>
+      <table class="spec-table">
+        <tbody>
+          <tr><td>每个列表 / 网格页面都确认过对应的空状态，没有漏掉的"卡在加载中"或纯白页面</td></tr>
+          <tr><td>空状态徽标统一中性灰，没有误用语义色</td></tr>
+          <tr><td>异常状态的 warning / error 分级和本文档一致，没有把可恢复问题标成 error 红色</td></tr>
+          <tr><td>所有异常提示至少说明"是什么"，有已知解决办法的额外给出"怎么办"（对应 03 文档原则）</td></tr>
+          <tr><td>批量操作的部分失败场景有单独设计，不是简单弹出第一个错误</td></tr>
+          <tr><td>文件缺失 / 损坏在列表里是内联轻量提示，不是每次都弹对话框打断浏览</td></tr>
+          <tr><td>权限被拒绝后有清楚的"为什么需要这个权限"说明，不是系统弹窗一关就没有后续引导</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><i class="ti ti-check" aria-hidden="true"></i><span id="toastText">已复制</span></div>
+
+  <script>
+    const tiers = [
+      { letter: 'A', name: '全屏 Full-page', desc: '整个页面 / 标签页都没有内容，如首次启动、处理中心无任务' },
+      { letter: 'B', name: '区块内 Section', desc: '页面还在，其中一块区域是空的，如收藏、播放列表、筛选结果' },
+      { letter: 'C', name: '列表内联 List-inline', desc: '列表里单独一项出问题，如文件缺失、文件损坏，不影响其余列表项' },
+      { letter: 'D', name: '对话框/Toast', desc: '一次操作触发的反馈，如权限请求、存储不足、重命名冲突' }
+    ];
+
+    const emptyStates = [
+      { special: 'no-render', icon: 'ti-history', title_zh: '首页 · 无观看记录', title_en: 'Home · No watch history', body_zh: '「继续观看」区块整体隐藏，不显示空状态卡片——首页本来就有其他内容，没必要为一个区块单独弹出提示。', body_en: 'The "Continue Watching" block is hidden entirely rather than showing an empty card.' },
+      { icon: 'ti-folder-plus', tier: 'A', title_zh: '媒体库 · 首次启动', title_en: 'Library · First launch', body_zh: '还没有视频', body_en: 'No videos yet', desc_zh: '导入一个文件夹开始整理你的收藏', desc_en: 'Import a folder to start building your library', action_zh: '选择文件夹', action_en: 'Choose Folder' },
+      { icon: 'ti-search-off', tier: 'B', title_zh: '视频库 · 筛选无结果', title_en: 'Library · No search results', body_zh: '没有找到匹配的视频', body_en: 'No matching videos', desc_zh: '换个关键词，或清除筛选条件再试试', desc_en: 'Try different keywords or clear your filters', action_zh: '清除筛选', action_en: 'Clear Filters' },
+      { icon: 'ti-heart', tier: 'B', title_zh: '整理 · 收藏为空', title_en: 'Organize · No favorites', body_zh: '还没有收藏的视频', body_en: 'No favorites yet', desc_zh: '在视频详情页点击心形图标即可收藏', desc_en: 'Tap the heart icon on any video to add it here' },
+      { icon: 'ti-playlist', tier: 'B', title_zh: '整理 · 播放列表为空', title_en: 'Organize · No playlists', body_zh: '还没有播放列表', body_en: 'No playlists yet', desc_zh: '创建一个播放列表，把喜欢的视频放在一起', desc_en: 'Create a playlist to group videos you like', action_zh: '新建播放列表', action_en: 'New Playlist' },
+      { icon: 'ti-tags', tier: 'B', title_zh: '整理 · 标签为空', title_en: 'Organize · No tags', body_zh: '还没有标签', body_en: 'No tags yet', desc_zh: '给视频打标签，方便按主题查找', desc_en: 'Tag your videos to organize them by topic' },
+      { icon: 'ti-trash', tier: 'B', title_zh: '回收站为空', title_en: 'Recycle bin is empty', body_zh: '回收站是空的', body_en: 'Recycle bin is empty', desc_zh: '删除的视频会先移到这里，30 天后自动清空', desc_en: 'Deleted videos stay here for 30 days before being cleared automatically' },
+      { icon: 'ti-circle-check', tier: 'A', title_zh: '处理中心 · 无任务', title_en: 'Processing Center · No tasks', body_zh: '没有进行中的任务', body_en: 'No tasks in progress', desc_zh: '转码、压缩或格式转换的任务会显示在这里', desc_en: 'Transcode, compress, or convert tasks will show up here' }
+    ];
+
+    const errorStates = [
+      { icon: 'ti-file-off', tone: 'warning', tier: 'C', title_zh: '文件缺失', title_en: 'File missing', body_zh: '找不到这个文件', body_en: "Can't find this file", desc_zh: '可能已被移动、重命名或从设备删除', desc_en: 'It may have been moved, renamed, or deleted', primary_zh: '重新定位', primary_en: 'Locate File', secondary_zh: '从列表移除', secondary_en: 'Remove' },
+      { icon: 'ti-shield-lock', tone: 'warning', tier: 'D', title_zh: '存储权限被拒绝', title_en: 'Storage permission denied', body_zh: '需要存储权限才能查看视频', body_en: 'Storage access is needed to show your videos', desc_zh: '影里只用这个权限读取本地视频，不会上传或分享你的文件', desc_en: 'YingLi only uses this to read local videos — nothing is uploaded or shared', primary_zh: '前往设置', primary_en: 'Open Settings', secondary_zh: '暂不', secondary_en: 'Not Now' },
+      { icon: 'ti-video-off', tone: 'warning', tier: 'D', title_zh: '格式不支持', title_en: 'Format not supported', body_zh: '这个视频格式暂不支持播放', body_en: "This video format isn't supported yet", desc_zh: '影里已支持大多数常见格式，这个文件的编码方式比较少见', desc_en: 'YingLi supports most common formats — this file uses a less common codec', primary_zh: '知道了', primary_en: 'Got It', secondary_zh: '反馈问题', secondary_en: 'Report Issue' },
+      { icon: 'ti-alert-triangle', tone: 'warning', tier: 'C', title_zh: '文件损坏', title_en: 'File corrupted', body_zh: '这个文件无法播放', body_en: "This file can't be played", desc_zh: '文件可能已损坏，或在传输过程中不完整', desc_en: 'The file may be corrupted or incomplete', primary_zh: '知道了', primary_en: 'Got It', secondary_zh: '从列表移除', secondary_en: 'Remove' },
+      { icon: 'ti-database-x', tone: 'error', tier: 'D', title_zh: '存储空间不足', title_en: 'Not enough storage', body_zh: '无法完成这个操作', body_en: "Can't complete this action", desc_zh: '请清理空间后重试', desc_en: 'Free up some space and try again', primary_zh: '清理缓存', primary_en: 'Clear Cache', secondary_zh: '选择其他位置', secondary_en: 'Choose Another Location' },
+      { icon: 'ti-lock-x', tone: 'error', tier: 'D', title_zh: '密码不正确', title_en: 'Incorrect password', body_zh: '密码不正确', body_en: 'Incorrect password', desc_zh: '还可以尝试 4 次，超过次数后需要等待（内嵌在锁屏页面，非独立弹窗）', desc_en: '4 attempts remaining before a temporary lockout (inline on the lock screen, not a separate dialog)' },
+      { icon: 'ti-alert-circle', tone: 'warning', tier: 'D', title_zh: '批量操作部分失败', title_en: 'Batch action partially failed', body_zh: '12 个文件移动成功，3 个失败', body_en: '12 files moved, 3 failed', desc_zh: '失败的文件可能正在被其他应用占用', desc_en: 'The failed files may be in use by another app', primary_zh: '查看详情', primary_en: 'View Details', secondary_zh: '知道了', secondary_en: 'Dismiss' },
+      { icon: 'ti-copy-off', tone: 'warning', tier: 'D', title_zh: '重命名冲突', title_en: 'Rename conflict', body_zh: '已存在同名文件', body_en: 'A file with this name already exists', desc_zh: '换一个名字，或替换原有文件', desc_en: 'Choose a different name, or replace the existing file', primary_zh: '替换', primary_en: 'Replace', secondary_zh: '重命名', secondary_en: 'Rename' },
+      { icon: 'ti-device-sd-card', tone: 'error', tier: 'D', title_zh: '存储介质只读', title_en: 'Storage is read-only', body_zh: '无法写入此位置', body_en: "Can't write to this location", desc_zh: '该存储位置是只读的（例如部分 SD 卡或系统目录）', desc_en: 'This storage location is read-only (e.g. some SD cards or system folders)', primary_zh: '选择其他位置', primary_en: 'Choose Another Location', secondary_zh: '取消', secondary_en: 'Cancel' }
+    ];
+
+    const tierBadgeSize = { A: 'size-full', B: 'size-section', C: 'size-inline', D: 'size-section' };
+    const tierLabel = { A: '全屏', B: '区块内', C: '列表内联', D: '对话框/Toast' };
+
+    const toast = document.getElementById('toast');
+    const toastText = document.getElementById('toastText');
+    let toastTimer;
+    function showToast(message, icon = 'ti-check') {
+      toast.querySelector('i').className = `ti ${icon}`;
+      toastText.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    function renderTiers() {
+      document.getElementById('tierGrid').innerHTML = tiers.map(t => `
+        <div class="tier-card"><span class="letter">${t.letter}</span><strong>${t.name}</strong><span>${t.desc}</span></div>
+      `).join('');
+    }
+
+    function badge(icon, tone, size) {
+      return `<div class="state-badge tone-${tone} ${tierBadgeSize[size] || 'size-section'}"><i class="ti ${icon}" aria-hidden="true"></i></div>`;
+    }
+
+    function actionsHtml(item, dangerPrimary) {
+      const buttons = [];
+      if (item.primary_zh) buttons.push(`<button class="primary${dangerPrimary ? ' danger' : ''}" type="button" disabled>${item.primary_zh} / ${item.primary_en}</button>`);
+      if (item.secondary_zh) buttons.push(`<button class="secondary" type="button" disabled>${item.secondary_zh} / ${item.secondary_en}</button>`);
+      if (item.action_zh) buttons.push(`<button class="primary" type="button" disabled>${item.action_zh} / ${item.action_en}</button>`);
+      return buttons.length ? `<div class="actions">${buttons.join('')}</div>` : '';
+    }
+
+    function renderEmpty() {
+      document.getElementById('emptyGrid').innerHTML = emptyStates.map(item => {
+        if (item.special === 'no-render') {
+          return `<div class="state-card no-render"><i class="ti ${item.icon}" aria-hidden="true"></i><h4>${item.title_zh}</h4><div class="en">${item.title_en}</div><p>${item.body_zh}</p><p class="en-body">${item.body_en}</p></div>`;
+        }
+        return `<div class="state-card">
+          <span class="tier-tag">${item.tier} · ${tierLabel[item.tier]}</span>
+          ${badge(item.icon, 'neutral', item.tier)}
+          <div><h4>${item.body_zh}</h4><div class="en">${item.body_en}</div></div>
+          <p>${item.desc_zh}<span class="en-body" style="display:block;margin-top:4px">${item.desc_en}</span></p>
+          ${actionsHtml(item)}
+        </div>`;
+      }).join('');
+    }
+
+    function renderError() {
+      document.getElementById('errorGrid').innerHTML = errorStates.map(item => `
+        <div class="state-card">
+          <span class="tier-tag">${item.tier} · ${tierLabel[item.tier]} · ${item.tone === 'error' ? 'Error' : 'Warning'}</span>
+          ${badge(item.icon, item.tone, item.tier)}
+          <div><h4>${item.body_zh}</h4><div class="en">${item.body_en}</div></div>
+          <p>${item.desc_zh}<span class="en-body" style="display:block;margin-top:4px">${item.desc_en}</span></p>
+          ${actionsHtml(item, item.tone === 'error')}
+        </div>`).join('');
+    }
+
+    function renderDemo() {
+      const fullPage = emptyStates.find(s => s.tier === 'A' && s.icon === 'ti-folder-plus');
+      const section = emptyStates.find(s => s.icon === 'ti-heart');
+      const dialog = errorStates.find(s => s.icon === 'ti-database-x');
+      const inline = errorStates.find(s => s.icon === 'ti-file-off');
+
+      const frame = (item, tone, mode, sizeKey) => `
+        <div>
+          <div class="phone-model"><div class="device"><div class="screen">
+            <div class="camera"></div>
+            <div class="statusbar"><span>9:41</span><div><i class="ti ti-wifi" aria-hidden="true"></i></div></div>
+            <div class="content ${mode === 'section' ? 'section-mode' : ''}">
+              ${badge(item.icon, tone, sizeKey)}
+              <div><h3>${item.body_zh || item.title_zh}</h3></div>
+              <div class="body-text">${item.desc_zh || item.body_zh}</div>
+              ${actionsHtml(item, item.tone === 'error')}
+            </div>
+            <div class="home-indicator"></div>
+          </div></div></div>
+          <p class="model-caption">${tierLabel[item.tier]} 示例</p>
+        </div>`;
+
+      const listFrame = (item) => `
+        <div>
+          <div class="phone-model"><div class="device"><div class="screen">
+            <div class="camera"></div>
+            <div class="statusbar"><span>9:41</span><div><i class="ti ti-wifi" aria-hidden="true"></i></div></div>
+            <div class="content list-mode">
+              <div class="demo-list-row"><div class="thumb"></div><div class="lines"><div class="line"></div><div class="line short"></div></div></div>
+              <div class="demo-list-row"><div class="thumb broken"><i class="ti ${item.icon}" aria-hidden="true"></i></div><div class="lines"><div class="line"></div><div class="caption">${item.body_zh}</div></div></div>
+              <div class="demo-list-row"><div class="thumb"></div><div class="lines"><div class="line"></div><div class="line short"></div></div></div>
+            </div>
+            <div class="home-indicator"></div>
+          </div></div></div>
+          <p class="model-caption">${tierLabel[item.tier]} 示例 · 不打断其余列表项</p>
+        </div>`;
+
+      document.getElementById('demoRow').innerHTML =
+        frame(fullPage, 'neutral', 'full', 'A') +
+        frame(section, 'neutral', 'section', 'B') +
+        listFrame(inline) +
+        frame(dialog, dialog.tone, 'section', 'D');
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    function applyTheme(mode) {
+      const dark = mode === 'dark' || (mode === 'system' && mediaQuery.matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.dataset.themeChoice = mode;
+      document.querySelectorAll('[data-theme-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeMode === mode)));
+    }
+    document.querySelectorAll('[data-theme-mode]').forEach(button => button.addEventListener('click', () => applyTheme(button.dataset.themeMode)));
+    mediaQuery.addEventListener('change', () => { if (document.documentElement.dataset.themeChoice === 'system') applyTheme('system'); });
+
+    applyTheme('system');
+    renderTiers();
+    renderEmpty();
+    renderError();
+    renderDemo();
+  </script>
+</body>
+</html>

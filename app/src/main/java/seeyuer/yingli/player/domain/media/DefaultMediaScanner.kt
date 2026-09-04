@@ -34,6 +34,17 @@ class DefaultMediaScanner(
             val snapshot = catalogRepository.snapshot(sourceId)
             val items = snapshot.items.associateBy(MediaItem::id).toMutableMap()
             val locations = snapshot.locations.toMutableList()
+            val locationsByUri = snapshot.locations.associateBy(MediaLocation::uri).toMutableMap()
+            val locationsBySize = snapshot.locations.groupBy(MediaLocation::sizeBytes)
+                .mapValuesTo(mutableMapOf()) { (_, values) -> values.toMutableList() }
+            val locationsByStableIdentity = snapshot.locations
+                .filter { it.volumeId != null && it.documentId != null }
+                .groupBy { it.volumeId to it.documentId }
+                .mapValuesTo(mutableMapOf()) { (_, values) -> values.toMutableList() }
+            val locationsByHash = snapshot.locations.filter { it.contentHash != null }
+                .groupBy(MediaLocation::contentHash)
+                .mapValuesTo(mutableMapOf()) { (_, values) -> values.toMutableList() }
+            val indexedLocationIds = snapshot.locations.mapTo(mutableSetOf(), MediaLocation::id)
             val links = snapshot.itemByLocation.toMutableMap()
             val scannedLocations = mutableListOf<MediaLocation>()
             val evidenceUpdates = mutableMapOf<MediaLocationId, MediaLocation>()
@@ -48,12 +59,31 @@ class DefaultMediaScanner(
                     }
                     is MediaDiscoveryEvent.Candidate -> {
                         val candidate = event.value
-                        val (resolution, resolvedEvidence) = resolveIdentity(
-                            candidate.evidence,
-                            locations,
-                            links,
-                            evidenceUpdates,
-                        )
+                        val exactLocation = locationsByUri[candidate.evidence.uri]
+                        val exactItemId = exactLocation?.let { links[it.id] }
+                        val (resolution, resolvedEvidence) = if (exactLocation != null && exactItemId != null) {
+                            IdentityResolution.Match(exactItemId, exactLocation.id) to candidate.evidence
+                        } else {
+                            val stableCandidates = if (candidate.evidence.volumeId != null && candidate.evidence.documentId != null) {
+                                locationsByStableIdentity[candidate.evidence.volumeId to candidate.evidence.documentId].orEmpty()
+                            } else {
+                                emptyList()
+                            }
+                            val hashCandidates = candidate.evidence.contentHash
+                                ?.let { locationsByHash[it].orEmpty() }
+                                .orEmpty()
+                            val candidateLocations = (
+                                locationsBySize[candidate.evidence.sizeBytes].orEmpty() + stableCandidates + hashCandidates
+                            )
+                                .distinctBy(MediaLocation::id)
+                            resolveIdentity(
+                                candidate.evidence,
+                                locations,
+                                links,
+                                evidenceUpdates,
+                                candidateLocations,
+                            )
+                        }
                         val matched = resolution as? IdentityResolution.Match
                         val itemId = matched?.itemId ?: MediaItemId(idGenerator.newId().stableId())
                         val locationId = matched?.locationId ?: MediaLocationId(idGenerator.newId().stableId())
@@ -61,7 +91,19 @@ class DefaultMediaScanner(
                         val location = candidate.toLocation(locationId, resolvedEvidence, clock.now().toEpochMilli())
                         items[itemId] = item
                         scannedLocations += location
-                        if (locations.none { it.id == locationId }) locations += location
+                        if (indexedLocationIds.add(location.id)) {
+                            locations += location
+                            locationsByUri[location.uri] = location
+                            locationsBySize.getOrPut(location.sizeBytes) { mutableListOf() } += location
+                            if (location.volumeId != null && location.documentId != null) {
+                                locationsByStableIdentity.getOrPut(location.volumeId to location.documentId) {
+                                    mutableListOf()
+                                } += location
+                            }
+                            location.contentHash?.let { hash ->
+                                locationsByHash.getOrPut(hash) { mutableListOf() } += location
+                            }
+                        }
                         links[locationId] = itemId
                         seen += locationId
                     }
@@ -96,8 +138,9 @@ class DefaultMediaScanner(
         locations: MutableList<MediaLocation>,
         links: Map<MediaLocationId, MediaItemId>,
         evidenceUpdates: MutableMap<MediaLocationId, MediaLocation>,
+        candidateLocations: List<MediaLocation> = locations,
     ): Pair<IdentityResolution, MediaIdentityEvidence> {
-        val initial = identityResolver.resolve(evidence, locations, links)
+        val initial = identityResolver.resolve(evidence, candidateLocations, links)
         if (initial !is IdentityResolution.NeedsReview) return initial to evidence
         val candidateHash = evidence.contentHash ?: contentHasher.sha256(evidence.uri)
             ?: return initial to evidence

@@ -99,10 +99,12 @@ fun interface MediaStoreQuery {
 class SafTreeDiscoveryDataSource(
     private val documents: SafDocumentGateway,
     private val dispatchers: AppDispatchers,
+    private val metadataReader: MediaMetadataReader = MediaMetadataReader.None,
 ) : MediaDiscoveryDataSource {
     constructor(context: Context, dispatchers: AppDispatchers) : this(
         DocumentFileGateway(context),
         dispatchers,
+        AndroidMediaMetadataReader(context),
     )
 
     override val mode = MediaSourceMode.SAF_TREE
@@ -140,18 +142,26 @@ class SafTreeDiscoveryDataSource(
                     pending.add(child to depth + 1)
                 } else if (child.mimeType?.startsWith("video/") == true && name.isNotBlank()) {
                     val uri = child.uri
-                    if (visited.add(uri)) emit(MediaDiscoveryEvent.Candidate(MediaCandidate(
-                        source.id,
-                        MediaIdentityEvidence(
-                            MediaUri(uri), source.volumeId, uri.substringAfterLast('/'), name,
-                            child.length.coerceAtLeast(0), child.lastModified.coerceAtLeast(0), null, null, null,
-                        ),
-                        child.mimeType ?: "video/*",
-                    )))
+                    if (visited.add(uri)) {
+                        val mediaUri = MediaUri(uri)
+                        val metadata = readMetadata(mediaUri)
+                        emit(MediaDiscoveryEvent.Candidate(MediaCandidate(
+                            source.id,
+                            MediaIdentityEvidence(
+                                mediaUri, source.volumeId, uri.substringAfterLast('/'), name,
+                                child.length.coerceAtLeast(0), child.lastModified.coerceAtLeast(0),
+                                metadata.durationMillis, metadata.width, metadata.height,
+                            ),
+                            child.mimeType ?: "video/*",
+                        )))
+                    }
                 }
             }
         }
     }.flowOn(dispatchers.io)
+
+    private fun readMetadata(uri: MediaUri): VideoMetadata =
+        runCatching { metadataReader.read(uri) }.getOrDefault(VideoMetadata())
 
     private companion object { const val MAX_DEPTH = 64 }
 }
@@ -209,11 +219,14 @@ class AllFilesDiscoveryDataSource(
                 file.listFiles()?.forEach { pending.add(it to depth + 1) }
             } else {
                 val mime = file.videoMimeType() ?: continue
+                // Indexing discovers files only. Expensive container parsing belongs to lazy enrichment.
+                val mediaUri = MediaUri(Uri.fromFile(file).toString())
                 emit(MediaDiscoveryEvent.Candidate(MediaCandidate(
                     source.id,
                     MediaIdentityEvidence(
-                        MediaUri(file.toURI().toString()), source.volumeId, null, file.name,
-                        file.length().coerceAtLeast(0), file.lastModified().coerceAtLeast(0), null, null, null,
+                        mediaUri, source.volumeId, null, file.name,
+                        file.length().coerceAtLeast(0), file.lastModified().coerceAtLeast(0),
+                        null, null, null,
                     ),
                     mime,
                 )))

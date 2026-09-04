@@ -3,6 +3,7 @@ package seeyuer.yingli.player.core.media
 import android.database.Cursor
 import android.database.MatrixCursor
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlin.system.measureTimeMillis
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
@@ -69,6 +70,26 @@ class MediaStoreDiscoveryDataSourceTest {
         val failure = events.single() as MediaDiscoveryEvent.Failure
         assertEquals(ScanFailureKind.PERMISSION, failure.value.kind)
         assertTrue(failure.value.recoverable)
+    }
+
+    @Test
+    fun tenThousandRowsRemainALightweightCursorScan() = runTest {
+        val count = 10_000
+        val provider = CursorProvider { projection ->
+            MatrixCursor(projection, count).apply {
+                repeat(count) { index ->
+                    addRow(row(projection, id = index.toLong(), name = "movie_$index.mp4"))
+                }
+            }
+        }
+        lateinit var events: List<MediaDiscoveryEvent>
+
+        val elapsed = measureTimeMillis {
+            events = dataSource(provider).discover(SOURCE).toList()
+        }
+
+        assertEquals(count, events.size)
+        assertTrue("$count MediaStore rows took ${elapsed}ms", elapsed < 3_000)
     }
 
     private fun dataSource(provider: CursorProvider): MediaStoreDiscoveryDataSource =

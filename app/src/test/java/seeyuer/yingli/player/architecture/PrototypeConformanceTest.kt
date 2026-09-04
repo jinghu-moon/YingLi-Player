@@ -64,6 +64,6 @@ class PrototypeConformanceTest {
     @Test
     fun `third party icon fallback stays centralized`() {
         val fallbackIcons = YingLiIcon.entries.filter { icon -> icon.provider == IconProvider.MATERIAL_FALLBACK }
-        assertEquals(listOf(YingLiIcon.DYNAMIC_COLOR), fallbackIcons)
+        assertEquals(emptyList<YingLiIcon>(), fallbackIcons)
     }
 }

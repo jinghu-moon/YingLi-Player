@@ -24,6 +24,8 @@ sealed interface AppRoute {
 
     data object Settings : AppRoute
 
+    data object Vault : AppRoute
+
     data class Detail(
         val mediaId: String,
         val source: RootDestination,
@@ -33,6 +35,8 @@ sealed interface AppRoute {
         val mediaId: String,
         val source: RootDestination,
     ) : AppRoute
+
+    data class VaultPlayer(val itemId: String) : AppRoute
 
     data object AppLock : AppRoute
 }
@@ -56,7 +60,8 @@ data class NavigationState(
         }
 
     val showPrimaryNavigation: Boolean
-        get() = currentRoute !is AppRoute.Player && currentRoute !is AppRoute.AppLock
+        get() = currentRoute !is AppRoute.Player && currentRoute !is AppRoute.VaultPlayer &&
+            currentRoute !is AppRoute.AppLock
 
     val canNavigateBack: Boolean
         get() = overlay != null || stacks[currentRoot].orEmpty().size > 1
@@ -79,6 +84,10 @@ interface NavigationStateStore {
     fun openPlayer(mediaId: String)
 
     fun openAppLock()
+
+    fun openVault()
+
+    fun openVaultPlayer(itemId: String)
 
     fun navigateDeepLink(route: String)
 
@@ -128,6 +137,24 @@ class SavedStateNavigationStateStore(
         push(AppRoute.AppLock)
     }
 
+    override fun openVault() {
+        if (mutableState.value.overlay == AppRoute.Vault) return
+        update(mutableState.value.copy(overlay = AppRoute.Vault))
+    }
+
+    override fun openVaultPlayer(itemId: String) {
+        if (!itemId.isStableRouteId() || mutableState.value.overlay != AppRoute.Vault) return
+        val current = mutableState.value
+        val stack = current.stacks[current.currentRoot].orEmpty()
+        val withVault = if (stack.lastOrNull() == AppRoute.Vault) stack else stack + AppRoute.Vault
+        update(
+            current.copy(
+                overlay = null,
+                stacks = current.stacks + (current.currentRoot to (withVault + AppRoute.VaultPlayer(itemId))),
+            ),
+        )
+    }
+
     override fun navigateDeepLink(route: String) {
         when (route.trim('/')) {
             "home" -> selectRoot(RootDestination.HOME)
@@ -136,6 +163,7 @@ class SavedStateNavigationStateStore(
             "processing" -> openGlobalAction(GlobalAppAction.OPEN_PROCESSING)
             "settings" -> openGlobalAction(GlobalAppAction.OPEN_SETTINGS)
             "lock" -> openAppLock()
+            "vault" -> openVault()
             else -> {
                 val segments = route.trim('/').split('/')
                 when {
@@ -229,8 +257,10 @@ class SavedStateNavigationStateStore(
         is AppRoute.Root -> "root:${destination.name}"
         AppRoute.Processing -> "processing"
         AppRoute.Settings -> "settings"
+        AppRoute.Vault -> "vault"
         is AppRoute.Detail -> "detail:${source.name}:$mediaId"
         is AppRoute.Player -> "player:${source.name}:$mediaId"
+        is AppRoute.VaultPlayer -> "vault-player:$itemId"
         AppRoute.AppLock -> "lock"
     }
 
@@ -239,6 +269,7 @@ class SavedStateNavigationStateStore(
         return when {
             this == "processing" -> AppRoute.Processing
             this == "settings" -> AppRoute.Settings
+            this == "vault" -> AppRoute.Vault
             this == "lock" -> AppRoute.AppLock
             segments.size == 2 && segments[0] == "root" ->
                 segments[1].toRootOrNull()?.let(AppRoute::Root)
@@ -246,6 +277,8 @@ class SavedStateNavigationStateStore(
                 segments[1].toRootOrNull()?.let { source -> AppRoute.Detail(segments[2], source) }
             segments.size == 3 && segments[0] == "player" && segments[2].isStableRouteId() ->
                 segments[1].toRootOrNull()?.let { source -> AppRoute.Player(segments[2], source) }
+            segments.size == 2 && segments[0] == "vault-player" && segments[1].isStableRouteId() ->
+                AppRoute.VaultPlayer(segments[1])
             else -> null
         }
     }

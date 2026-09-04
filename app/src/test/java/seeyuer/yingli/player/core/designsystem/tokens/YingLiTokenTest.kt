@@ -23,6 +23,32 @@ class YingLiTokenTest {
     }
 
     @Test
+    fun `semantic action roles match the component color specification`() {
+        val primitive = YingLiPrimitiveTokens
+        val light = YingLiSemanticTokens.LightColors
+        val dark = YingLiSemanticTokens.DarkColors
+
+        assertEquals(primitive.Neutral700, light.actionSecondary)
+        assertEquals(primitive.Neutral200, light.actionSecondaryContainer)
+        assertEquals(primitive.Neutral800, light.actionTertiary)
+        assertEquals(primitive.Neutral100, light.inversePrimary)
+        assertEquals(primitive.Neutral400, dark.actionSecondary)
+        assertEquals(primitive.Neutral800, dark.actionSecondaryContainer)
+        assertEquals(primitive.Neutral300, dark.actionTertiary)
+        assertEquals(primitive.Neutral900, dark.inversePrimary)
+    }
+
+    @Test
+    fun `success roles match the frozen light B and dark A mappings`() {
+        val primitive = YingLiPrimitiveTokens
+
+        assertEquals(primitive.GreenB.tone700, YingLiSemanticTokens.LightFunctional.success.base)
+        assertEquals(primitive.GreenB.tone900, YingLiSemanticTokens.LightFunctional.success.strong)
+        assertEquals(primitive.GreenA.tone400, YingLiSemanticTokens.DarkFunctional.success.base)
+        assertEquals(primitive.GreenA.tone200, YingLiSemanticTokens.DarkFunctional.success.strong)
+    }
+
+    @Test
     fun `body text and focus boundaries meet contrast gates`() {
         assertContrastAtLeast(
             YingLiSemanticTokens.LightColors.textPrimary,

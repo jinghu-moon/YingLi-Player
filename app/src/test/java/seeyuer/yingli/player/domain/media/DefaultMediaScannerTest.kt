@@ -62,6 +62,21 @@ class DefaultMediaScannerTest {
     }
 
     @Test
+    fun `same scan can link matching physical locations to one logical item`() = runTest {
+        val catalog = FakeCatalogRepository(CatalogSnapshot(emptyList(), emptyList(), emptyMap()))
+        val scanner = scanner(catalog, listOf(
+            MediaDiscoveryEvent.Candidate(candidate("first")),
+            MediaDiscoveryEvent.Candidate(candidate("second")),
+        ))
+
+        scanner.scan(ScanRequest(setOf(SOURCE.id)))
+
+        val mutation = catalog.mutations.single()
+        assertEquals(2, mutation.upsertLocations.size)
+        assertEquals(1, mutation.links.values.toSet().size)
+    }
+
+    @Test
     fun `permission loss preserves previous index and does not mark entries missing`() = runTest {
         val existingLocation = location("location_existing", "content://media/video/existing")
         val catalog = FakeCatalogRepository(CatalogSnapshot(
@@ -141,6 +156,62 @@ class DefaultMediaScannerTest {
     @Test
     fun `ten thousand synthetic candidates meet the incremental index target`() = runTest {
         assertSyntheticIndexWithinTarget(count = 10_000, targetMillis = 3_000)
+    }
+
+    @Test
+    fun `ten thousand unchanged locations use the exact uri index`() = runTest {
+        val count = 10_000
+        val locations = (0 until count).map { index ->
+            location("location_$index", "content://media/video/$index")
+        }
+        val items = locations.mapIndexed { index, _ ->
+            MediaItem(MediaItemId("item_$index"), "movie_$index")
+        }
+        val catalog = FakeCatalogRepository(CatalogSnapshot(
+            items = items,
+            locations = locations,
+            itemByLocation = locations.indices.associate { index -> locations[index].id to items[index].id },
+        ))
+        val events = (0 until count).map { index ->
+            MediaDiscoveryEvent.Candidate(candidate(index.toString(), distinctEvidence = true))
+        }
+        val scanner = scanner(catalog, events)
+
+        val elapsed = measureTimeMillis { scanner.scan(ScanRequest(setOf(SOURCE.id))) }
+
+        assertEquals(count, catalog.mutations.single().upsertLocations.size)
+        assertTrue("$count unchanged locations took ${elapsed}ms", elapsed < 3_000)
+    }
+
+    @Test
+    fun `ten thousand relocated locations use bounded identity buckets`() = runTest {
+        val count = 10_000
+        val locations = (0 until count).map { index ->
+            location("location_$index", "file:///storage/emulated/0/movie_$index.mp4").copy(
+                sizeBytes = 10_000L + index,
+                modifiedEpochMillis = 1_000L + index,
+                durationMillis = 30_000L + index,
+            )
+        }
+        val items = locations.mapIndexed { index, _ ->
+            MediaItem(MediaItemId("item_$index"), "movie_$index")
+        }
+        val catalog = FakeCatalogRepository(CatalogSnapshot(
+            items = items,
+            locations = locations,
+            itemByLocation = locations.indices.associate { index -> locations[index].id to items[index].id },
+        ))
+        val events = (0 until count).map { index ->
+            MediaDiscoveryEvent.Candidate(candidate(index.toString(), distinctEvidence = true))
+        }
+        val scanner = scanner(catalog, events)
+
+        val elapsed = measureTimeMillis { scanner.scan(ScanRequest(setOf(SOURCE.id))) }
+
+        val mutation = catalog.mutations.single()
+        assertEquals(count, mutation.upsertLocations.size)
+        assertEquals(items.map(MediaItem::id).toSet(), mutation.links.values.toSet())
+        assertTrue("$count relocated locations took ${elapsed}ms", elapsed < 3_000)
     }
 
     private suspend fun assertSyntheticIndexWithinTarget(count: Int, targetMillis: Long) {

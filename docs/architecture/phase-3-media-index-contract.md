@@ -73,7 +73,7 @@ erDiagram
 
 | 用户动作或平台状态 | 能力 | 后续行为 |
 |---|---|---|
-| 用户选择“全部文件访问”并授权 | `ALL_FILES` | 扫描用户选择能力范围内的共享存储；不读取应用私有目录 |
+| 用户选择“全部文件访问”并授权 | `MEDIA_STORE` + 文件管理能力 | 通过 MediaStore 建立系统视频轻量索引；全部文件权限只扩展播放与文件管理能力，不触发逐视频容器解析 |
 | 全部文件访问被拒绝 | 无隐式能力 | 请求 API 33+ `READ_MEDIA_VIDEO`；API 31-32 使用 `READ_EXTERNAL_STORAGE` |
 | MediaStore 完整或 Android 14+ 部分视频授权 | `MEDIA_STORE` | 请求并识别 `READ_MEDIA_VISUAL_USER_SELECTED`；只查询授权视频的必要列，不依赖真实路径 |
 | 媒体读取拒绝 | `EMPTY` | 进入可用空首页，保留“选择一个目录”动作 |
@@ -86,7 +86,7 @@ erDiagram
 
 1. 按 `MediaSourceMode` 选择发现适配器，并在事务中读取该源的缓存快照。
 2. 适配器在 I/O 调度器流式输出轻量候选；每个节点检查协程取消。
-3. 身份解析依次使用 URI、卷与文档 ID、已有哈希和低成本证据。单行或单节点失败转换为可恢复事件，不终止其余批次。
+3. 身份解析依次使用 URI、卷与文档 ID、已有哈希和低成本证据。URI 使用哈希索引，模糊匹配按大小分桶，避免万级媒体增量扫描退化为 O(n^2)。单行或单节点失败转换为可恢复事件，不终止其余批次。
 4. 扫描器在内存构建候选 Item、Location、关系和已见位置集合，不逐条写 Room。
 5. 发现流正常结束后，Room 在单一事务中插入/更新实体、关系、标签、证据和源摘要。
 6. 只有完整扫描才累计未见位置的 `missingScanCount`；取消、权限丢失、源离线和终端 I/O 失败不污染旧索引。
@@ -99,7 +99,7 @@ erDiagram
 - MediaStore 只查询 `_ID`、`DISPLAY_NAME`、`MIME_TYPE`、`SIZE`、`DATE_MODIFIED`、`DURATION`、`WIDTH`、`HEIGHT`。
 - MediaStore 空 Cursor 合法；缺列、损坏行和 `SecurityException` 转换为事件。
 - SAF 使用迭代队列、URI 去重和最大深度 64；隐藏项默认过滤；单目录 Provider 异常不影响兄弟节点。
-- 全部文件访问使用迭代目录遍历和最大深度 64，不把绝对路径写入日志或 UI。
+- 原始文件目录适配器使用迭代遍历和最大深度 64，只发现轻量文件事实，不调用 `MediaMetadataRetriever`；它不作为首次系统视频索引入口。
 
 ## 缩略图队列
 

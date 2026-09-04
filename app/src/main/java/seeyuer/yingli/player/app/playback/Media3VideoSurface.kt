@@ -18,26 +18,40 @@ import androidx.media3.ui.PlayerView
 fun Media3VideoSurface(controller: Media3PlaybackController, modifier: Modifier = Modifier) {
     val connectionState by controller.connectionState.collectAsStateWithLifecycle()
     val playbackState by controller.state.collectAsStateWithLifecycle()
+    val scaleMode by controller.scaleMode.collectAsStateWithLifecycle()
     var playerView: PlayerView? = null
     AndroidView(
         factory = { context ->
             PlayerView(context).apply {
                 useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                resizeMode = scaleMode.toResizeMode()
                 setShutterBackgroundColor(Color.BLACK)
                 player = controller.connectedPlayer()
+                controller.attachPlayerView(this)
                 playerView = this
             }
         },
         update = { view ->
             connectionState
             playbackState
+            scaleMode
             view.player = controller.connectedPlayer()
+            view.resizeMode = scaleMode.toResizeMode()
             playerView = view
         },
         modifier = modifier.fillMaxSize(),
     )
     DisposableEffect(controller) {
-        onDispose { playerView?.player = null }
+        onDispose {
+            playerView?.player = null
+            controller.attachPlayerView(null)
+        }
     }
+}
+
+@UnstableApi
+private fun seeyuer.yingli.player.domain.playback.VideoScaleMode.toResizeMode(): Int = when (this) {
+    seeyuer.yingli.player.domain.playback.VideoScaleMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+    seeyuer.yingli.player.domain.playback.VideoScaleMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    seeyuer.yingli.player.domain.playback.VideoScaleMode.ORIGINAL -> AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
 }

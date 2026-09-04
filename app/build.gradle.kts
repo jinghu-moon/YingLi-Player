@@ -28,6 +28,36 @@ android {
         compose = true
     }
 
+    signingConfigs {
+        val keystorePath = providers.environmentVariable("YINGLI_KEYSTORE_PATH").orNull
+        val storePasswordValue = providers.environmentVariable("YINGLI_KEYSTORE_PASSWORD").orNull
+        val keyAliasValue = providers.environmentVariable("YINGLI_KEY_ALIAS").orNull
+        val keyPasswordValue = providers.environmentVariable("YINGLI_KEY_PASSWORD").orNull
+        if (listOf(keystorePath, storePasswordValue, keyAliasValue, keyPasswordValue).all { it != null }) {
+            create("release") {
+                storeFile = file(requireNotNull(keystorePath))
+                storePassword = storePasswordValue
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            versionNameSuffix = "-benchmark"
+            matchingFallbacks += "release"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -88,6 +118,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.media3.transformer)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
@@ -98,6 +129,7 @@ dependencies {
     }
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
 
@@ -116,4 +148,10 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+val generateReleaseChecksums by tasks.registering(GenerateChecksumsTask::class) {
+    dependsOn("assembleRelease")
+    inputDirectory.set(layout.buildDirectory.dir("outputs/apk/release"))
+    outputFile.set(layout.buildDirectory.file("outputs/release/SHA256SUMS"))
 }

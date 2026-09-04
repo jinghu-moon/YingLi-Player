@@ -12,7 +12,9 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import java.io.FileNotFoundException
+import java.lang.ref.WeakReference
 import java.util.concurrent.Executor
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -30,11 +32,14 @@ import seeyuer.yingli.player.core.foundation.LogValue
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.domain.playback.DefaultPlaybackErrorMapper
+import seeyuer.yingli.player.domain.playback.AdvancedPlaybackController
+import seeyuer.yingli.player.domain.playback.PlaybackSpeed
+import seeyuer.yingli.player.domain.playback.TrackChoice
+import seeyuer.yingli.player.domain.playback.VideoScaleMode
 import seeyuer.yingli.player.domain.playback.PlaybackAction
 import seeyuer.yingli.player.domain.playback.PlaybackCommandRejection
 import seeyuer.yingli.player.domain.playback.PlaybackCommandResult
 import seeyuer.yingli.player.domain.playback.PlaybackConnectionState
-import seeyuer.yingli.player.domain.playback.PlaybackController
 import seeyuer.yingli.player.domain.playback.PlaybackFailureSignal
 import seeyuer.yingli.player.domain.playback.PlaybackRequest
 import seeyuer.yingli.player.domain.playback.PlaybackSourceContext
@@ -43,23 +48,37 @@ import seeyuer.yingli.player.domain.playback.PlaybackState
 import seeyuer.yingli.player.domain.playback.PlaybackStateReducer
 import seeyuer.yingli.player.domain.playback.PlaybackTimeline
 import seeyuer.yingli.player.domain.playback.PlaybackTransition
+import seeyuer.yingli.player.domain.security.SecurePlaybackController
+import seeyuer.yingli.player.domain.security.VaultItemId
 
 class Media3PlaybackController(
     context: Context,
     private val sourceRepository: PlaybackSourceRepository,
     private val dispatchers: AppDispatchers,
     private val logger: AppLogger,
-) : PlaybackController, AutoCloseable {
+) : AdvancedPlaybackController, SecurePlaybackController, AutoCloseable {
+    private val vaultTitle = context.applicationContext.getString(seeyuer.yingli.player.R.string.vault_title)
     private val scope = CoroutineScope(SupervisorJob() + dispatchers.main)
     private val mutableState = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
     override val state: StateFlow<PlaybackState> = mutableState.asStateFlow()
     private val mutableConnectionState = MutableStateFlow(PlaybackConnectionState.CONNECTING)
     override val connectionState: StateFlow<PlaybackConnectionState> = mutableConnectionState.asStateFlow()
+    private val mutableAudioTracks = MutableStateFlow<List<TrackChoice>>(emptyList())
+    override val audioTracks: StateFlow<List<TrackChoice>> = mutableAudioTracks.asStateFlow()
+    private val mutableSubtitleTracks = MutableStateFlow<List<TrackChoice>>(emptyList())
+    override val subtitleTracks: StateFlow<List<TrackChoice>> = mutableSubtitleTracks.asStateFlow()
+    private val mutableSpeed = MutableStateFlow(PlaybackSpeed.Normal)
+    override val speed: StateFlow<PlaybackSpeed> = mutableSpeed.asStateFlow()
+    private val mutableScaleMode = MutableStateFlow(VideoScaleMode.FIT)
+    override val scaleMode: StateFlow<VideoScaleMode> = mutableScaleMode.asStateFlow()
     private var controller: MediaController? = null
+    private var playerViewReference = WeakReference<PlayerView>(null)
+    private var secureSessionActive = false
 
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             updateFromPlayer(player)
+            updateTracks(player)
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -127,6 +146,7 @@ class Media3PlaybackController(
         if (current.request == request && current !is PlaybackState.Failed && current !is PlaybackState.Ended) {
             return PlaybackCommandResult.AlreadyApplied
         }
+        secureSessionActive = false
         mutableState.value = PlaybackStateReducer.reduce(current, PlaybackTransition.Prepare(request))
         scope.launch(dispatchers.io) {
             val source = try {
@@ -167,6 +187,38 @@ class Media3PlaybackController(
         return PlaybackCommandResult.Accepted
     }
 
+    override fun prepare(itemId: VaultItemId): Boolean {
+        val activeController = controller ?: return false
+        val request = PlaybackRequest(
+            MediaItemId("vault-${itemId.value}"),
+            MediaLocationId("vault-${itemId.value}"),
+            startPositionMillis = 0,
+            sourceContext = PlaybackSourceContext.DETAIL,
+            incognito = true,
+        )
+        val extras = Bundle().apply {
+            putString(PlaybackMediaMetadata.LOCATION_ID, request.locationId.value)
+            putBoolean(PlaybackMediaMetadata.INCOGNITO, true)
+            putString(PlaybackMediaMetadata.SOURCE_CONTEXT, request.sourceContext.name)
+        }
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(request.mediaId.value)
+            .setUri(Uri.Builder().scheme(VAULT_SCHEME).authority(itemId.value).build())
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(vaultTitle).setExtras(extras).build())
+            .build()
+        secureSessionActive = true
+        mutableState.value = PlaybackState.Preparing(request)
+        activeController.setMediaItem(mediaItem)
+        activeController.prepare()
+        activeController.play()
+        return true
+    }
+
+    override fun invalidateSecureSession() {
+        if (!secureSessionActive) return
+        stop()
+    }
+
     override fun play(): PlaybackCommandResult {
         val active = controller ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
         if (mutableState.value is PlaybackState.Ended) {
@@ -183,11 +235,59 @@ class Media3PlaybackController(
         active.seekTo(positionMillis.coerceAtLeast(0))
     }
 
+    override fun seekBy(offsetMillis: Long): PlaybackCommandResult {
+        val active = controller ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
+        if (PlaybackAction.SEEK !in mutableState.value.availableActions) {
+            return PlaybackCommandResult.Rejected(PlaybackCommandRejection.INVALID_STATE)
+        }
+        val maximum = active.duration.takeUnless { it == C.TIME_UNSET || it < 0 } ?: Long.MAX_VALUE
+        active.seekTo((active.currentPosition + offsetMillis).coerceIn(0, maximum))
+        return PlaybackCommandResult.Accepted
+    }
+
+    override fun setSpeed(speed: PlaybackSpeed): PlaybackCommandResult {
+        val active = controller ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
+        active.setPlaybackSpeed(speed.value)
+        mutableSpeed.value = speed
+        return PlaybackCommandResult.Accepted
+    }
+
+    override fun selectAudioTrack(id: String): PlaybackCommandResult {
+        val active = controller ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
+        val choice = mutableAudioTracks.value.firstOrNull { it.id == id }
+            ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.SOURCE_UNAVAILABLE)
+        active.trackSelectionParameters = active.trackSelectionParameters.buildUpon()
+            .setPreferredAudioLanguage(choice.language)
+            .build()
+        return PlaybackCommandResult.Accepted
+    }
+
+    override fun selectSubtitleTrack(id: String?): PlaybackCommandResult {
+        val active = controller ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
+        val builder = active.trackSelectionParameters.buildUpon()
+        if (id == null) {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        } else {
+            val choice = mutableSubtitleTracks.value.firstOrNull { it.id == id }
+                ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.SOURCE_UNAVAILABLE)
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setPreferredTextLanguage(choice.language)
+        }
+        active.trackSelectionParameters = builder.build()
+        return PlaybackCommandResult.Accepted
+    }
+
+    override fun setScaleMode(mode: VideoScaleMode): PlaybackCommandResult {
+        mutableScaleMode.value = mode
+        return PlaybackCommandResult.Accepted
+    }
+
     override fun stop(): PlaybackCommandResult {
         val active = controller ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
         if (mutableState.value == PlaybackState.Idle) return PlaybackCommandResult.AlreadyApplied
         active.stop()
         active.clearMediaItems()
+        secureSessionActive = false
         mutableState.value = PlaybackState.Idle
         return PlaybackCommandResult.Accepted
     }
@@ -202,6 +302,12 @@ class Media3PlaybackController(
     }
 
     fun connectedPlayer(): Player? = controller
+
+    fun attachPlayerView(view: PlayerView?) {
+        playerViewReference = WeakReference(view)
+    }
+
+    fun attachedPlayerView(): PlayerView? = playerViewReference.get()
 
     override fun close() {
         controller?.removeListener(playerListener)
@@ -251,6 +357,26 @@ class Media3PlaybackController(
         }
     }
 
+    private fun updateTracks(player: Player) {
+        fun choices(type: Int, prefix: String): List<TrackChoice> = buildList {
+            player.currentTracks.groups.filter { it.type == type }.forEachIndexed { groupIndex, group ->
+                repeat(group.length) { trackIndex ->
+                    val format = group.getTrackFormat(trackIndex)
+                    add(TrackChoice(
+                        id = format.id ?: "$prefix-$groupIndex-$trackIndex",
+                        label = format.label ?: format.language ?: "$prefix ${size + 1}",
+                        language = format.language,
+                        selected = group.isTrackSelected(trackIndex),
+                    ))
+                }
+            }
+        }
+        mutableAudioTracks.value = choices(C.TRACK_TYPE_AUDIO, "Audio")
+        mutableSubtitleTracks.value = choices(C.TRACK_TYPE_TEXT, "Subtitle")
+        mutableSpeed.value = runCatching { PlaybackSpeed.of(player.playbackParameters.speed) }
+            .getOrDefault(PlaybackSpeed.Normal)
+    }
+
     private fun requestFrom(mediaItem: MediaItem?, positionMillis: Long): PlaybackRequest? {
         mediaItem ?: return null
         val extras = mediaItem.mediaMetadata.extras ?: return null
@@ -278,5 +404,9 @@ class Media3PlaybackController(
         -> PlaybackFailureSignal.DECODER_UNAVAILABLE
         PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED -> PlaybackFailureSignal.MALFORMED_MEDIA
         else -> PlaybackFailureSignal.OTHER
+    }
+
+    private companion object {
+        const val VAULT_SCHEME = "vault"
     }
 }

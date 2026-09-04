@@ -4,16 +4,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -60,28 +55,47 @@ object YingLiTheme {
 @Composable
 fun YingLiTheme(
     darkTheme: Boolean,
-    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val semantic = if (darkTheme) YingLiSemanticTokens.DarkColors else YingLiSemanticTokens.LightColors
     val functional = if (darkTheme) YingLiSemanticTokens.DarkFunctional else YingLiSemanticTokens.LightFunctional
-    val fixedScheme = if (darkTheme) {
+    val scheme = if (darkTheme) {
         darkColorScheme(
             primary = semantic.actionPrimary,
             onPrimary = semantic.actionOnPrimary,
             primaryContainer = semantic.actionPrimarySoft,
             onPrimaryContainer = semantic.textPrimary,
+            secondary = semantic.actionSecondary,
+            onSecondary = semantic.actionOnSecondary,
+            secondaryContainer = semantic.actionSecondaryContainer,
+            onSecondaryContainer = semantic.actionOnSecondaryContainer,
+            tertiary = semantic.actionTertiary,
+            onTertiary = semantic.actionOnTertiary,
+            tertiaryContainer = semantic.actionTertiaryContainer,
+            onTertiaryContainer = semantic.actionOnTertiaryContainer,
             background = semantic.page,
             onBackground = semantic.textPrimary,
             surface = semantic.surface,
             onSurface = semantic.textPrimary,
             surfaceVariant = semantic.surfaceComponent,
             onSurfaceVariant = semantic.textSecondary,
+            surfaceDim = semantic.surfaceLevel0,
+            surfaceBright = semantic.surfaceLevel3,
+            surfaceContainerLowest = semantic.surfaceLevel0,
+            surfaceContainerLow = semantic.surfaceLevel1,
+            surfaceContainer = semantic.surfaceLevel2,
+            surfaceContainerHigh = semantic.surfaceLevel3,
+            surfaceContainerHighest = semantic.surfaceComponentHover,
             outline = semantic.borderControl,
             outlineVariant = semantic.borderDefault,
             error = functional.error.base,
+            onError = semantic.actionOnPrimary,
             errorContainer = functional.error.container,
             onErrorContainer = functional.error.onContainer,
+            inverseSurface = semantic.surfaceInverse,
+            inverseOnSurface = semantic.textInverse,
+            inversePrimary = semantic.inversePrimary,
+            scrim = semantic.scrimDefault,
         )
     } else {
         lightColorScheme(
@@ -89,29 +103,38 @@ fun YingLiTheme(
             onPrimary = semantic.actionOnPrimary,
             primaryContainer = semantic.actionPrimarySoft,
             onPrimaryContainer = semantic.textPrimary,
+            secondary = semantic.actionSecondary,
+            onSecondary = semantic.actionOnSecondary,
+            secondaryContainer = semantic.actionSecondaryContainer,
+            onSecondaryContainer = semantic.actionOnSecondaryContainer,
+            tertiary = semantic.actionTertiary,
+            onTertiary = semantic.actionOnTertiary,
+            tertiaryContainer = semantic.actionTertiaryContainer,
+            onTertiaryContainer = semantic.actionOnTertiaryContainer,
             background = semantic.page,
             onBackground = semantic.textPrimary,
             surface = semantic.surface,
             onSurface = semantic.textPrimary,
             surfaceVariant = semantic.surfaceComponent,
             onSurfaceVariant = semantic.textSecondary,
+            surfaceDim = semantic.surfaceLevel0,
+            surfaceBright = semantic.surfaceLevel3,
+            surfaceContainerLowest = semantic.surfaceLevel0,
+            surfaceContainerLow = semantic.surfaceLevel1,
+            surfaceContainer = semantic.surfaceLevel2,
+            surfaceContainerHigh = semantic.surfaceLevel3,
+            surfaceContainerHighest = semantic.surfaceComponentHover,
             outline = semantic.borderControl,
             outlineVariant = semantic.borderDefault,
             error = functional.error.base,
+            onError = semantic.actionOnPrimary,
             errorContainer = functional.error.container,
             onErrorContainer = functional.error.onContainer,
+            inverseSurface = semantic.surfaceInverse,
+            inverseOnSurface = semantic.textInverse,
+            inversePrimary = semantic.inversePrimary,
+            scrim = semantic.scrimDefault,
         )
-    }
-    val context = LocalContext.current
-    val scheme = if (dynamicColor) {
-        val dynamic = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        fixedScheme.copy(
-            background = dynamic.background.toNeutral(),
-            surface = dynamic.surface.toNeutral(),
-            surfaceVariant = dynamic.surfaceVariant.toNeutral(),
-        )
-    } else {
-        fixedScheme
     }
     val values = YingLiThemeValues(
         colors = semantic,
@@ -129,11 +152,6 @@ fun YingLiTheme(
             content = content,
         )
     }
-}
-
-private fun Color.toNeutral(): Color {
-    val lightness = luminance()
-    return Color(lightness, lightness, lightness, alpha)
 }
 
 private val YingLiTypography = Typography(

@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import seeyuer.yingli.player.core.datastore.MediaOnboardingRepository
@@ -22,6 +23,7 @@ import seeyuer.yingli.player.core.model.media.MediaItem
 import seeyuer.yingli.player.core.model.media.MediaSource
 import seeyuer.yingli.player.core.model.media.MediaSourceAccessState
 import seeyuer.yingli.player.core.model.media.MediaSourceId
+import seeyuer.yingli.player.core.model.media.MediaSourceMode
 import seeyuer.yingli.player.core.model.media.ScanFailure
 import seeyuer.yingli.player.core.model.media.ScanFailureKind
 import seeyuer.yingli.player.core.model.media.ScanRequest
@@ -87,14 +89,73 @@ class MediaLibraryViewModelTest {
         collector.cancel()
     }
 
+    @Test
+    fun `startup with all files permission restores source and starts indexing`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val onboarding = FakeOnboardingRepository()
+        val sourceRepository = FakeSourceRepository()
+        var scanCount = 0
+        val viewModel = viewModel(
+            onboarding = onboarding,
+            sourceRepository = sourceRepository,
+            permissionGateway = FakePermissionGateway(MediaPermissionSnapshot(true, false, emptySet())),
+            scanner = MediaScanner {
+                scanCount++
+                ScanResult(0, 0, 0, 0, emptyList(), 1)
+            },
+        )
+        val collector = backgroundScope.launch { viewModel.state.collect {} }
+
+        viewModel.initialize()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.state.value.onboarding)
+        assertEquals(1, scanCount)
+        val source = sourceRepository.sources.value.single()
+        assertEquals(MediaSourceMode.MEDIA_STORE, source.mode)
+        assertEquals("content://media/external/video/media", source.rootUri.value)
+        collector.cancel()
+    }
+
+    @Test
+    fun `startup migrates an indexed file source to MediaStore and rescans`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val staleSource = MediaSource(
+            id = MediaSourceId("source_all_files"),
+            displayName = "设备存储",
+            rootUri = seeyuer.yingli.player.core.model.media.MediaUri("file:///storage/emulated/0/"),
+            mode = MediaSourceMode.ALL_FILES,
+            volumeId = null,
+        )
+        val sourceRepository = FakeSourceRepository().also { it.sources.value = listOf(staleSource) }
+        var scanCount = 0
+        val viewModel = MediaLibraryViewModel(
+            sourceRepository = sourceRepository,
+            catalogRepository = FakeCatalogRepository(listOf(MediaItem(seeyuer.yingli.player.core.model.media.MediaItemId("item_1"), "movie"))),
+            permissionGateway = FakePermissionGateway(MediaPermissionSnapshot(true, false, emptySet())),
+            scanner = MediaScanner {
+                scanCount++
+                ScanResult(0, 0, 0, 0, emptyList(), 1)
+            },
+            onboardingRepository = FakeOnboardingRepository(),
+        )
+        val collector = backgroundScope.launch { viewModel.state.collect {} }
+
+        viewModel.initialize()
+        advanceUntilIdle()
+
+        assertEquals(1, scanCount)
+        assertEquals(MediaSourceMode.MEDIA_STORE, sourceRepository.sources.value.single().mode)
+        collector.cancel()
+    }
+
     private fun viewModel(
         onboarding: FakeOnboardingRepository = FakeOnboardingRepository(),
         sourceRepository: FakeSourceRepository = FakeSourceRepository(),
         scanner: MediaScanner = MediaScanner { ScanResult(0, 0, 0, 0, emptyList(), 0) },
+        permissionGateway: FakePermissionGateway = FakePermissionGateway(),
     ) = MediaLibraryViewModel(
         sourceRepository = sourceRepository,
         catalogRepository = FakeCatalogRepository(),
-        permissionGateway = FakePermissionGateway(),
+        permissionGateway = permissionGateway,
         scanner = scanner,
         onboardingRepository = onboarding,
     )
@@ -116,15 +177,17 @@ class MediaLibraryViewModelTest {
         override suspend fun markAccessState(sourceId: MediaSourceId, state: MediaSourceAccessState) = Unit
     }
 
-    private class FakeCatalogRepository : MediaCatalogRepository {
-        private val items = MutableStateFlow<List<MediaItem>>(emptyList())
+    private class FakeCatalogRepository(initialItems: List<MediaItem> = emptyList()) : MediaCatalogRepository {
+        private val items = MutableStateFlow(initialItems)
         override fun observeItems(): Flow<List<MediaItem>> = items
-        override suspend fun snapshot(sourceId: MediaSourceId) = CatalogSnapshot(emptyList(), emptyList(), emptyMap())
+        override suspend fun snapshot(sourceId: MediaSourceId) = CatalogSnapshot(items.value, emptyList(), emptyMap())
         override suspend fun applyMutation(sourceId: MediaSourceId, mutation: CatalogMutation) = 0 to 0
     }
 
-    private class FakePermissionGateway : MediaPermissionGateway {
-        override suspend fun inspect() = MediaPermissionSnapshot(false, false, emptySet())
+    private class FakePermissionGateway(
+        private val snapshot: MediaPermissionSnapshot = MediaPermissionSnapshot(false, false, emptySet()),
+    ) : MediaPermissionGateway {
+        override suspend fun inspect() = snapshot
         override suspend fun persistSafTree(uri: String): PermissionActionResult = PermissionActionResult.SafTreeGranted(uri)
         override suspend fun isSafTreeAccessible(uri: String) = true
     }

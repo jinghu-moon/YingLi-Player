@@ -5,6 +5,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import org.junit.Rule
 import org.junit.Test
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
@@ -60,6 +62,26 @@ class PlayerScreenStateTest {
 
         composeRule.onNodeWithText("媒体访问权限已失效，请重新授权。").assertIsDisplayed()
         composeRule.onNodeWithText("重新授权").assertIsDisplayed()
+    }
+
+    @Test
+    fun lockedOverlayOnlyExposesUnlockAction() {
+        composeRule.setContent {
+            YingLiTheme(darkTheme = true) {
+                PlayerScreen(
+                    state = PlayerUiState(
+                        playback = PlaybackState.Playing(REQUEST, TIMELINE),
+                        title = "测试影片",
+                        overlay = seeyuer.yingli.player.domain.playback.PlayerOverlayState(locked = true),
+                    ),
+                    onBack = {}, onPlay = {}, onPause = {}, onSeek = {}, onReplay = {}, onRetry = {},
+                    onRecovery = {}, videoSurface = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("解锁控制").assertIsDisplayed()
+        composeRule.onAllNodesWithContentDescription("返回").assertCountEquals(0)
     }
 
     private fun setPlayer(playbackState: PlaybackState) {

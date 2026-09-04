@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>影里 · 首页 Demo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f5f5f5; --surface: #fff; --surface-subtle: #fafafa; --surface-muted: #eee;
+      --surface-component: #eee; --surface-hover: #e0e0e0; --text: #1f1f1f; --muted: #626262;
+      --line: #e0e0e0; --line-strong: #a3a3a3; --primary: #1f1f1f; --on-primary: #fff;
+      --steel: #477b94; --steel-soft: #e5f1f7; --green: #40805c; --green-soft: #e0f2e7;
+      --amber: #b37622; --amber-soft: #fff4d3; --favorite: #bd3255;
+      --shadow-1: 0 1px 2px rgb(0 0 0 / .07), 0 8px 24px rgb(0 0 0 / .06);
+      --shadow-2: 0 18px 48px rgb(0 0 0 / .16);
+    }
+    [data-theme="dark"] { color-scheme: dark; --page:#101110; --surface:#171817; --surface-subtle:#1f211f; --surface-muted:#292b29; --surface-component:#292b29; --surface-hover:#353835; --text:#f1f2ef; --muted:#aeb4ac; --line:#303430; --line-strong:#686e67; --primary:#f1f2ef; --on-primary:#141514; --steel:#8fc4d8; --steel-soft:#20343b; --green:#8fc9a5; --green-soft:#20382b; --amber:#e8b25e; --amber-soft:#49391e; --favorite:#ef7997; --shadow-1:0 1px 2px rgb(0 0 0 / .3),0 8px 24px rgb(0 0 0 / .2); --shadow-2:0 18px 48px rgb(0 0 0 / .45); }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin:0; min-width:320px; background:var(--page); color:var(--text); font-family:Inter,"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif; letter-spacing:0; }
+    button,input { font:inherit; letter-spacing:0; color:inherit; }
+    button { border:0; cursor:pointer; }
+    .app { min-height:100vh; display:grid; grid-template-columns:236px minmax(0,1fr); }
+    .sidebar { position:sticky; top:0; height:100vh; display:flex; flex-direction:column; padding:24px 14px 18px; border-right:1px solid var(--line); background:var(--surface); }
+    .brand { display:flex; align-items:center; gap:11px; padding:0 12px 30px; }
+    .brand-mark { width:34px; height:34px; display:grid; place-items:center; border-radius:9px; background:var(--primary); color:var(--on-primary); font-size:17px; font-weight:700; }
+    .brand-name { font-size:18px; font-weight:680; line-height:1; }
+    .brand-sub { margin-top:4px; color:var(--muted); font-size:11px; }
+    .nav { display:grid; gap:5px; }
+    .nav-item { min-height:48px; display:flex; align-items:center; gap:12px; padding:0 13px; border-radius:7px; background:transparent; color:var(--muted); font-size:14px; text-align:left; }
+    .nav-item i { width:20px; font-size:20px; }
+    .nav-item:hover { background:var(--surface-component); color:var(--text); }
+    .nav-item[aria-current="page"] { background:var(--primary); color:var(--on-primary); font-weight:620; }
+    .sidebar-spacer { flex:1; }
+    .source-status { margin:10px 8px 18px; padding:13px; border:1px solid var(--line); border-radius:8px; background:var(--surface-subtle); }
+    .source-status .status-head { display:flex; justify-content:space-between; align-items:center; font-size:12px; font-weight:620; }
+    .status-dot { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 3px var(--green-soft); }
+    .source-status p { margin:8px 0 0; color:var(--muted); font-size:11px; line-height:1.5; }
+    .sidebar-footer { display:flex; align-items:center; justify-content:space-between; padding:0 9px; color:var(--muted); font-size:11px; }
+    .sidebar-footer button { width:40px; height:40px; border-radius:7px; background:transparent; color:var(--muted); font-size:20px; }
+    .sidebar-footer button:hover { background:var(--surface-component); color:var(--text); }
+    main { min-width:0; }
+    .topbar { height:76px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 clamp(20px,4vw,56px); border-bottom:1px solid var(--line); background:color-mix(in srgb,var(--surface) 90%,transparent); backdrop-filter:blur(14px); position:sticky; top:0; z-index:10; }
+    .crumb { color:var(--muted); font-size:13px; }
+    .top-search { flex:1; max-width:520px; min-height:44px; display:none; align-items:center; gap:9px; padding:0 13px; border:1px solid var(--line-strong); border-radius:7px; background:var(--surface); }
+    .topbar.search-open .top-search { display:flex; }
+    .top-search i { color:var(--muted); font-size:19px; }
+    .top-search input { width:100%; border:0; outline:0; background:transparent; color:var(--text); font-size:13px; }
+    .top-search input::placeholder { color:var(--muted); }
+    .top-filter { min-height:44px; display:flex; align-items:center; gap:6px; padding:0 11px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-size:12px; }
+    .top-filter:hover { background:var(--surface-component); color:var(--text); }
+    .top-actions { display:flex; align-items:center; gap:6px; }
+    .icon-btn { width:42px; height:42px; display:grid; place-items:center; border-radius:7px; background:transparent; color:var(--muted); font-size:20px; }
+    .icon-btn:hover { background:var(--surface-component); color:var(--text); }
+    .task-btn { position:relative; }
+    .badge { position:absolute; top:3px; right:2px; min-width:16px; height:16px; display:grid; place-items:center; padding:0 4px; border:2px solid var(--surface); border-radius:9px; background:var(--steel); color:#fff; font-size:9px; font-weight:700; }
+    .content { width:min(1440px,100%); margin:0 auto; padding:36px clamp(20px,4vw,56px) 72px; }
+    .section { margin-top:34px; }
+    .section-head { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:15px; }
+    .section-title { display:flex; align-items:baseline; gap:9px; margin:0; font-size:18px; font-weight:650; }
+    .section-count { color:var(--muted); font-size:12px; font-weight:450; }
+    .text-btn { display:inline-flex; align-items:center; gap:5px; padding:7px 8px; border-radius:5px; background:transparent; color:var(--steel); font-size:12px; }
+    .text-btn:hover { background:var(--steel-soft); }
+    .continue-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .continue-card { position:relative; overflow:hidden; min-height:190px; display:flex; flex-direction:column; justify-content:flex-end; border-radius:8px; background:var(--surface-inverse,#121212); color:#fff; box-shadow:var(--shadow-1); isolation:isolate; }
+    .continue-card::before { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg,transparent 20%,rgb(0 0 0 / .83) 100%),var(--image) center/cover; transform:scale(1.01); }
+    .continue-card:hover::before { transform:scale(1.05); transition:transform .35s ease; }
+    .continue-body { padding:18px; }
+    .continue-kicker { display:flex; align-items:center; gap:7px; margin-bottom:6px; color:#dbe7ea; font-size:11px; }
+    .play-dot { width:22px; height:22px; display:grid; place-items:center; border-radius:50%; background:#fff; color:#111; font-size:12px; }
+    .continue-title { margin:0; font-size:16px; font-weight:620; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .continue-meta { margin:6px 0 11px; color:#d0d5d4; font-size:11px; }
+    .progress { height:4px; overflow:hidden; border-radius:3px; background:rgb(255 255 255 / .35); }
+    .progress span { display:block; height:100%; border-radius:inherit; background:#fff; }
+    .progress-label { display:flex; justify-content:space-between; margin-top:7px; color:#e6e9e7; font-size:10px; }
+    .media-toolbar { display:flex; align-items:center; gap:8px; }
+    .view-toggle { display:flex; padding:3px; border:1px solid var(--line); border-radius:7px; background:var(--surface-component); }
+    .view-toggle button { width:34px; height:32px; display:grid; place-items:center; border-radius:5px; background:transparent; color:var(--muted); font-size:17px; }
+    .view-toggle button[aria-pressed="true"] { background:var(--surface); color:var(--text); box-shadow:var(--shadow-1); }
+    .recent-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
+    .media-card { min-width:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--surface); transition:transform .18s ease,box-shadow .18s ease; }
+    .media-card:hover { transform:translateY(-2px); box-shadow:var(--shadow-1); }
+    .thumb { position:relative; aspect-ratio:16/9; overflow:hidden; background:#d5d8d4; }
+    .thumb img { width:100%; height:100%; display:block; object-fit:cover; }
+    .duration { position:absolute; right:7px; bottom:7px; padding:3px 6px; border-radius:4px; background:rgb(0 0 0 / .72); color:#fff; font-size:10px; }
+    .card-progress { position:absolute; right:0; bottom:0; left:0; height:4px; background:rgb(255 255 255 / .35); }
+    .card-progress span { display:block; height:100%; background:#fff; }
+    .card-body { padding:11px 12px 12px; }
+    .card-title { margin:0; font-size:13px; font-weight:620; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .card-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; color:var(--muted); font-size:11px; }
+    .card-actions { display:flex; justify-content:flex-end; gap:2px; margin-top:8px; }
+    .mini-btn { width:30px; height:30px; display:grid; place-items:center; border-radius:5px; background:transparent; color:var(--muted); font-size:17px; }
+    .mini-btn:hover { background:var(--surface-component); color:var(--text); }
+    .mini-btn.favorite { color:var(--favorite); }
+    .recent-grid.list { grid-template-columns:1fr; gap:8px; }
+    .recent-grid.list .media-card { display:grid; grid-template-columns:168px 1fr; }
+    .recent-grid.list .thumb { aspect-ratio:auto; min-height:100px; }
+    .recent-grid.list .card-body { display:grid; grid-template-columns:1fr auto; align-items:center; gap:4px 18px; padding:15px 16px; }
+    .recent-grid.list .card-title { font-size:14px; }
+    .recent-grid.list .card-meta { justify-content:flex-start; gap:14px; }
+    .recent-grid.list .card-actions { grid-column:2; grid-row:1/3; margin:0; }
+    .lower-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr); gap:16px; }
+    .panel { border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+    .panel-head { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); }
+    .panel-head h3 { margin:0; font-size:15px; font-weight:650; }
+    .folder-list { display:grid; }
+    .folder { min-height:65px; display:flex; align-items:center; gap:12px; padding:11px 18px; border-bottom:1px solid var(--line); }
+    .folder:last-child { border-bottom:0; }
+    .folder-icon { width:38px; height:38px; display:grid; place-items:center; border-radius:7px; background:var(--steel-soft); color:var(--steel); font-size:19px; }
+    .folder-main { min-width:0; flex:1; }
+    .folder-name { display:block; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .folder-meta { display:block; margin-top:4px; color:var(--muted); font-size:11px; }
+    .folder-arrow { color:var(--muted); font-size:18px; }
+    .stats { display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:var(--line); }
+    .stat { min-height:112px; padding:18px; background:var(--surface); }
+    .stat-label { color:var(--muted); font-size:11px; }
+    .stat-value { margin-top:10px; font-size:25px; font-weight:670; letter-spacing:-.02em; }
+    .stat-note { margin-top:5px; color:var(--muted); font-size:11px; }
+    .bottom-nav { display:none; }
+    .toast { position:fixed; left:50%; bottom:24px; z-index:30; transform:translate(-50%,20px); display:flex; align-items:center; gap:8px; padding:11px 15px; border-radius:7px; background:var(--primary); color:var(--on-primary); box-shadow:var(--shadow-2); font-size:13px; opacity:0; pointer-events:none; transition:opacity .22s ease,transform .22s ease; }
+    .toast.show { opacity:1; transform:translate(-50%,0); }
+    .scrim { position:fixed; inset:0; z-index:20; display:none; background:rgb(0 0 0 / .45); }
+    .filter-sheet { position:fixed; right:0; top:0; bottom:0; z-index:21; width:min(380px,100%); display:none; padding:24px; background:var(--surface); box-shadow:var(--shadow-2); }
+    .filter-sheet.open,.scrim.open { display:block; }
+    .sheet-head { display:flex; justify-content:space-between; align-items:center; padding-bottom:20px; border-bottom:1px solid var(--line); }
+    .sheet-head h2 { margin:0; font-size:18px; }
+    .filter-group { padding:20px 0; border-bottom:1px solid var(--line); }
+    .filter-group h3 { margin:0 0 12px; font-size:13px; }
+    .chips { display:flex; flex-wrap:wrap; gap:8px; }
+    .chip { min-height:32px; padding:0 11px; border:1px solid var(--line-strong); border-radius:999px; background:transparent; color:var(--muted); font-size:12px; }
+    .chip.active { border-color:var(--primary); background:var(--primary); color:var(--on-primary); }
+    .sheet-actions { position:absolute; right:24px; bottom:24px; left:24px; display:flex; gap:8px; }
+    .sheet-actions button { flex:1; min-height:46px; border-radius:6px; font-size:13px; }
+    .sheet-actions .secondary { border:1px solid var(--line-strong); background:var(--surface); }
+    .sheet-actions .primary { background:var(--primary); color:var(--on-primary); }
+
+    /* 手机展示台：内部视口保持真实手机比例，内容可独立滚动。 */
+    body { background:#e2e5e2; }
+    .showcase { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:28px 16px; }
+    .showcase-label { color:#68706a; font-size:12px; letter-spacing:.02em; }
+    .phone-shell { position:relative; width:min(390px,calc(100vw - 32px)); height:min(844px,calc(100vh - 64px)); min-height:620px; padding:10px; border:1px solid #080908; border-radius:43px; background:#0b0c0b; box-shadow:0 26px 68px rgb(20 25 21 / .28),0 4px 12px rgb(20 25 21 / .12); }
+    .phone-screen { position:relative; width:100%; height:100%; overflow:hidden; border-radius:33px; background:var(--surface); }
+    .phone-speaker { position:absolute; top:17px; left:50%; z-index:24; width:76px; height:21px; transform:translateX(-50%); border-radius:16px; background:#090a09; }
+    .phone-camera { position:absolute; top:24px; left:calc(50% + 36px); z-index:25; width:6px; height:6px; border:1px solid #242624; border-radius:50%; background:#101310; }
+    .phone-side-button { position:absolute; right:-3px; width:3px; border-radius:0 3px 3px 0; background:#171917; }
+    .phone-side-button.top { top:144px; height:67px; }
+    .phone-side-button.bottom { top:228px; height:37px; }
+    .status-bar { position:absolute; top:0; right:0; left:0; z-index:23; height:30px; display:flex; align-items:center; justify-content:space-between; padding:0 18px; color:var(--text); font-size:10px; font-weight:650; pointer-events:none; }
+    .status-icons { display:flex; align-items:center; gap:5px; }
+    .status-icons i { font-size:12px; }
+    .phone-viewport { position:absolute; inset:30px 0 0; overflow-y:auto; overflow-x:hidden; scrollbar-color:var(--line-strong) transparent; scrollbar-width:thin; }
+    .phone-viewport .app { min-height:100%; display:block; }
+    .phone-viewport .sidebar { display:none; }
+    .phone-viewport .topbar { height:58px; padding:0 14px; }
+    .phone-viewport .content { padding:22px 16px 86px; }
+    .phone-viewport .continue-grid { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; margin:0 -16px; padding:0 16px 3px; }
+    .phone-viewport .continue-card { flex:0 0 84%; min-height:190px; scroll-snap-align:start; }
+    .phone-viewport .recent-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .phone-viewport .lower-grid { grid-template-columns:1fr; }
+    .phone-viewport .bottom-nav { position:absolute; right:0; bottom:0; left:0; z-index:12; height:68px; display:grid; grid-template-columns:repeat(4,1fr); padding:7px 8px; border-top:1px solid var(--line); background:color-mix(in srgb,var(--surface) 94%,transparent); backdrop-filter:blur(14px); }
+    .phone-viewport .bottom-nav button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; border-radius:7px; background:transparent; color:var(--muted); font-size:10px; }
+    .phone-viewport .bottom-nav i { font-size:21px; }
+    .phone-viewport .bottom-nav button[aria-current="page"] { background:var(--primary); color:var(--on-primary); font-weight:600; }
+    .phone-viewport .recent-grid.list .media-card { grid-template-columns:120px 1fr; }
+    .phone-viewport .recent-grid.list .thumb { min-height:86px; }
+    .phone-viewport .recent-grid.list .card-body { display:block; padding:11px 12px; }
+    .phone-viewport .recent-grid.list .card-actions { justify-content:flex-start; margin-top:7px; }
+    @media (max-height:760px) and (min-width:761px) { .showcase { justify-content:flex-start; padding-top:18px; } .phone-shell { height:calc(100vh - 76px); } }
+    @media (max-width:760px) {
+      .phone-viewport .bottom-nav { position:absolute; right:0; bottom:0; left:0; }
+      .phone-viewport .topbar { gap:5px; }
+      .phone-viewport .top-search { min-width:0; max-width:none; min-height:42px; padding:0 10px; }
+      .phone-viewport .top-search input { font-size:12px; }
+      .phone-viewport .top-filter { padding:0 7px; }
+      .phone-viewport .top-filter span { display:none; }
+      .phone-viewport .top-actions { gap:0; }
+      .phone-viewport .top-actions .icon-btn { width:34px; height:38px; font-size:18px; }
+    }
+    @media (max-width:430px) { .showcase { padding:16px 0; } .showcase-label { display:none; } .phone-shell { width:100vw; height:100vh; min-height:0; padding:0; border:0; border-radius:0; box-shadow:none; } .phone-screen { border-radius:0; } .phone-speaker,.phone-camera,.phone-side-button { display:none; } }
+    @media (max-width:1100px) { .continue-grid{grid-template-columns:repeat(2,1fr)} .recent-grid{grid-template-columns:repeat(3,1fr)} }
+    @media (max-width:760px) {
+      .app{display:block}.sidebar{display:none}.topbar{height:64px;padding:0 16px}.crumb{font-size:12px}.content{padding:26px 16px 92px}.continue-grid{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -16px;padding:0 16px 3px}.continue-card{flex:0 0 84%;min-height:198px;scroll-snap-align:start}.recent-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.lower-grid{grid-template-columns:1fr}.section{margin-top:28px}.section-head{margin-bottom:12px}.section-title{font-size:16px}.bottom-nav{position:fixed;right:0;bottom:0;left:0;z-index:12;height:72px;display:grid;grid-template-columns:repeat(4,1fr);padding:7px 8px calc(7px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:color-mix(in srgb,var(--surface) 94%,transparent)}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-radius:7px;background:transparent;color:var(--muted);font-size:10px}.bottom-nav i{font-size:21px}.bottom-nav button[aria-current="page"]{background:var(--primary);color:var(--on-primary);font-weight:600}.recent-grid.list .media-card{grid-template-columns:120px 1fr}.recent-grid.list .thumb{min-height:86px}.recent-grid.list .card-body{display:block;padding:11px 12px}.recent-grid.list .card-actions{justify-content:flex-start;margin-top:7px}.recent-grid.list .card-meta{font-size:10px}.stat{min-height:102px;padding:15px}.stat-value{font-size:22px}
+    }
+    @media (max-width:430px) { .recent-grid{grid-template-columns:1fr}.recent-grid.list{grid-template-columns:1fr}.recent-grid.list .media-card{display:grid;grid-template-columns:108px 1fr}.top-actions{gap:0}.icon-btn{width:38px;height:38px} }
+  </style>
+</head>
+<body>
+  <div class="showcase">
+    <div class="showcase-label">影里 · 首页手机预览</div>
+    <div class="phone-shell" aria-label="影里首页手机外壳">
+      <div class="phone-speaker" aria-hidden="true"></div><div class="phone-camera" aria-hidden="true"></div><div class="phone-side-button top" aria-hidden="true"></div><div class="phone-side-button bottom" aria-hidden="true"></div>
+      <div class="phone-screen">
+        <div class="status-bar"><span>09:41</span><span class="status-icons"><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+        <div class="phone-viewport">
+  <div class="app">
+    <aside class="sidebar" aria-label="主导航">
+      <div class="brand"><div class="brand-mark">影</div><div><div class="brand-name">影里</div><div class="brand-sub">本地媒体中心</div></div></div>
+      <nav class="nav">
+        <button class="nav-item" aria-current="page" data-nav="home"><i class="ti ti-home-2"></i><span>首页</span></button>
+        <button class="nav-item" data-nav="video"><i class="ti ti-video"></i><span>视频</span></button>
+        <button class="nav-item" data-nav="organize"><i class="ti ti-folders"></i><span>整理</span></button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="source-status"><div class="status-head"><span>媒体源</span><span class="status-dot" title="已同步"></span></div><p>3 个文件夹 · 上次扫描 12 分钟前</p></div>
+      <div class="sidebar-footer"><span>离线优先 · 无广告</span><button title="设置" aria-label="设置"><i class="ti ti-settings"></i></button></div>
+    </aside>
+    <main>
+      <header class="topbar"><label class="top-search"><i class="ti ti-search"></i><input id="searchInput" type="search" placeholder="搜索本地视频、文件夹或标签" autocomplete="off"></label><button class="top-filter" id="filterOpen" title="筛选" aria-label="筛选"><i class="ti ti-adjustments-horizontal"></i><span>筛选</span><span id="filterCount" class="section-count">0</span></button><div class="top-actions"><button class="icon-btn task-btn" title="处理任务" aria-label="处理任务"><i class="ti ti-stack-2"></i><span class="badge">2</span></button><button class="icon-btn" id="searchToggle" title="搜索" aria-label="打开搜索" aria-expanded="false"><i class="ti ti-search"></i></button><button class="icon-btn" id="moreToggle" title="更多" aria-label="更多"><i class="ti ti-dots"></i></button></div></header>
+      <div class="content">
+        <section class="section" aria-labelledby="continueHeading"><div class="section-head"><h2 class="section-title" id="continueHeading">继续观看 <span class="section-count">3</span></h2><button class="text-btn" data-action="all">查看全部 <i class="ti ti-arrow-up-right"></i></button></div><div class="continue-grid">
+          <article class="continue-card" style="--image:url('https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=900&q=80')"><div class="continue-body"><div class="continue-kicker"><span class="play-dot"><i class="ti ti-player-play-filled"></i></span>继续播放 · 还剩 24 分钟</div><h3 class="continue-title">夜航西飞 · 第 04 集</h3><p class="continue-meta">昨天播放 · 1080p · 01:12:40</p><div class="progress"><span style="width:66%"></span></div><div class="progress-label"><span>47:38</span><span>66%</span></div></div></article>
+          <article class="continue-card" style="--image:url('https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=900&q=80')"><div class="continue-body"><div class="continue-kicker"><span class="play-dot"><i class="ti ti-player-play-filled"></i></span>继续播放 · 还剩 8 分钟</div><h3 class="continue-title">城市切片：凌晨四点</h3><p class="continue-meta">周一播放 · 4K · 00:32:18</p><div class="progress"><span style="width:74%"></span></div><div class="progress-label"><span>23:54</span><span>74%</span></div></div></article>
+          <article class="continue-card" style="--image:url('https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80')"><div class="continue-body"><div class="continue-kicker"><span class="play-dot"><i class="ti ti-player-play-filled"></i></span>继续播放 · 还剩 51 分钟</div><h3 class="continue-title">山与海之间 · 纪录片</h3><p class="continue-meta">上周播放 · 1080p · 01:48:05</p><div class="progress"><span style="width:38%"></span></div><div class="progress-label"><span>41:06</span><span>38%</span></div></div></article>
+        </div></section>
+
+        <section class="section" aria-labelledby="recentHeading"><div class="section-head"><h2 class="section-title" id="recentHeading">最近添加 <span class="section-count" id="resultCount">12</span></h2><div class="media-toolbar"><button class="text-btn" data-action="all">视频库 <i class="ti ti-arrow-up-right"></i></button><div class="view-toggle" role="group" aria-label="视图模式"><button id="gridView" aria-label="网格视图" aria-pressed="true"><i class="ti ti-layout-grid"></i></button><button id="listView" aria-label="列表视图" aria-pressed="false"><i class="ti ti-list"></i></button></div></div></div><div class="recent-grid" id="recentGrid">
+          <article class="media-card" data-title="雾中车站·短片"><div class="thumb"><img src="https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=600&q=80" alt="雾中车站画面"><span class="duration">18:42</span></div><div class="card-body"><h3 class="card-title">雾中车站 · 短片</h3><div class="card-meta"><span>今天 · 2.1 GB</span><span>1080p</span></div><div class="card-actions"><button class="mini-btn favorite" aria-label="收藏"><i class="ti ti-heart-filled"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
+          <article class="media-card" data-title="厨房实验室·第12集"><div class="thumb"><img src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=600&q=80" alt="厨房实验室画面"><span class="duration">42:08</span></div><div class="card-body"><h3 class="card-title">厨房实验室 · 第 12 集</h3><div class="card-meta"><span>昨天 · 1.4 GB</span><span>1080p</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
+          <article class="media-card" data-title="纸上建筑·东京篇"><div class="thumb"><img src="https://images.unsplash.com/photo-1493780474015-ba834fd0ce2f?auto=format&fit=crop&w=600&q=80" alt="纸上建筑画面"><span class="duration">26:17</span></div><div class="card-body"><h3 class="card-title">纸上建筑 · 东京篇</h3><div class="card-meta"><span>昨天 · 986 MB</span><span>4K</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
+          <article class="media-card" data-title="一条河的来信"><div class="thumb"><img src="https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=600&q=80" alt="河流风景画面"><span class="duration">12:33</span></div><div class="card-body"><h3 class="card-title">一条河的来信</h3><div class="card-meta"><span>8 月 31 日 · 742 MB</span><span>1080p</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
+          <article class="media-card" data-title="声音地图·南方"><div class="thumb"><img src="https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80" alt="声音地图画面"><span class="duration">33:09</span></div><div class="card-body"><h3 class="card-title">声音地图 · 南方</h3><div class="card-meta"><span>8 月 30 日 · 1.2 GB</span><span>1080p</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
+          <article class="media-card" data-title="蓝色时刻·海边"><div class="thumb"><img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80" alt="海边蓝色时刻画面"><span class="duration">08:56</span></div><div class="card-body"><h3 class="card-title">蓝色时刻 · 海边</h3><div class="card-meta"><span>8 月 29 日 · 412 MB</span><span>720p</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
+        </div></section>
+
+        <section class="section lower-grid"><div class="panel"><div class="panel-head"><h3>常用文件夹</h3><button class="text-btn" data-action="all">管理 <i class="ti ti-arrow-up-right"></i></button></div><div class="folder-list"><button class="folder"><span class="folder-icon"><i class="ti ti-folder"></i></span><span class="folder-main"><span class="folder-name">Movies / 2026</span><span class="folder-meta">128 个视频 · 最近添加 12 分钟前</span></span><i class="folder-arrow ti ti-chevron-right"></i></button><button class="folder"><span class="folder-icon"><i class="ti ti-folder"></i></span><span class="folder-main"><span class="folder-name">纪录片收藏</span><span class="folder-meta">64 个视频 · 总时长 38 小时</span></span><i class="folder-arrow ti ti-chevron-right"></i></button><button class="folder"><span class="folder-icon"><i class="ti ti-folder"></i></span><span class="folder-main"><span class="folder-name">Downloads</span><span class="folder-meta">42 个视频 · 最近添加昨天</span></span><i class="folder-arrow ti ti-chevron-right"></i></button></div></div><div class="panel"><div class="panel-head"><h3>媒体概览</h3><button class="text-btn" data-action="all">详情 <i class="ti ti-arrow-up-right"></i></button></div><div class="stats"><div class="stat"><div class="stat-label">视频数量</div><div class="stat-value">248</div><div class="stat-note">+12 本周</div></div><div class="stat"><div class="stat-label">总时长</div><div class="stat-value">86h</div><div class="stat-note">平均 21 分钟 / 部</div></div><div class="stat"><div class="stat-label">占用空间</div><div class="stat-value">1.4 TB</div><div class="stat-note">可用 620 GB</div></div><div class="stat"><div class="stat-label">已看比例</div><div class="stat-value">62%</div><div class="stat-note">较上周 +4%</div></div></div></div></section>
+      </div>
+    </main>
+  </div>
+  <nav class="bottom-nav" aria-label="底部导航"><button aria-current="page" data-nav="home"><i class="ti ti-home-2"></i><span>首页</span></button><button data-nav="video"><i class="ti ti-video"></i><span>视频</span></button><button data-nav="organize"><i class="ti ti-folders"></i><span>整理</span></button><button data-nav="settings"><i class="ti ti-settings"></i><span>设置</span></button></nav>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scrim" id="scrim"></div><aside class="filter-sheet" id="filterSheet" aria-label="筛选面板"><div class="sheet-head"><h2>筛选视频</h2><button class="icon-btn" id="filterClose" aria-label="关闭"><i class="ti ti-x"></i></button></div><div class="filter-group"><h3>快速条件</h3><div class="chips"><button class="chip active">最近添加</button><button class="chip">未看</button><button class="chip">收藏</button></div></div><div class="filter-group"><h3>画质</h3><div class="chips"><button class="chip">4K</button><button class="chip">1080p</button><button class="chip">720p</button></div></div><div class="filter-group"><h3>排序</h3><div class="chips"><button class="chip active">添加时间 ↓</button><button class="chip">名称 A-Z</button><button class="chip">播放次数</button></div></div><div class="sheet-actions"><button class="secondary" id="filterReset">重置</button><button class="primary" id="filterApply">应用筛选</button></div></aside>
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span>已开始播放</span></div>
+  <script>
+    const toast=document.getElementById('toast');
+    function notify(message){toast.querySelector('span').textContent=message;toast.classList.add('show');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>toast.classList.remove('show'),2200)}
+    document.querySelectorAll('[data-nav]').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('[data-nav]').forEach(item=>item.setAttribute('aria-current',item===btn?'page':'false'));notify(btn.dataset.nav==='home'?'已回到首页':btn.dataset.nav==='video'?'视频库即将打开':btn.dataset.nav==='organize'?'整理空间即将打开':'设置页面即将打开')}));
+    const search=document.getElementById('searchInput'), cards=[...document.querySelectorAll('.media-card')], count=document.getElementById('resultCount');
+    search.addEventListener('input',()=>{const q=search.value.trim().toLowerCase();let visible=0;cards.forEach(card=>{const show=!q||card.dataset.title.toLowerCase().includes(q);card.hidden=!show;if(show)visible++});count.textContent=visible});
+    const grid=document.getElementById('recentGrid'); document.getElementById('gridView').addEventListener('click',()=>{grid.classList.remove('list');document.getElementById('gridView').setAttribute('aria-pressed','true');document.getElementById('listView').setAttribute('aria-pressed','false')}); document.getElementById('listView').addEventListener('click',()=>{grid.classList.add('list');document.getElementById('gridView').setAttribute('aria-pressed','false');document.getElementById('listView').setAttribute('aria-pressed','true')});
+    document.querySelectorAll('.play,.continue-card').forEach(el=>el.addEventListener('click',()=>notify('已开始播放')));
+    document.querySelectorAll('.mini-btn.favorite').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();btn.classList.toggle('favorite');btn.querySelector('i').classList.toggle('ti-heart-filled');btn.querySelector('i').classList.toggle('ti-heart');notify(btn.classList.contains('favorite')?'已加入收藏':'已取消收藏')}));
+    const sheet=document.getElementById('filterSheet'),scrim=document.getElementById('scrim');function closeSheet(){sheet.classList.remove('open');scrim.classList.remove('open')}document.getElementById('filterOpen').addEventListener('click',()=>{sheet.classList.add('open');scrim.classList.add('open')});document.getElementById('filterClose').addEventListener('click',closeSheet);scrim.addEventListener('click',closeSheet);document.getElementById('filterApply').addEventListener('click',()=>{document.getElementById('filterCount').textContent='1';closeSheet();notify('筛选条件已应用')});document.getElementById('filterReset').addEventListener('click',()=>{document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));document.getElementById('filterCount').textContent='0'});document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('active')));
+    const topbar=document.querySelector('.phone-viewport .topbar'), searchToggle=document.getElementById('searchToggle');searchToggle.addEventListener('click',()=>{const open=topbar.classList.toggle('search-open');searchToggle.setAttribute('aria-expanded',String(open));searchToggle.setAttribute('aria-label',open?'关闭搜索':'打开搜索');if(open)document.getElementById('searchInput').focus();});
+    document.querySelectorAll('[data-action="all"]').forEach(btn=>btn.addEventListener('click',()=>notify('视频库页面即将打开')));
+    document.getElementById('moreToggle').addEventListener('click',()=>notify('更多操作已打开'));
+  </script>
+</body>
+</html>

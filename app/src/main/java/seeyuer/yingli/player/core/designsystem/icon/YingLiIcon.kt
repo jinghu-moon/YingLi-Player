@@ -1,12 +1,11 @@
 package seeyuer.yingli.player.core.designsystem.icon
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.ui.graphics.vector.ImageVector
 import compose.icons.TablerIcons
 import compose.icons.tablericons.Activity
 import compose.icons.tablericons.AlertCircle
 import compose.icons.tablericons.ArrowLeft
+import compose.icons.tablericons.ArrowRight
 import compose.icons.tablericons.Check
 import compose.icons.tablericons.DotsVertical
 import compose.icons.tablericons.Folder
@@ -19,8 +18,17 @@ import compose.icons.tablericons.Movie
 import compose.icons.tablericons.PlayerPause
 import compose.icons.tablericons.PlayerPlay
 import compose.icons.tablericons.Refresh
+import compose.icons.tablericons.Camera
+import compose.icons.tablericons.PictureInPicture
+import compose.icons.tablericons.PlayerSkipBack
+import compose.icons.tablericons.PlayerSkipForward
+import compose.icons.tablericons.LockOpen
 import compose.icons.tablericons.Search
 import compose.icons.tablericons.Settings
+import compose.icons.tablericons.Download
+import compose.icons.tablericons.Upload
+import compose.icons.tablericons.FileText
+import compose.icons.tablericons.BrandGithub
 
 enum class IconProvider {
     TABLER,
@@ -44,10 +52,19 @@ enum class YingLiIcon(
     LOADING(IconProvider.TABLER),
     LOCK(IconProvider.TABLER),
     BACK(IconProvider.TABLER),
+    ARROW_RIGHT(IconProvider.TABLER),
     PLAY(IconProvider.TABLER),
     PAUSE(IconProvider.TABLER),
     REPLAY(IconProvider.TABLER),
-    DYNAMIC_COLOR(IconProvider.MATERIAL_FALLBACK),
+    SCREENSHOT(IconProvider.TABLER),
+    PICTURE_IN_PICTURE(IconProvider.TABLER),
+    SEEK_BACKWARD(IconProvider.TABLER),
+    SEEK_FORWARD(IconProvider.TABLER),
+    UNLOCK(IconProvider.TABLER),
+    BACKUP_EXPORT(IconProvider.TABLER),
+    BACKUP_IMPORT(IconProvider.TABLER),
+    DIAGNOSTICS(IconProvider.TABLER),
+    UPDATE(IconProvider.TABLER),
 }
 
 val YingLiIcon.imageVector: ImageVector
@@ -66,8 +83,17 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.LOADING -> TablerIcons.Loader
         YingLiIcon.LOCK -> TablerIcons.Lock
         YingLiIcon.BACK -> TablerIcons.ArrowLeft
+        YingLiIcon.ARROW_RIGHT -> TablerIcons.ArrowRight
         YingLiIcon.PLAY -> TablerIcons.PlayerPlay
         YingLiIcon.PAUSE -> TablerIcons.PlayerPause
         YingLiIcon.REPLAY -> TablerIcons.Refresh
-        YingLiIcon.DYNAMIC_COLOR -> Icons.Outlined.Palette
+        YingLiIcon.SCREENSHOT -> TablerIcons.Camera
+        YingLiIcon.PICTURE_IN_PICTURE -> TablerIcons.PictureInPicture
+        YingLiIcon.SEEK_BACKWARD -> TablerIcons.PlayerSkipBack
+        YingLiIcon.SEEK_FORWARD -> TablerIcons.PlayerSkipForward
+        YingLiIcon.UNLOCK -> TablerIcons.LockOpen
+        YingLiIcon.BACKUP_EXPORT -> TablerIcons.Download
+        YingLiIcon.BACKUP_IMPORT -> TablerIcons.Upload
+        YingLiIcon.DIAGNOSTICS -> TablerIcons.FileText
+        YingLiIcon.UPDATE -> TablerIcons.BrandGithub
     }

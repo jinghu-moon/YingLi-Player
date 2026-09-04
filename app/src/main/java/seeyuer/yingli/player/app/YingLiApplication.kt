@@ -24,6 +24,7 @@ class YingLiApplication : Application() {
     }
 
     override fun onTerminate() {
+        mediaContainer.processingLifecycle.close()
         playbackController.close()
         super.onTerminate()
     }

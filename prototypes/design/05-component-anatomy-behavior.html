@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-theme-choice="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>影里 · 组件解剖与交互行为</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --neutral-0: #ffffff; --neutral-50: #fafafa; --neutral-100: #f5f5f5; --neutral-200: #eeeeee;
+      --neutral-300: #e0e0e0; --neutral-400: #c7c7c7; --neutral-500: #a3a3a3; --neutral-600: #737373;
+      --neutral-700: #525252; --neutral-800: #333333; --neutral-900: #1f1f1f; --neutral-950: #121212;
+
+      --page: var(--neutral-100); --surface: var(--neutral-0); --surface-subtle: var(--neutral-50);
+      --surface-component: var(--neutral-200); --surface-inverse: var(--neutral-950);
+      --text-primary: var(--neutral-900); --text-secondary: var(--neutral-700); --text-disabled: var(--neutral-500); --text-inverse: var(--neutral-0);
+      --border-divider: var(--neutral-200); --border-default: var(--neutral-300); --border-control: var(--neutral-600);
+      --action-primary: var(--neutral-900); --action-primary-hover: var(--neutral-800); --action-on-primary: var(--neutral-0);
+      --action-primary-soft: var(--neutral-200);
+      --error: #c75146; --error-container: #f6dad7;
+      --accent-favorite: #bd3255;
+      --shadow-1: 0 1px 2px rgb(0 0 0 / 0.08), 0 6px 20px rgb(0 0 0 / 0.06);
+      --shadow-2: 0 12px 36px rgb(0 0 0 / 0.16);
+
+      --type-title-l-size: 17px; --type-title-l-line: 24px; --type-title-l-weight: 620;
+      --type-title-m-size: 15px; --type-title-m-line: 22px; --type-title-m-weight: 620;
+      --type-body-m-size: 13px; --type-body-m-line: 20px; --type-body-m-weight: 400;
+      --type-body-s-size: 12px; --type-body-s-line: 18px; --type-body-s-weight: 400;
+      --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 20px; --space-xl: 24px;
+      --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px; --radius-full: 999px;
+      --size-touch-min: 48px;
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --page: #0f0f0f; --surface: #171717; --surface-subtle: #1f1f1f; --surface-component: #292929; --surface-inverse: var(--neutral-100);
+      --text-primary: #f5f5f5; --text-secondary: #b8b8b8; --text-disabled: #5f5f5f; --text-inverse: var(--neutral-950);
+      --border-divider: #292929; --border-default: #353535; --border-control: #707070;
+      --action-primary: var(--neutral-100); --action-primary-hover: var(--neutral-0); --action-on-primary: var(--neutral-950);
+      --action-primary-soft: #2b2b2b;
+      --error: #f5aaa3; --error-container: #5c2c27;
+      --accent-favorite: #e89caf;
+      --shadow-1: 0 1px 2px rgb(0 0 0 / 0.28), 0 8px 24px rgb(0 0 0 / 0.24);
+      --shadow-2: 0 12px 40px rgb(0 0 0 / 0.48);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; min-width: 320px; background: var(--page); color: var(--text-primary); font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif; letter-spacing: 0; }
+    button { font: inherit; letter-spacing: 0; color: inherit; }
+    ::selection { background: rgb(71 123 148 / .28); }
+    * { scrollbar-color: var(--neutral-500) transparent; scrollbar-width: thin; }
+
+    .topbar { position: sticky; z-index: 30; top: 0; min-height: 72px; display: flex; align-items: center; gap: 20px; padding: 12px max(20px, calc((100vw - 1440px) / 2)); border-bottom: 1px solid var(--border-divider); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(16px); }
+    .brand { min-width: 220px; }
+    .brand strong { display: block; font-size: 17px; font-weight: 650; }
+    .brand span { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 12px; }
+    .section-nav { min-width: 0; flex: 1; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+    .section-nav::-webkit-scrollbar { display: none; }
+    .section-nav a { flex: 0 0 auto; min-height: 40px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 6px; color: var(--text-secondary); font-size: 13px; text-decoration: none; }
+    .section-nav a:hover { background: var(--surface-component); color: var(--text-primary); }
+    .theme-switch { flex: 0 0 auto; display: grid; grid-template-columns: repeat(3, 40px); gap: 2px; padding: 3px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-component); }
+    .theme-switch button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+    .theme-switch button[aria-pressed="true"] { background: var(--surface); color: var(--text-primary); box-shadow: var(--shadow-1); }
+
+    .shell { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding-bottom: 80px; }
+    .intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 460px); gap: 48px; align-items: end; padding: 48px 0 36px; border-bottom: 1px solid var(--border-divider); }
+    .eyebrow { color: var(--text-secondary); font-size: 12px; font-weight: 650; text-transform: uppercase; }
+    .intro h1 { margin: 8px 0 12px; font-size: 44px; line-height: 1.1; font-weight: 670; }
+    .intro p { max-width: 760px; margin: 0; color: var(--text-secondary); font-size: 15px; line-height: 1.75; }
+    .rule-list { display: grid; gap: 10px; }
+    .rule { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: center; min-height: 50px; padding: 8px 0; border-bottom: 1px solid var(--border-divider); font-size: 13px; }
+    .rule:last-child { border-bottom: 0; }
+    .rule i { font-size: 22px; color: var(--text-secondary); }
+    .rule strong { display: block; margin-bottom: 2px; font-weight: 650; }
+    .rule span { color: var(--text-secondary); }
+
+    .showcase-section { scroll-margin-top: 92px; padding: 42px 0; border-bottom: 1px solid var(--border-divider); }
+    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+    .section-heading h2 { margin: 0; font-size: 22px; font-weight: 660; }
+    .section-heading p { max-width: 640px; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.65; text-align: right; }
+    .subheading { margin: 28px 0 12px; color: var(--text-secondary); font-size: 12px; font-weight: 650; }
+    .note { margin: 8px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+    table.spec-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.spec-table th, table.spec-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-divider); text-align: left; vertical-align: top; }
+    table.spec-table th { color: var(--text-secondary); font-weight: 650; font-size: 11px; }
+    table.spec-table code { font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; }
+
+    /* 分类总览 */
+    .taxonomy-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+    .taxonomy-card { padding: 16px; border: 1px solid var(--border-default); border-radius: 10px; background: var(--surface); }
+    .taxonomy-card strong { display: block; font-size: 13px; font-weight: 650; margin-bottom: 8px; }
+    .taxonomy-card ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+    .taxonomy-card li { font-size: 11px; padding: 3px 9px; border-radius: 999px; background: var(--surface-component); color: var(--text-secondary); }
+
+    /* 解剖 */
+    .anatomy-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+    .anatomy-card { border: 1px solid var(--border-default); border-radius: 12px; background: var(--surface); overflow: hidden; }
+    .anatomy-head { padding: 12px 16px; border-bottom: 1px solid var(--border-divider); font-size: 13px; font-weight: 650; }
+    .anatomy-render { padding: 28px 20px; display: flex; align-items: center; justify-content: center; background: var(--surface-subtle); min-height: 90px; }
+    .anatomy-parts { padding: 12px 16px; border-top: 1px solid var(--border-divider); }
+    .anatomy-part-row { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 8px 0; font-size: 12px; align-items: baseline; }
+    .anatomy-part-row .num { width: 18px; height: 18px; border-radius: 999px; background: var(--action-primary); color: var(--action-on-primary); display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+    .anatomy-part-row strong { font-weight: 650; }
+    .anatomy-part-row .desc { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 1px; }
+    .anatomy-part-row .spec { display: block; color: var(--text-primary); font-size: 10px; margin-top: 3px; font-family: "Cascadia Code", Consolas, monospace; background: var(--surface-component); padding: 3px 6px; border-radius: 4px; }
+    .anatomy-part-row .optional { font-size: 9px; color: var(--text-secondary); border: 1px solid var(--border-default); border-radius: 999px; padding: 1px 6px; margin-left: 6px; }
+    .anatomy-container-spec { padding: 8px 16px; border-top: 1px dashed var(--border-divider); font-size: 10px; color: var(--text-secondary); font-family: "Cascadia Code", Consolas, monospace; background: var(--surface-subtle); }
+
+    /* 局部渲染用的最小组件样式 */
+    .a-btn { min-height: var(--size-touch-min); display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; border-radius: 6px; background: var(--error); color: #fff; font-size: 13px; font-weight: 620; border: 0; }
+    .a-btn i { font-size: 17px; }
+    .a-thumbcard { width: 160px; }
+    .a-thumbcard .thumb { position: relative; aspect-ratio: 16/9; border-radius: var(--radius-sm); background: var(--surface-component); overflow: hidden; }
+    .a-thumbcard .dur { position: absolute; right: 6px; bottom: 6px; padding: 2px 6px; border-radius: 4px; background: rgb(0 0 0 / .72); color: #fff; font-size: 10px; font-weight: 600; }
+    .a-thumbcard .progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgb(255 255 255 / .3); }
+    .a-thumbcard .progress span { display: block; height: 100%; width: 62%; background: #fff; }
+    .a-thumbcard b { display: block; margin-top: 8px; font-size: 12px; font-weight: 600; }
+    .a-thumbcard p { margin: 2px 0 0; font-size: 10px; color: var(--text-secondary); }
+    .a-listitem { display: flex; align-items: center; gap: 12px; width: 280px; }
+    .a-listitem .cover { width: 40px; height: 40px; border-radius: var(--radius-sm); background: var(--surface-component); flex: 0 0 auto; }
+    .a-listitem .info { flex: 1; min-width: 0; }
+    .a-listitem .info b { display: block; font-size: 13px; font-weight: 600; }
+    .a-listitem .info span { font-size: 11px; color: var(--text-secondary); }
+    .a-listitem .trailing { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; color: var(--text-secondary); }
+    .a-appbar { display: flex; align-items: center; gap: 8px; width: 300px; height: 64px; padding: 0 16px; background: var(--surface); border: 1px solid var(--border-divider); border-radius: 8px; }
+    .a-appbar .nav-icon { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; color: var(--text-primary); }
+    .a-appbar strong { flex: 1; font-size: var(--type-title-l-size); font-weight: var(--type-title-l-weight); }
+    .a-appbar .action-icon { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; color: var(--text-secondary); }
+    .a-dialog { width: 260px; padding: var(--space-xl); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-2); }
+    .a-dialog .icon { width: 40px; height: 40px; border-radius: 999px; background: var(--error-container); color: var(--error); display: grid; place-items: center; margin-bottom: var(--space-sm); }
+    .a-dialog h5 { margin: 0 0 6px; font-size: var(--type-title-m-size); font-weight: var(--type-title-m-weight); }
+    .a-dialog p { margin: 0 0 var(--space-lg); font-size: var(--type-body-m-size); color: var(--text-secondary); line-height: 1.5; }
+    .a-dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .a-dialog .actions button { min-height: 36px; padding: 0 14px; border-radius: 6px; font-size: 12px; font-weight: 620; border: 0; background: transparent; color: var(--text-primary); }
+    .a-dialog .actions button.primary { background: var(--error); color: #fff; }
+    .a-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; background: var(--action-primary); color: var(--action-on-primary); font-size: 12px; font-weight: 600; }
+    .a-chip i { font-size: 16px; }
+
+    /* 手势场景 */
+    .gesture-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+    .gesture-card { padding: 16px; border: 1px solid var(--border-default); border-radius: 10px; background: var(--surface); }
+    .gesture-card h4 { margin: 0 0 10px; font-size: 13px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+    .gesture-card h4 i { color: var(--text-secondary); font-size: 18px; }
+    .gesture-row { display: grid; grid-template-columns: 130px 1fr; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border-divider); font-size: 12px; }
+    .gesture-row:first-of-type { border-top: 0; }
+    .gesture-row .g-name { font-weight: 600; }
+    .gesture-row .g-desc { color: var(--text-secondary); }
+
+    /* 决策表 */
+    .decision-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-bottom: 16px; }
+    .decision-card { padding: 14px; border: 1px solid var(--border-default); border-radius: 10px; background: var(--surface); text-align: center; }
+    .decision-card i { font-size: 22px; color: var(--text-secondary); margin-bottom: 8px; display: block; }
+    .decision-card strong { display: block; font-size: 12px; font-weight: 650; margin-bottom: 4px; }
+    .decision-card span { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+
+    /* Do/Don't */
+    .dodont-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .dodont-card { padding: 14px 16px; border-radius: 10px; }
+    .dodont-card.do { background: color-mix(in srgb, var(--action-primary-soft) 100%, transparent); border: 1px solid var(--border-default); }
+    .dodont-card.dont { background: var(--error-container); }
+    .dodont-card .tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
+    .dodont-card.dont .tag, .dodont-card.dont p { color: var(--error); }
+    .dodont-card p { margin: 0; font-size: 12px; line-height: 1.6; }
+
+    @media (max-width: 1100px) {
+      .topbar { padding: 12px 20px; }
+      .intro { grid-template-columns: 1fr; gap: 24px; }
+      .taxonomy-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .decision-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+    @media (max-width: 820px) {
+      .shell { width: min(100% - 24px, 680px); }
+      .section-heading { display: block; }
+      .section-heading p { text-align: left; margin-top: 8px; }
+      .anatomy-grid, .gesture-grid, .dodont-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      .section-nav { display: none; }
+      .shell { width: min(100% - 20px, 440px); }
+      .intro h1 { font-size: 32px; }
+      .taxonomy-grid, .decision-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>影里 · 组件解剖与交互行为</strong>
+      <span>结构 · 手势 · 使用场景决策</span>
+    </div>
+    <nav class="section-nav" aria-label="页面章节">
+      <a href="#taxonomy">组件分类</a>
+      <a href="#anatomy">解剖</a>
+      <a href="#gesture">手势行为</a>
+      <a href="#decision">使用决策</a>
+      <a href="#dodont">Do / Don't</a>
+      <a href="#checklist">验收清单</a>
+    </nav>
+    <div class="theme-switch" role="group" aria-label="主题模式">
+      <button type="button" data-theme-mode="system" aria-pressed="true" title="跟随系统" aria-label="跟随系统"><i class="ti ti-device-desktop" aria-hidden="true"></i></button>
+      <button type="button" data-theme-mode="light" aria-pressed="false" title="浅色" aria-label="浅色"><i class="ti ti-sun" aria-hidden="true"></i></button>
+      <button type="button" data-theme-mode="dark" aria-pressed="false" title="深色" aria-label="深色"><i class="ti ti-moon" aria-hidden="true"></i></button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="intro">
+      <div>
+        <span class="eyebrow">YingLi Component Anatomy &amp; Behavior · Draft 01</span>
+        <h1>不只是长什么样，<br>还有怎么动。</h1>
+        <p>01 定了组件的尺寸，02 定了组件的颜色，但组件由哪几个部分构成、每个部件多大多远什么颜色、点击/长按/滑动分别触发什么、什么场景该用对话框还是底部弹层——这些一直分散在不同文档里，没有一个地方把"结构 + 数值 + 行为"放在一起看。这份文档把 01、02 里和结构相关的具体数值摘过来标在部件上，同时补齐一直缺失的手势行为和选型决策。</p>
+      </div>
+      <div class="rule-list">
+        <div class="rule"><i class="ti ti-hierarchy-2" aria-hidden="true"></i><div><strong>解剖到部件</strong><span>每个组件拆成命名部件，标注是否可选</span></div></div>
+        <div class="rule"><i class="ti ti-hand-move" aria-hidden="true"></i><div><strong>手势有台账</strong><span>单击/长按/滑动分别做什么，写清楚，不是靠约定俗成</span></div></div>
+        <div class="rule"><i class="ti ti-git-branch" aria-hidden="true"></i><div><strong>选型有依据</strong><span>Dialog / BottomSheet / Snackbar / Menu 按场景特征决策，不是随手选</span></div></div>
+        <div class="rule"><i class="ti ti-ruler-2" aria-hidden="true"></i><div><strong>大小、间距、颜色是关键</strong><span>每个部件标注真实数值和 Token，不是只讲抽象结构</span></div></div>
+      </div>
+    </section>
+
+    <section class="showcase-section" id="taxonomy">
+      <div class="section-heading">
+        <h2>组件分类 Taxonomy</h2>
+        <p>全部组件按功能分六类，先有全局地图，再看细节。</p>
+      </div>
+      <div class="taxonomy-grid" id="taxonomyGrid"></div>
+    </section>
+
+    <section class="showcase-section" id="anatomy">
+      <div class="section-heading">
+        <h2>解剖 Anatomy</h2>
+        <p>6 个有代表性的组件，拆成命名部件，标注真实尺寸、间距和颜色 Token。数字顺序按视觉阅读顺序排列，不是重要性排序；容器本身的整体尺寸标在卡片顶部，不重复放进每个子部件里。</p>
+      </div>
+      <div class="anatomy-grid" id="anatomyGrid"></div>
+    </section>
+
+    <section class="showcase-section" id="gesture">
+      <div class="section-heading">
+        <h2>手势与交互行为 Gesture &amp; Interaction</h2>
+        <p>同一个手势在不同场景做不同的事，容易前后矛盾——这里按场景把单击/长按/滑动/拖拽分别做什么写清楚。</p>
+      </div>
+      <div class="gesture-grid" id="gestureGrid"></div>
+      <p class="note">播放器画面的手势区域按左右对半分（亮度/音量），和"双击快进快退"共用画面时以左右各 40%、中间 20% 作为双击专用区，避免和左右拖动误触冲突——这条阈值需要在真机上试触感，这里先给出分区逻辑。</p>
+    </section>
+
+    <section class="showcase-section" id="decision">
+      <div class="section-heading">
+        <h2>使用场景决策 Usage Decision Guide</h2>
+        <p>不是每次要"弹一个东西"都随手选个组件——按场景特征决策。</p>
+      </div>
+      <div class="subheading">浮层选型：Dialog / BottomSheet / Snackbar / Menu</div>
+      <div class="decision-grid">
+        <div class="decision-card"><i class="ti ti-square" aria-hidden="true"></i><strong>Dialog</strong><span>必须做一个决定才能继续，尤其是破坏性操作确认</span></div>
+        <div class="decision-card"><i class="ti ti-layout-bottombar-expand" aria-hidden="true"></i><strong>BottomSheet</strong><span>一组相关操作（3–6 个），从长按或手势触发，触屏更顺手</span></div>
+        <div class="decision-card"><i class="ti ti-message-2" aria-hidden="true"></i><strong>Snackbar</strong><span>一次性反馈，不阻塞，用户可以忽略，最多配一个操作</span></div>
+        <div class="decision-card"><i class="ti ti-list" aria-hidden="true"></i><strong>Menu</strong><span>从固定图标按钮触发的少量选项（2–4 个），不需要占满屏宽</span></div>
+      </div>
+      <table class="spec-table">
+        <thead><tr><th>场景</th><th>选型</th><th>理由</th></tr></thead>
+        <tbody>
+          <tr><td>长按视频卡片</td><td>BottomSheet</td><td>触屏手势触发，选项较多（分享/重命名/移入回收站/添加到播放列表）</td></tr>
+          <tr><td>顶部栏"更多"图标按钮</td><td>Menu</td><td>从固定按钮触发，选项少，不需要占满宽度</td></tr>
+          <tr><td>永久删除确认</td><td>Dialog</td><td>破坏性、不可撤销，必须让用户明确做一次决定</td></tr>
+          <tr><td>"已移入回收站"反馈</td><td>Snackbar</td><td>操作已完成，不阻塞后续浏览，配一个"撤销"</td></tr>
+          <tr><td>批量操作部分失败的详情</td><td>Dialog</td><td>信息量比 Snackbar 一行能装的多，且用户可能需要看完再决定下一步</td></tr>
+        </tbody>
+      </table>
+
+      <div class="subheading">按钮变体：Primary / Secondary / Tonal / Ghost / Danger</div>
+      <table class="spec-table">
+        <thead><tr><th>变体</th><th>场景</th></tr></thead>
+        <tbody>
+          <tr><td>Primary</td><td>页面或对话框里唯一的主要操作</td></tr>
+          <tr><td>Secondary</td><td>和 Primary 并列的次要操作，如对话框里的"取消"</td></tr>
+          <tr><td>Tonal</td><td>频率高但不是页面重点的操作，如"筛选"</td></tr>
+          <tr><td>Ghost</td><td>视觉权重最低，如"清除筛选"这类可有可无的操作</td></tr>
+          <tr><td>Danger</td><td>只用于不可撤销的破坏性操作（永久删除），可撤销的"移入回收站"不用这个变体</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="showcase-section" id="dodont">
+      <div class="section-heading">
+        <h2>Do / Don't</h2>
+        <p>几个容易踩的坑。</p>
+      </div>
+      <div class="dodont-grid" id="dodontGrid"></div>
+    </section>
+
+    <section class="showcase-section" id="checklist">
+      <div class="section-heading">
+        <h2>验收清单 Acceptance Checklist</h2>
+        <p>发布前过一遍。</p>
+      </div>
+      <table class="spec-table">
+        <tbody>
+          <tr><td>同一手势（长按、滑动）在同类场景里含义一致，没有前后矛盾</td></tr>
+          <tr><td>浮层选型对照「使用场景决策」表逐个检查，没有随手选的 Dialog/BottomSheet</td></tr>
+          <tr><td>破坏性操作只用 Danger 按钮，可撤销操作没有误用 Danger 样式</td></tr>
+          <tr><td>组件的可选部件（如缩略图卡片的观看进度条）在没有数据时正确隐藏，不留空白占位</td></tr>
+          <tr><td>滑动手势的触发阈值在真机上测试过，没有和滚动手势冲突</td></tr>
+          <tr><td>长按进入多选模式后，有清楚的退出方式（再次长按 / 返回键 / 取消按钮）</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const taxonomy = [
+      { name: '操作 Action', items: ['按钮', '图标按钮', 'FAB', 'Chip（可点击）'] },
+      { name: '输入 Input', items: ['输入框', '开关', '分段控制器', '搜索栏'] },
+      { name: '展示 Display', items: ['视频缩略图卡片', '列表项', 'Chip（静态）', '标签', '进度条'] },
+      { name: '导航 Navigation', items: ['顶部应用栏', '底部导航', 'NavigationRail', '分段控制器'] },
+      { name: '反馈 Feedback', items: ['Snackbar', '空状态', '异常状态', '骨架屏'] },
+      { name: '浮层 Overlay', items: ['Dialog', 'BottomSheet', 'Menu', '徽标 Badge'] }
+    ];
+
+    const anatomy = [
+      { name: '按钮 Button', container: '48dp 高（--size-button-default）· 0 18px 内边距 · radius 6dp · 图标与标签间距 8dp', render: '<button class="a-btn" type="button"><i class="ti ti-trash" aria-hidden="true"></i>永久删除</button>',
+        parts: [
+          ['容器 Container', '承载点击区域', false, 'background: var(--error)（危险变体，仅不可撤销操作用）'],
+          ['前置图标 Leading Icon', '传达动作类型', true, '19px（.btn i，见 02 文档）'],
+          ['标签 Label', '动词优先，见 03 文档按钮动词表', false, '13px / 620 字重 · color: #fff']
+        ]},
+      { name: '视频缩略图卡片', container: '卡片宽 160dp（网格内自适应）· 圆角 radius-sm 8dp', render: '<div class="a-thumbcard"><div class="thumb"><span class="dur">24:36</span><div class="progress"><span></span></div></div><b>混沌都市·第08集</b><p>今天 · 1080p</p></div>',
+        parts: [
+          ['缩略图 Thumbnail', '16∶9 比例', false, 'radius-sm 8dp · background: var(--surface-component)'],
+          ['时长角标 Duration', '右下角叠加', false, '距边缘 6dp · 内边距 2px 6px · radius 4dp · background: rgba(0,0,0,.72) · 10dp 白字'],
+          ['观看进度条 Watch Progress', '仅看过的视频显示', true, '高 4dp（复用 --size-seekbar-track）· 贴底边 · 白色实心 / 半透明白底'],
+          ['标题 Title', '单行截断', false, '与缩略图间距 8dp（space-xs）· 12dp / 600 字重'],
+          ['元数据 Metadata', '日期 + 画质，见 03 格式规范', false, '与标题间距 2dp · 10dp · color: var(--text-secondary)']
+        ]},
+      { name: '列表项（含缩略图）', container: '行高 104dp（--size-list-media，见 01）· 左右内边距 16dp', render: '<div class="a-listitem"><div class="cover"></div><div class="info"><b>混沌都市·第08集</b><span>24:36 · 1.2 GB</span></div><div class="trailing"><i class="ti ti-dots-vertical" aria-hidden="true"></i></div></div>',
+        parts: [
+          ['封面/缩略图 Leading', '', false, '40×40dp · radius-sm 8dp · 与文字间距 12dp（space-sm）'],
+          ['主标题 Title', '单行截断', false, '13dp / 600 字重'],
+          ['次要信息 Subtitle', '时长、大小、日期等，见 03 格式规范', false, '与标题间距约 2dp · 11dp · color: var(--text-secondary)'],
+          ['尾部操作 Trailing Action', '更多菜单或开关', true, '32–40dp 触控区 · color: var(--text-secondary)']
+        ]},
+      { name: '顶部应用栏', container: '64dp 高（--size-topbar，见 01）· 左右内边距 16dp', render: '<div class="a-appbar"><div class="nav-icon"><i class="ti ti-arrow-left" aria-hidden="true"></i></div><strong>视频库</strong><div class="action-icon"><i class="ti ti-search" aria-hidden="true"></i></div><div class="action-icon"><i class="ti ti-dots-vertical" aria-hidden="true"></i></div></div>',
+        parts: [
+          ['导航图标 Navigation Icon', '返回或菜单，二级页面才有', true, '40dp 触控区 · 24dp 图标'],
+          ['标题 Title', 'Title Large，见 01 类型阶', false, '17dp / 620 字重'],
+          ['操作图标区 Action Icons', '超过用 Menu 收纳', false, '每个 40dp 触控区 · 图标间距 4dp · 最多 2–3 个']
+        ]},
+      { name: '对话框 Dialog', container: '左右边距 32dp（--size-dialog-margin）· 内边距 24dp（space-xl）· radius-lg 16dp', render: '<div class="a-dialog"><div class="icon"><i class="ti ti-trash" aria-hidden="true"></i></div><h5>永久删除？</h5><p>此操作无法撤销。</p><div class="actions"><button type="button">取消</button><button class="primary" type="button">永久删除</button></div></div>',
+        parts: [
+          ['图标徽标 Icon Badge', '强调场景性质', true, '40–42dp 圆形 · background: var(--error-container) · color: var(--error)'],
+          ['标题 Title', '问句点出动作本身，见 03', false, '15dp / 620 字重 · 与正文间距 12dp（space-sm）'],
+          ['正文 Body', '什么 + 能否撤销', false, '13dp / 400 · color: var(--text-secondary) · 与按钮区间距 24dp（space-xl）'],
+          ['操作区 Actions', '右对齐，取消在左、确认在右', false, '按钮间距 8dp（space-xs）']
+        ]},
+      { name: 'Chip', container: '32dp 高（--size-chip）· 0 12px 内边距 · radius-full 999dp', render: '<span class="a-chip"><i class="ti ti-check" aria-hidden="true"></i>全部</span>',
+        parts: [
+          ['容器 Container', '胶囊形', false, 'background: var(--action-primary)（选中态）'],
+          ['前置图标 Leading Icon', '选中态勾选图标', true, '16dp · 与标签间距 6dp'],
+          ['标签 Label', '简短，1–4 字为宜', false, '12dp 字号']
+        ]}
+    ];
+
+    const gestures = [
+      { title: '视频卡片 / 列表项', icon: 'ti-video', rows: [
+        ['单击 Tap', '播放该视频'],
+        ['长按 Long-press', '进入多选模式，该项即为首个选中项'],
+        ['左滑 Swipe left（仅列表视图）', '露出快捷操作：收藏 / 移入回收站']
+      ]},
+      { title: '播放列表 / 合集内条目', icon: 'ti-playlist', rows: [
+        ['长按并拖拽 Long-press + drag', '重新排序'],
+        ['左滑 Swipe left', '移出播放列表（不影响原文件本身）']
+      ]},
+      { title: '播放器画面 Player Canvas', icon: 'ti-player-play', rows: [
+        ['单击 Tap', '显示 / 隐藏控制栏'],
+        ['双击 Double-tap（画面左/右）', '快退 / 快进 10 秒'],
+        ['左右拖动 Horizontal drag', '拖动进度，画面中央显示时间提示'],
+        ['左侧垂直拖动（左半屏）', '调整亮度'],
+        ['右侧垂直拖动（右半屏）', '调整音量'],
+        ['双指捏合 Pinch', '切换画面比例（适应/填满/拉伸）']
+      ]},
+      { title: '底部导航 / Chip / 分段控制器', icon: 'ti-apps', rows: [
+        ['单击 Tap', '切换'],
+        ['不支持长按或滑动', '保持简单，不把功能藏进隐藏手势里']
+      ]}
+    ];
+
+    const dodont = [
+      { do: true, text: '"移入回收站"用 Primary 按钮，"永久删除"才用 Danger 按钮——颜色对应后果的严重程度。' },
+      { do: false, text: '所有带"删除"字样的按钮都套用红色 Danger 样式，不区分是否可撤销。' },
+      { do: true, text: '长按视频卡片弹出的多个相关操作用 BottomSheet，触屏拇指可及范围内完成选择。' },
+      { do: false, text: '把 6 个操作塞进一个 Dialog 的按钮区，右对齐挤成一排小字。' },
+      { do: true, text: '滑动进度条时把滑块从 12dp 放大到 16dp，给手指更大的容错。' },
+      { do: false, text: '滑动手势和系统返回手势冲突的边缘热区仍然放可滑动的快捷操作。' }
+    ];
+
+    function renderTaxonomy() {
+      document.getElementById('taxonomyGrid').innerHTML = taxonomy.map(cat => `
+        <div class="taxonomy-card"><strong>${cat.name}</strong><ul>${cat.items.map(i => `<li>${i}</li>`).join('')}</ul></div>
+      `).join('');
+    }
+
+    function renderAnatomy() {
+      document.getElementById('anatomyGrid').innerHTML = anatomy.map(item => `
+        <div class="anatomy-card">
+          <div class="anatomy-head">${item.name}</div>
+          <div class="anatomy-render">${item.render}</div>
+          ${item.container ? `<div class="anatomy-container-spec">容器：${item.container}</div>` : ''}
+          <div class="anatomy-parts">${item.parts.map(([name, desc, optional, spec], i) => `
+            <div class="anatomy-part-row">
+              <span class="num">${i + 1}</span>
+              <div><strong>${name}</strong>${optional ? '<span class="optional">可选</span>' : ''}<span class="desc">${desc}</span><span class="spec">${spec}</span></div>
+            </div>`).join('')}</div>
+        </div>`).join('');
+    }
+
+    function renderGestures() {
+      document.getElementById('gestureGrid').innerHTML = gestures.map(g => `
+        <div class="gesture-card">
+          <h4><i class="ti ${g.icon}" aria-hidden="true"></i>${g.title}</h4>
+          ${g.rows.map(([name, desc]) => `<div class="gesture-row"><div class="g-name">${name}</div><div class="g-desc">${desc}</div></div>`).join('')}
+        </div>`).join('');
+    }
+
+    function renderDodont() {
+      document.getElementById('dodontGrid').innerHTML = dodont.map(item => `
+        <div class="dodont-card ${item.do ? 'do' : 'dont'}">
+          <span class="tag"><i class="ti ${item.do ? 'ti-check' : 'ti-x'}" aria-hidden="true"></i> ${item.do ? 'Do' : "Don't"}</span>
+          <p>${item.text}</p>
+        </div>`).join('');
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    function applyTheme(mode) {
+      const dark = mode === 'dark' || (mode === 'system' && mediaQuery.matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.dataset.themeChoice = mode;
+      document.querySelectorAll('[data-theme-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeMode === mode)));
+    }
+    document.querySelectorAll('[data-theme-mode]').forEach(button => button.addEventListener('click', () => applyTheme(button.dataset.themeMode)));
+    mediaQuery.addEventListener('change', () => { if (document.documentElement.dataset.themeChoice === 'system') applyTheme('system'); });
+
+    applyTheme('system');
+    renderTaxonomy();
+    renderAnatomy();
+    renderGestures();
+    renderDodont();
+  </script>
+</body>
+</html>

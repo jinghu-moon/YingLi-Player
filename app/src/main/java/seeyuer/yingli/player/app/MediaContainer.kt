@@ -29,6 +29,7 @@ import seeyuer.yingli.player.domain.playback.PlaybackSourceRepository
 import seeyuer.yingli.player.domain.library.LibraryMutationRepository
 import seeyuer.yingli.player.domain.library.LibraryPreferenceRepository
 import seeyuer.yingli.player.domain.library.LibraryRepository
+import seeyuer.yingli.player.domain.library.LibraryPagingRepository
 import seeyuer.yingli.player.domain.library.SearchRepository
 import seeyuer.yingli.player.domain.library.TrashRepository
 import seeyuer.yingli.player.domain.organize.HistoryRepository
@@ -65,7 +66,7 @@ data class MediaContainer(
     val onboardingRepository: MediaOnboardingRepository,
     val playbackSourceRepository: PlaybackSourceRepository,
     val playbackProgressRepository: PlaybackProgressRepository,
-    val libraryRepository: LibraryRepository,
+    val libraryRepository: LibraryPagingRepository,
     val searchRepository: SearchRepository,
     val libraryPreferenceRepository: LibraryPreferenceRepository,
     val trashRepository: TrashRepository,
@@ -131,7 +132,7 @@ object ProductionMediaContainerFactory {
             .components { add(VideoFrameDecoder.Factory()) }
             .diskCache(
                 DiskCache.Builder()
-                    .directory(context.cacheDir.resolve("thumbnails").absolutePath.toPath())
+                    .directory(context.cacheDir.resolve("coil").absolutePath.toPath())
                     .maxSizeBytes(256L * 1024 * 1024)
                     .build()
             )
@@ -246,18 +247,19 @@ object ProductionMediaContainerFactory {
             foundation.clock,
         )
         val thumbnailExtractor = FallbackThumbnailExtractor(
-            CoilThumbnailExtractor(context, thumbnailImageLoader),
-            FallbackThumbnailExtractor(
-                ContentResolverThumbnailSource(context),
-                Media3FrameThumbnailSource(context, foundation.dispatchers),
-            ),
+            ContentResolverThumbnailSource(context),
+            Media3FrameThumbnailSource(context, foundation.dispatchers),
+        )
+        val thumbnailCache = LayeredThumbnailCache(
+            memory = MemoryThumbnailCache(),
+            disk = DiskThumbnailCache(context.cacheDir.resolve(ThumbnailStorage.DIRECTORY_NAME)),
         )
         return MediaContainer(
             sourceRepository,
             catalogRepository,
             permissionGateway,
             scanner,
-            PriorityThumbnailRepository(thumbnailScope, thumbnailExtractor),
+            PriorityThumbnailRepository(thumbnailScope, thumbnailExtractor, cache = thumbnailCache),
             DataStoreMediaOnboardingRepository(context),
             playbackRepository,
             playbackRepository,

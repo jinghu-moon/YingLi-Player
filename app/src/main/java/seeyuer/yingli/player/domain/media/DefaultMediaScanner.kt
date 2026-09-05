@@ -43,6 +43,7 @@ class DefaultMediaScanner(
             val dataSource = sourceByMode[source.mode] ?: return@forEach
             val snapshot = catalogRepository.snapshot(sourceId)
             val items = snapshot.items.associateBy(MediaItem::id).toMutableMap()
+            val existingItemIds = snapshot.items.mapTo(mutableSetOf(), MediaItem::id)
             val locations = snapshot.locations.toMutableList()
             val locationsByUri = snapshot.locations.associateBy(MediaLocation::uri).toMutableMap()
             val locationsBySize = snapshot.locations.groupBy(MediaLocation::sizeBytes)
@@ -56,8 +57,10 @@ class DefaultMediaScanner(
                 .mapValuesTo(mutableMapOf()) { (_, values) -> values.toMutableList() }
             val indexedLocationIds = snapshot.locations.mapTo(mutableSetOf(), MediaLocation::id)
             val links = snapshot.itemByLocation.toMutableMap()
-            val scannedLocations = mutableListOf<MediaLocation>()
-            val evidenceUpdates = mutableMapOf<MediaLocationId, MediaLocation>()
+            val batchLocations = mutableListOf<MediaLocation>()
+            val batchItems = linkedMapOf<MediaItemId, MediaItem>()
+            val batchLinks = linkedMapOf<MediaLocationId, MediaItemId>()
+            val batchEvidenceUpdates = linkedMapOf<MediaLocationId, MediaLocation>()
             val seen = mutableSetOf<MediaLocationId>()
             var scanComplete = true
             dataSource.discover(source).collect { event ->
@@ -97,7 +100,7 @@ class DefaultMediaScanner(
                                 candidate.evidence,
                                 locations,
                                 links,
-                                evidenceUpdates,
+                                batchEvidenceUpdates,
                                 candidateLocations,
                             )
                         }
@@ -107,7 +110,12 @@ class DefaultMediaScanner(
                         val item = items[itemId] ?: MediaItem(itemId, resolvedEvidence.fileName.substringBeforeLast('.').ifBlank { resolvedEvidence.fileName })
                         val location = candidate.toLocation(locationId, resolvedEvidence, clock.now().toEpochMilli())
                         items[itemId] = item
-                        scannedLocations += location
+                        batchLocations += location
+                        batchLinks[locationId] = itemId
+                        if (itemId !in existingItemIds) {
+                            batchItems[itemId] = item
+                            existingItemIds += itemId
+                        }
                         if (indexedLocationIds.add(location.id)) {
                             locations += location
                             locationsByUri[location.uri] = location
@@ -123,18 +131,39 @@ class DefaultMediaScanner(
                         }
                         links[locationId] = itemId
                         seen += locationId
+                        if (batchLocations.size >= BATCH_SIZE) {
+                            val counts = catalogRepository.applyMutation(sourceId, CatalogMutation(
+                                upsertItems = batchItems.values.toList(),
+                                upsertLocations = batchLocations.toList(),
+                                links = batchLinks.toMap(),
+                                seenLocationIds = seen,
+                                scanCompletedAtEpochMillis = clock.now().toEpochMilli(),
+                                markMissing = false,
+                                evidenceUpdates = batchEvidenceUpdates.values.toList(),
+                            ))
+                            added += counts.first
+                            updated += counts.second
+                            batchItems.clear()
+                            batchLocations.clear()
+                            batchLinks.clear()
+                            batchEvidenceUpdates.clear()
+                            progressState.value = progressState.value.copy(
+                                processed = progressProcessed,
+                                discovered = progressProcessed,
+                            )
+                        }
                     }
                 }
             }
             val beforeMissing = snapshot.locations.count { it.id !in seen }
             val counts = catalogRepository.applyMutation(sourceId, CatalogMutation(
-                upsertItems = items.values.toList(),
-                upsertLocations = scannedLocations,
-                links = links.filterKeys { it in seen },
+                upsertItems = batchItems.values.toList(),
+                upsertLocations = batchLocations.toList(),
+                links = batchLinks.toMap(),
                 seenLocationIds = seen,
                 scanCompletedAtEpochMillis = clock.now().toEpochMilli(),
                 markMissing = scanComplete,
-                evidenceUpdates = evidenceUpdates.values.toList(),
+                evidenceUpdates = batchEvidenceUpdates.values.toList(),
             ))
             added += counts.first
             updated += counts.second
@@ -198,6 +227,7 @@ class DefaultMediaScanner(
 
     private companion object {
         const val PROGRESS_BATCH = 64
+        const val BATCH_SIZE = 400
         val TERMINAL_FAILURES = setOf(ScanFailureKind.PERMISSION, ScanFailureKind.SOURCE_OFFLINE, ScanFailureKind.IO)
     }
 }

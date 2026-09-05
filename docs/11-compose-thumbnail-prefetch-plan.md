@@ -1,6 +1,19 @@
 我的重构方案不是“把 Coil 替换成 Glide”，而是先重构媒体库和缩略图的边界，再让 Coil、Glide、Media3 成为可替换实现。
 
-> **2026-09 修订**：Compose 列表分页由手写 `LibraryQuerySession` 改为 AndroidX Paging 3。新增 `paging-runtime`、`paging-compose` 和 `paging-testing`（版本与项目 AndroidX 依赖统一）。本次范围包含 ViewModel 和 UI 的分页契约变更，不保留旧 `items + loadMore()` 兼容层。Room Keyset SQL、缩略图接口和扫描器设计保持不变。
+> **2026-09 修订**：Compose 列表分页由手写 `LibraryQuerySession` 改为 AndroidX Paging 3。新增 `paging-runtime`、`paging-compose` 和 `paging-testing`（版本与项目 AndroidX 依赖统一）。本次范围包含 ViewModel 和 UI 的分页契约变更，不保留旧 `items + loadMore()` 兼容层。Room 使用可恢复丢弃页面的双向 Keyset 查询，当前设备调参采用 `pageSize=60`、`prefetchDistance=24`、`maxSize=150`。
+
+## 兼容性边界
+
+本项目处于开发期，兼容性不是方案约束。实现时应直接替换错误抽象，不增加 Adapter、Legacy API、迁移分支或新旧调用链并行运行。以下内容不是兼容层：
+
+- 保留 MediaStore 和 SAF，是两个仍在使用的媒体来源能力，不是为旧实现保留的后门；
+- `ThumbnailLoader` 是新的领域边界，用于隔离 UI 与具体解码器，不承诺兼容现有 Coil 调用方式；
+- `getRefreshKey()`、`cachedIn()` 和 `LoadState.retry()` 是 Paging 3 的正确运行契约，不是旧分页 API 的兼容实现；
+- 回归测试要求播放、权限、搜索、筛选等当前功能继续正常，是行为验收，不是 API 兼容承诺。
+
+数据库采用开发期策略：schema 发生破坏性变化时默认允许删除并重建本地数据库，不为了保留旧开发数据编写迁移代码。只有在测试当前数据保留行为确有必要，或需求明确要求保留用户数据时，才增加对应的 Room migration；该 migration 不能成为旧领域 API 或旧查询实现的兼容包装。
+
+Coil 与 Glide 可以在基准测试阶段暂时同时存在，但这只是实现选型实验。完成真实设备 benchmark 后必须删除落选实现及其专用调用路径，不形成长期双轨架构。
 
   目标架构：
 
@@ -183,7 +196,7 @@
   - trash_entries
   - media_item_locations
 
-  不保留旧的领域 API 兼容层。数据库只做必要的 Room schema migration，不为旧实现增加包装代码。
+  不保留旧的领域 API 兼容层。schema 破坏性变化默认重建开发期数据库；只有明确需要保留当前数据时才增加最小的 Room schema migration，不为旧实现增加包装代码。
 
   ## 四、重构缩略图系统
 
@@ -298,14 +311,14 @@
   ```text
   refresh: key = null
   append:  key = 上一页的 nextKey
-  prepend: 不主动使用，丢弃的页面由 Paging 在需要时重新加载
+  prepend: key = 当前窗口第一页的 prevKey，用于重新加载被丢弃的前页
   ```
 
   每次 SQL 仍然读取 `pageSize + 1` 行，用哨兵行判断 `nextKey` 是否存在。`LoadResult.Page` 必须同时返回：
 
   - `data`：最多 `pageSize` 条；
-  - `prevKey`：本页开始位置之前的游标；
-  - `nextKey`：本页结束位置之后的游标；
+  - `prevKey`：本页第一条记录的游标，Prepend 以它为严格排除边界向前查询；
+  - `nextKey`：本页最后一条记录的游标，Append 以它为严格排除边界向后查询；
   - `itemsBefore/itemsAfter`：当前 Keyset 查询无法廉价计算时使用 `COUNT_UNDEFINED`，总数由独立 COUNT Flow 提供。
 
   `LibraryPagingSource` 必须接入 Room `InvalidationTracker`，观察 `media_items`、`media_locations`、`media_item_locations`、`media_sources`、`playback_history`、`trash_entries` 和 `media_tags`。任一相关表发生变化时调用 `invalidate()`，并移除对应 observer。不能只依赖 Compose 重组或 COUNT Flow 变化，否则数据库更新后旧 PagingSource 可能继续追加过期数据。
@@ -317,10 +330,12 @@
   1. 读取 `state.anchorPosition`；
   2. 用 `state.closestPageToPosition(anchorPosition)` 找到锚点页；
   3. 优先返回锚点页的 `prevKey`，使刷新从该页开始，不跳过锚点附近数据；
-  4. 若没有 `prevKey`，再使用 `nextKey`；
-  5. 只有在页边界不可用时，才通过 `state.closestItemToPosition(anchorPosition)` 取得真实 `LibraryMedia`，根据当前排序字段反推出 `LibraryCursor`。
+  4. 锚点页存在但 `prevKey` 为 `null` 时，说明它是首屏，必须返回 `null` 从查询开头刷新，不能用 `nextKey` 跳过首屏；
+  5. 只有找不到锚点页时，才通过 `state.closestItemToPosition(anchorPosition)` 取得真实 `LibraryMedia`，根据当前排序字段反推出 `LibraryCursor`。
 
   不能用可见 index 拼接游标，也不能使用未经当前排序字段计算的临时值。排序字段、方向和媒体 ID 必须来自真实记录。
+
+  游标边界协议必须保持一致：Append 和 Prepend 均严格排除边界记录；带 key 的 Refresh 包含该 key 对应的记录，使 `getRefreshKey()` 返回的页首游标能够恢复同一页。同排序值必须使用 `mediaId` 作为第二排序键，且两个翻页方向都使用严格比较，避免重复或遗漏。
 
   删除、收藏、标签、播放进度和扫描写入导致数据库失效时，Paging 会创建新的 PagingSource，并按 refresh key 恢复附近页面。若排序字段本身发生变化，允许该条记录在刷新后移动到新位置，但不能混入旧查询结果。
 
@@ -393,7 +408,7 @@
   maxSize >= pageSize + 2 * prefetchDistance
   ```
 
-  同时官方说明 `maxSize` 是 best effort，预取窗口内页面不会被丢弃。初始候选值可以是 `pageSize=60`、`prefetchDistance=24`、`maxSize=180`，但这不是最终决策。必须在真实设备上用固定滚动脚本比较 `maxSize=120/180/240/300`，记录：
+  同时官方说明 `maxSize` 是 best effort，预取窗口内页面不会被丢弃。真实设备对比显示 `maxSize=120` 内存较低但反向滚动重载更频繁，`maxSize=180` 内存更高；当前取中间值 `maxSize=150`。后续仍需用固定滚动脚本记录：
 
   - Java/Kotlin heap 峰值；
   - 丢页后的重新加载次数；
@@ -495,7 +510,7 @@
   阶段 4：Provider + Media3 FrameExtractor
   阶段 5：Paging 3、Compose LazyPagingItems 和 CacheWindow
   阶段 6：移除旧实现，完成全量回归
-  阶段 7：Coil / Glide benchmark
+  阶段 7：Coil / Glide benchmark，并删除落选实现
 
   相关官方资料：
 
@@ -519,6 +534,6 @@
       ↓
   Media3 FrameExtractor
       ↓
-  Coil / Glide 可替换 benchmark
+  Coil / Glide 可替换 benchmark（仅在评估阶段并行）
 
-  不直接迁移到 Glide，不保留旧的全量分页和独立缩略图请求链。这样可以从根因上解决当前的索引、分页、缩略图重复解码和快速滚动卡顿问题，同时保留现有播放、权限、搜索、筛选和媒体管理能力。
+  不直接迁移到 Glide，不保留旧的全量分页和独立缩略图请求链；benchmark 完成后删除落选的缩略图实现。这样可以从根因上解决当前的索引、分页、缩略图重复解码和快速滚动卡顿问题，同时通过回归测试保证现有播放、权限、搜索、筛选和媒体管理行为正常，而不是为旧实现维持兼容层。

@@ -37,6 +37,9 @@ interface MediaCatalogDao {
     @Query("SELECT * FROM media_tags")
     suspend fun tagsSnapshot(): List<MediaTagEntity>
 
+    @Query("SELECT * FROM media_tags WHERE mediaItemId IN (:mediaItemIds)")
+    suspend fun tagsForItems(mediaItemIds: List<String>): List<MediaTagEntity>
+
     @Query("SELECT * FROM media_locations WHERE sourceId = :sourceId")
     suspend fun locationsForSource(sourceId: String): List<MediaLocationEntity>
 

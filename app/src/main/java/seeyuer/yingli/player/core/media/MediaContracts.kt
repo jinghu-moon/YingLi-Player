@@ -99,6 +99,7 @@ interface ThumbnailRepository {
 interface ThumbnailLoader {
     fun observe(request: ThumbnailRequest): Flow<ThumbnailState>
     fun request(request: ThumbnailRequest)
+    fun cancel(request: ThumbnailRequest)
     fun requestVisible(requests: List<ThumbnailRequest>)
     /**
      * Queues background work for one scroll session. The caller keeps the same

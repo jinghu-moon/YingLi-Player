@@ -24,12 +24,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -47,12 +46,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -70,13 +70,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import seeyuer.yingli.player.core.media.ThumbnailLoader
-import seeyuer.yingli.player.core.model.media.ThumbnailPriority
-import seeyuer.yingli.player.core.model.media.ThumbnailRequest
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemContentType
+import androidx.paging.compose.itemKey
+import coil3.request.CachePolicy
+import coil3.request.crossfade
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
+import seeyuer.yingli.player.core.media.ThumbnailLoader
+import seeyuer.yingli.player.core.media.ThumbnailState
+import seeyuer.yingli.player.core.media.ThumbnailStorage
+import seeyuer.yingli.player.core.model.media.ThumbnailPriority
+import seeyuer.yingli.player.core.model.media.ThumbnailRequest
+import seeyuer.yingli.player.core.model.media.ScrollDirection
 import java.util.Locale
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.component.BannerKind
@@ -101,8 +109,10 @@ fun LibraryRoute(
     thumbnailRepository: ThumbnailLoader? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val pagingItems = viewModel.pagingData.collectAsLazyPagingItems()
     LibraryScreen(
         state = state,
+        pagingItems = pagingItems,
         isWide = isWide,
         onKeywordChange = viewModel::setKeyword,
         onGroupChange = viewModel::setGroup,
@@ -121,7 +131,6 @@ fun LibraryRoute(
         onPurge = viewModel::purge,
         onMediaSelected = onMediaSelected,
         thumbnailRepository = thumbnailRepository,
-        onLoadMore = viewModel::loadMore,
         modifier = modifier,
     )
 }
@@ -130,6 +139,7 @@ fun LibraryRoute(
 @Composable
 fun LibraryScreen(
     state: LibraryUiState,
+    pagingItems: LazyPagingItems<LibraryMedia>,
     isWide: Boolean,
     onKeywordChange: (String) -> Unit,
     onGroupChange: (LibraryGroup) -> Unit,
@@ -140,7 +150,7 @@ fun LibraryScreen(
     onResolutionFilter: (Int?) -> Unit,
     onDurationFilter: (Long?) -> Unit,
     onResetFilter: () -> Unit,
-    onToggleSelection: (seeyuer.yingli.player.core.model.media.MediaItemId) -> Unit,
+    onToggleSelection: (LibraryMedia) -> Unit,
     onClearSelection: () -> Unit,
     onTrashSelected: () -> Unit,
     onToggleTrash: () -> Unit,
@@ -149,28 +159,27 @@ fun LibraryScreen(
     onMediaSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     thumbnailRepository: ThumbnailLoader? = null,
-    onLoadMore: () -> Unit = {},
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmPurge by remember { mutableStateOf<TrashEntry?>(null) }
     val content: @Composable (Modifier) -> Unit = { contentModifier ->
         LibraryContent(
-            state,
-            onKeywordChange,
-            onGroupChange,
-            onViewModeChange,
-            onThumbnailScaleChange,
-            onToggleFilter,
-            onToggleSelection,
-            onMediaSelected,
-            onClearSelection,
+            state = state,
+            pagingItems = pagingItems,
+            onKeywordChange = onKeywordChange,
+            onGroupChange = onGroupChange,
+            onViewModeChange = onViewModeChange,
+            onThumbnailScaleChange = onThumbnailScaleChange,
+            onToggleFilter = onToggleFilter,
+            onToggleSelection = onToggleSelection,
+            onMediaSelected = onMediaSelected,
+            onClearSelection = onClearSelection,
             onRequestDelete = { confirmDelete = true },
             onToggleTrash = onToggleTrash,
             onRestore = onRestore,
             onRequestPurge = { confirmPurge = it },
-            onLoadMore = onLoadMore,
             thumbnailRepository = thumbnailRepository,
-            contentModifier,
+            modifier = contentModifier,
         )
     }
     if (isWide && state.filterPanelOpen) {
@@ -241,19 +250,19 @@ fun LibraryScreen(
 @Composable
 private fun LibraryContent(
     state: LibraryUiState,
+    pagingItems: LazyPagingItems<LibraryMedia>,
     onKeywordChange: (String) -> Unit,
     onGroupChange: (LibraryGroup) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
     onThumbnailScaleChange: (Float) -> Unit,
     onToggleFilter: () -> Unit,
-    onToggleSelection: (seeyuer.yingli.player.core.model.media.MediaItemId) -> Unit,
+    onToggleSelection: (LibraryMedia) -> Unit,
     onMediaSelected: (String) -> Unit,
     onClearSelection: () -> Unit,
     onRequestDelete: () -> Unit,
     onToggleTrash: () -> Unit,
     onRestore: (TrashEntry) -> Unit,
     onRequestPurge: (TrashEntry) -> Unit,
-    onLoadMore: () -> Unit,
     thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier,
 ) {
@@ -307,19 +316,26 @@ private fun LibraryContent(
         }
         when {
             state.trashOpen -> TrashPanel(state.trashEntries, onToggleTrash, onRestore, onRequestPurge, Modifier.weight(1f))
-            state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            state.retryableFailure -> YingLiEmptyState(
-                stringResource(R.string.library_error_title),
-                stringResource(R.string.library_error_message),
-                Modifier.fillMaxSize(),
-            )
-            state.items.isEmpty() -> YingLiEmptyState(
+            pagingItems.loadState.refresh is LoadState.Loading && pagingItems.itemCount == 0 ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            pagingItems.loadState.refresh is LoadState.Error && pagingItems.itemCount == 0 ->
+                PagingErrorState(pagingItems::retry, Modifier.fillMaxSize())
+            pagingItems.itemCount == 0 -> YingLiEmptyState(
                 stringResource(R.string.library_empty_result_title),
                 stringResource(R.string.library_empty_result_message),
                 Modifier.fillMaxSize(),
             )
-            else -> MediaLayout(state, onToggleSelection, onMediaSelected, onLoadMore, thumbnailRepository, Modifier.weight(1f))
+            else -> MediaLayout(state, pagingItems, onToggleSelection, onMediaSelected, thumbnailRepository, Modifier.weight(1f))
         }
+    }
+}
+
+@Composable
+private fun PagingErrorState(onRetry: () -> Unit, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text(stringResource(R.string.library_error_title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.library_error_message), color = YingLiTheme.colors.textSecondary)
+        TextButton(onClick = onRetry) { Text(stringResource(R.string.library_load_more_retry)) }
     }
 }
 
@@ -382,52 +398,76 @@ private fun SelectionToolbar(count: Int, onClear: () -> Unit, onDelete: () -> Un
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MediaLayout(
     state: LibraryUiState,
-    onToggleSelection: (seeyuer.yingli.player.core.model.media.MediaItemId) -> Unit,
+    pagingItems: LazyPagingItems<LibraryMedia>,
+    onToggleSelection: (LibraryMedia) -> Unit,
     onMediaSelected: (String) -> Unit,
-    onLoadMore: () -> Unit,
     thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier,
 ) {
     val select: (LibraryMedia) -> Unit = { item ->
-        if (state.selectedIds.isNotEmpty()) onToggleSelection(item.id) else onMediaSelected(item.id.value)
+        if (state.selectedIds.isNotEmpty()) onToggleSelection(item) else onMediaSelected(item.id.value)
     }
+    val onLongClick: (LibraryMedia) -> Unit = onToggleSelection
     when (state.preference.viewMode) {
         LibraryViewMode.GRID -> {
-            val gridState = rememberLazyGridState()
-            LoadMoreWhenNearEnd(gridState, state.items.size, state.hasMore, state.loadingMore, state.loadMoreFailed, onLoadMore)
+            val gridState = rememberLazyGridState(
+                cacheWindow = LazyLayoutCacheWindow(ahead = 240.dp, behind = 120.dp),
+            )
+            ThumbnailPrefetchEffect(
+                pagingItems = pagingItems,
+                thumbnailRepository = thumbnailRepository,
+                visibleRange = { gridState.layoutInfo.visibleItemsInfo.map { it.index }.toIntRange() },
+            )
             LazyVerticalGrid(
                 columns = GridCells.Adaptive((144.dp * state.preference.thumbnailScale)),
                 state = gridState,
                 modifier = modifier.testTag(LibraryTestTags.GRID),
                 contentPadding = PaddingValues(12.dp),
             ) {
-                items(state.items, key = { it.id.value }, contentType = { "media" }) { item ->
-                    MediaCard(item, item.id in state.selectedIds, VIDEO_ASPECT_RATIO, select, onToggleSelection, thumbnailRepository)
+                items(
+                    count = pagingItems.itemCount,
+                    key = pagingItems.itemKey { it.id.value },
+                    contentType = pagingItems.itemContentType { "media" },
+                ) { index ->
+                    pagingItems[index]?.let { item ->
+                        MediaCard(item, item.id in state.selectedIds, VIDEO_ASPECT_RATIO, select, { onLongClick(item) }, thumbnailRepository)
+                    }
                 }
-                if (state.loadingMore || state.loadMoreFailed) {
+                if (pagingItems.loadState.append is LoadState.Loading || pagingItems.loadState.append is LoadState.Error) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        LoadMoreFooter(state.loadingMore, state.loadMoreFailed, onLoadMore)
+                        PagingFooter(pagingItems.loadState.append, pagingItems::retry)
                     }
                 }
             }
         }
         LibraryViewMode.LIST -> {
             val listState = rememberLazyListState()
-            LoadMoreWhenNearEnd(listState, state.items.size, state.hasMore, state.loadingMore, state.loadMoreFailed, onLoadMore)
+            ThumbnailPrefetchEffect(
+                pagingItems = pagingItems,
+                thumbnailRepository = thumbnailRepository,
+                visibleRange = { listState.layoutInfo.visibleItemsInfo.map { it.index }.toIntRange() },
+            )
             LazyColumn(
                 state = listState,
                 modifier = modifier.testTag(LibraryTestTags.LIST),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                items(state.items, key = { it.id.value }, contentType = { "media" }) { item ->
-                    MediaListRow(item, item.id in state.selectedIds, select, onToggleSelection, thumbnailRepository)
+                items(
+                    count = pagingItems.itemCount,
+                    key = pagingItems.itemKey { it.id.value },
+                    contentType = pagingItems.itemContentType { "media" },
+                ) { index ->
+                    pagingItems[index]?.let { item ->
+                        MediaListRow(item, item.id in state.selectedIds, select, { onLongClick(item) }, thumbnailRepository)
+                    }
                 }
-                if (state.loadingMore || state.loadMoreFailed) {
-                    item { LoadMoreFooter(state.loadingMore, state.loadMoreFailed, onLoadMore) }
+                if (pagingItems.loadState.append is LoadState.Loading || pagingItems.loadState.append is LoadState.Error) {
+                    item { PagingFooter(pagingItems.loadState.append, pagingItems::retry) }
                 }
             }
         }
@@ -435,65 +475,67 @@ private fun MediaLayout(
 }
 
 @Composable
-private fun LoadMoreWhenNearEnd(
-    state: androidx.compose.foundation.lazy.LazyListState,
-    itemCount: Int,
-    hasMore: Boolean,
-    loadingMore: Boolean,
-    loadMoreFailed: Boolean,
-    onLoadMore: () -> Unit,
+private fun ThumbnailPrefetchEffect(
+    pagingItems: LazyPagingItems<LibraryMedia>,
+    thumbnailRepository: ThumbnailLoader?,
+    visibleRange: () -> IntRange,
 ) {
-    LaunchedEffect(state, itemCount, hasMore, loadingMore) {
-        snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
-            .distinctUntilChanged()
-            .collect { lastVisible ->
-                if (hasMore && !loadingMore && !loadMoreFailed && itemCount > 0 && lastVisible >= itemCount - LOAD_MORE_THRESHOLD) {
-                    onLoadMore()
+    if (thumbnailRepository == null) return
+    LaunchedEffect(pagingItems, thumbnailRepository) {
+        var previousFirst = -1
+        var generation = 0L
+        var direction: ScrollDirection? = null
+        try {
+            snapshotFlow(visibleRange)
+                .distinctUntilChanged()
+                .collect { range ->
+                    if (range.isEmpty()) return@collect
+                    val nextDirection = when {
+                        previousFirst < 0 || range.first >= previousFirst -> ScrollDirection.FORWARD
+                        else -> ScrollDirection.BACKWARD
+                    }
+                    if (nextDirection != direction) {
+                        if (direction != null) thumbnailRepository.cancelPrefetch(generation)
+                        direction = nextDirection
+                        generation++
+                    }
+                    val indices = if (nextDirection == ScrollDirection.FORWARD) {
+                        (range.last + 1)..(range.last + PREFETCH_ITEM_COUNT)
+                            .coerceAtMost(pagingItems.itemCount - 1)
+                    } else {
+                        (range.first - PREFETCH_ITEM_COUNT).coerceAtLeast(0)..(range.first - 1)
+                    }
+                    val requests = indices.mapNotNull { index ->
+                        // peek() intentionally avoids turning thumbnail prefetch into
+                        // a Paging access hint. The viewport itself owns pagination.
+                        pagingItems.peek(index)?.thumbnailRequest(ThumbnailPriority.BACKGROUND)
+                    }
+                    thumbnailRepository.prefetch(requests, nextDirection, generation)
+                    previousFirst = range.first
                 }
-            }
+        } finally {
+            if (direction != null) thumbnailRepository.cancelPrefetch(generation)
+        }
     }
 }
 
-@Composable
-private fun LoadMoreWhenNearEnd(
-    state: LazyGridState,
-    itemCount: Int,
-    hasMore: Boolean,
-    loadingMore: Boolean,
-    loadMoreFailed: Boolean,
-    onLoadMore: () -> Unit,
-) {
-    LaunchedEffect(state, itemCount, hasMore, loadingMore) {
-        snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
-            .distinctUntilChanged()
-            .collect { lastVisible ->
-                if (hasMore && !loadingMore && !loadMoreFailed && itemCount > 0 && lastVisible >= itemCount - LOAD_MORE_THRESHOLD) {
-                    onLoadMore()
-                }
-            }
-    }
-}
+private fun List<Int>.toIntRange(): IntRange = if (isEmpty()) IntRange.EMPTY else minOrNull()!!..maxOrNull()!!
 
+private const val PREFETCH_ITEM_COUNT = 24
 @Composable
-private fun LoadMoreFooter(
-    loadingMore: Boolean,
-    loadMoreFailed: Boolean,
-    onLoadMore: () -> Unit,
-) {
+private fun PagingFooter(loadState: LoadState, onRetry: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         when {
-            loadingMore -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-            loadMoreFailed -> TextButton(onClick = onLoadMore) {
+            loadState is LoadState.Loading -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            loadState is LoadState.Error -> TextButton(onClick = onRetry) {
                 Text(stringResource(R.string.library_load_more_retry))
             }
         }
     }
 }
-
-private const val LOAD_MORE_THRESHOLD = 12
 
 private fun LibraryMedia.thumbnailRequest(priority: ThumbnailPriority) = ThumbnailRequest(
     mediaItemId = id,
@@ -646,24 +688,43 @@ private fun MediaListRow(
 /** Displays only the result produced by the shared thumbnail pipeline. */
 @Composable
 private fun ThumbnailImage(request: ThumbnailRequest, repository: ThumbnailLoader?) {
+    if (repository == null) {
+        Box(Modifier.fillMaxSize().background(YingLiTheme.colors.surfaceMuted))
+        return
+    }
     val context = LocalContext.current
-    val cachedFile = remember(request.key) {
-        context.cacheDir.resolve("thumbnails/${request.key.diskName()}.png")
+    DisposableEffect(request.key, repository) {
+        repository.request(request)
+        onDispose { repository.cancel(request) }
     }
-    val imageRequest = remember(request.key) {
-        ImageRequest.Builder(context)
-            .data(cachedFile.takeIf { it.exists() } ?: request.uri.value)
-            .size(request.widthPixels, request.heightPixels)
-            .memoryCacheKey(request.key.diskName())
-            .diskCacheKey(request.key.diskName())
-            .build()
+    val thumbnailState = repository.observe(request).collectAsStateWithLifecycle(ThumbnailState.Queued).value
+    val cachedFile = remember(request.key, context) {
+        context.cacheDir.resolve("${ThumbnailStorage.DIRECTORY_NAME}/${request.key.diskName()}.png")
     }
-    AsyncImage(
-        model = imageRequest,
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxSize(),
-    )
+    if (cachedFile.isFile && thumbnailState is ThumbnailState.Ready) {
+        val imageRequest = remember(request.key, context) {
+            coil3.request.ImageRequest.Builder(context)
+                .data(cachedFile)
+                .size(request.widthPixels, request.heightPixels)
+                .memoryCacheKey(request.key.diskName())
+                // The source file is already managed by DiskThumbnailCache.
+                // Avoid a second encoded copy in Coil's disk cache.
+                .diskCachePolicy(CachePolicy.DISABLED)
+                .crossfade(true)
+                .build()
+        }
+        coil3.compose.AsyncImage(
+            model = imageRequest,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+    } else {
+        // The repository is the only component allowed to decode video
+        // frames. Until it atomically publishes the PNG, show a bounded
+        // placeholder instead of falling back to the raw URI.
+        Box(Modifier.fillMaxSize().background(YingLiTheme.colors.surfaceMuted))
+    }
 }
 
 @Composable

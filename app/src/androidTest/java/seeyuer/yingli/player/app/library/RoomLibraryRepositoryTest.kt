@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -21,7 +22,11 @@ import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.core.model.media.MediaSourceId
 import seeyuer.yingli.player.domain.library.LibraryQuery
+import seeyuer.yingli.player.domain.library.LibraryPageDirection
 import seeyuer.yingli.player.domain.library.LibraryResult
+import seeyuer.yingli.player.domain.library.LibrarySortField
+import seeyuer.yingli.player.domain.library.SortDirection
+import seeyuer.yingli.player.domain.library.SortSpec
 
 @RunWith(AndroidJUnit4::class)
 class RoomLibraryRepositoryTest {
@@ -77,6 +82,50 @@ class RoomLibraryRepositoryTest {
         val next = repository.query(LibraryQuery(pageSize = 1, cursor = result.value.nextCursor)) as LibraryResult.Success
         assertEquals(listOf(MediaItemId("item_2")), next.value.items.map { it.id })
         assertNull(next.value.nextCursor)
+    }
+
+    @Test
+    fun prependRestoresTheExactDroppedPageWithoutDuplicatesOrGaps() = runTest {
+        seedSource()
+        val itemIds = (0 until 12).map { index -> "item_${index.toString().padStart(2, '0')}" }
+        database.mediaCatalogDao().upsertItems(
+            itemIds.map { id -> MediaItemEntity(id, "影片", 0, false) },
+        )
+        database.mediaCatalogDao().insertLocations(
+            itemIds.mapIndexed { index, id ->
+                // Repeated values exercise the media ID tie breaker.
+                location("location_$id", "content://media/$id", lastSeen = (index / 3).toLong(), missing = 0)
+            },
+        )
+        database.mediaCatalogDao().upsertLinks(
+            itemIds.map { id -> MediaItemLocationEntity(id, "location_$id") },
+        )
+
+        listOf(SortDirection.ASCENDING, SortDirection.DESCENDING).forEach { sortDirection ->
+            val baseQuery = LibraryQuery(
+                sort = SortSpec(LibrarySortField.RECENTLY_ADDED, sortDirection),
+                pageSize = 4,
+            )
+            val first = repository.page(baseQuery, LibraryPageDirection.REFRESH)
+            val second = repository.page(
+                baseQuery.copy(cursor = requireNotNull(first.nextCursor)),
+                LibraryPageDirection.APPEND,
+            )
+            val restored = repository.page(
+                baseQuery.copy(cursor = requireNotNull(second.previousCursor)),
+                LibraryPageDirection.PREPEND,
+            )
+            val refreshed = repository.page(
+                baseQuery.copy(cursor = requireNotNull(second.previousCursor)),
+                LibraryPageDirection.REFRESH,
+            )
+
+            assertEquals(first.items.map { it.id }, restored.items.map { it.id })
+            assertEquals(first.items.size, restored.items.map { it.id }.distinct().size)
+            assertNull(restored.previousCursor)
+            assertNotNull(restored.nextCursor)
+            assertEquals(second.items.map { it.id }, refreshed.items.map { it.id })
+        }
     }
 
     private suspend fun seedSource() {

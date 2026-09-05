@@ -4,6 +4,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.paging.PagingData
+import androidx.paging.compose.collectAsLazyPagingItems
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Rule
 import org.junit.Test
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
@@ -39,13 +42,13 @@ class LibraryScreenTest {
     private fun setLibrary(mode: LibraryViewMode) {
         composeRule.setContent {
             YingLiTheme(darkTheme = false) {
+                val pagingItems = flowOf(PagingData.from(listOf(MEDIA))).collectAsLazyPagingItems()
                 LibraryScreen(
                     state = LibraryUiState(
-                        loading = false,
-                        items = listOf(MEDIA),
                         totalCount = 1,
                         preference = LibraryDisplayPreference(mode),
                     ),
+                    pagingItems = pagingItems,
                     isWide = false,
                     onKeywordChange = {},
                     onGroupChange = {},

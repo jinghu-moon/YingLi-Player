@@ -78,6 +78,31 @@ class PriorityThumbnailRepositoryTest {
     }
 
     @Test
+    fun `disposed visible item is removed before it reaches the extractor`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val calls = mutableListOf<String>()
+        val repository = PriorityThumbnailRepository(
+            scope = this,
+            extractor = ThumbnailExtractor {
+                calls += it.mediaItemId.value
+                if (it.mediaItemId.value == "blocker") gate.await()
+                true
+            },
+            maxConcurrent = 1,
+        )
+        val stale = request("stale", ThumbnailPriority.VISIBLE)
+
+        repository.request(request("blocker", ThumbnailPriority.VISIBLE))
+        runCurrent()
+        repository.request(stale)
+        repository.cancel(stale)
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf("blocker"), calls)
+    }
+
+    @Test
     fun `failed extraction retries once and then succeeds`() = runTest {
         var calls = 0
         val request = request("retry", ThumbnailPriority.VISIBLE)

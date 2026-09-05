@@ -6,6 +6,7 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.video.VideoFrameDecoder
 import java.util.PriorityQueue
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -43,6 +44,69 @@ class MemoryThumbnailCache(private val maxSize: Int = 256) : ThumbnailCache {
 
     @Synchronized override fun contains(key: ThumbnailKey): Boolean = entries.containsKey(key)
     @Synchronized override fun put(key: ThumbnailKey) { entries[key] = Unit }
+}
+
+object ThumbnailStorage {
+    const val DIRECTORY_NAME = "thumbnail-files"
+    const val MAX_DISK_BYTES = 256L * 1024 * 1024
+}
+
+/**
+ * Checks the shared on-disk thumbnail output used by the provider and Media3
+ * extractors. The extractor owns writing the file; this cache only makes an
+ * existing file reusable after process restarts.
+ */
+class DiskThumbnailCache(
+    private val directory: File,
+    private val maxBytes: Long = ThumbnailStorage.MAX_DISK_BYTES,
+) : ThumbnailCache {
+    private var writesSinceTrim = TRIM_EVERY_WRITES - 1
+
+    override fun contains(key: ThumbnailKey): Boolean {
+        val file = directory.resolve("${key.diskName()}.png")
+        if (!file.isFile) return false
+        return true
+    }
+
+    override fun put(key: ThumbnailKey) {
+        val shouldTrim = synchronized(this) {
+            writesSinceTrim++
+            if (writesSinceTrim < TRIM_EVERY_WRITES) false else {
+                writesSinceTrim = 0
+                true
+            }
+        }
+        if (!shouldTrim) return
+        val files = directory.listFiles { file -> file.isFile && file.extension == "png" }
+            ?.sortedBy(File::lastModified)
+            ?: return
+        var total = files.sumOf(File::length)
+        for (file in files) {
+            if (total <= maxBytes) break
+            val size = file.length()
+            if (file.delete()) total -= size
+        }
+    }
+
+    private companion object {
+        const val TRIM_EVERY_WRITES = 256
+    }
+}
+
+class LayeredThumbnailCache(
+    private val memory: ThumbnailCache,
+    private val disk: ThumbnailCache,
+) : ThumbnailCache {
+    override fun contains(key: ThumbnailKey): Boolean {
+        if (memory.contains(key)) return true
+        if (!disk.contains(key)) return false
+        memory.put(key)
+        return true
+    }
+    override fun put(key: ThumbnailKey) {
+        memory.put(key)
+        disk.put(key)
+    }
 }
 
 class CoilThumbnailExtractor(
@@ -117,6 +181,8 @@ class PriorityThumbnailRepository(
 
     override fun request(request: ThumbnailRequest) = enqueue(request)
 
+    override fun cancel(request: ThumbnailRequest) = cancel(request.key)
+
     override fun requestVisible(requests: List<ThumbnailRequest>) {
         requests.forEach { enqueue(it.copy(priority = ThumbnailPriority.VISIBLE)) }
     }
@@ -124,10 +190,16 @@ class PriorityThumbnailRepository(
     @Synchronized
     override fun prefetch(requests: List<ThumbnailRequest>, direction: ScrollDirection, generation: Long) {
         val requestedKeys = requests.mapTo(mutableSetOf(), ThumbnailRequest::key)
+        val visiblePendingKeys = pending
+            .filter { it.request.priority == ThumbnailPriority.VISIBLE }
+            .mapTo(mutableSetOf()) { it.request.key }
         // Keep one bounded window per direction. Work that has already
         // entered the decoder is intentionally allowed to finish.
         pending.removeAll { it.generation == generation && it.request.key !in requestedKeys }
         requests.forEach { request ->
+            if (request.key in visiblePendingKeys || running[request.key]?.request?.priority == ThumbnailPriority.VISIBLE) {
+                return@forEach
+            }
             if (thumbnailCache.contains(request.key)) {
                 state(request.key).value = ThumbnailState.Ready(request.key)
                 return@forEach
@@ -187,20 +259,26 @@ class PriorityThumbnailRepository(
         }
     }
 
-    @Synchronized
     private fun complete(task: Pending, success: Boolean) {
         val key = task.request.key
-        running.remove(key)
         if (success) {
-            thumbnailCache.put(key)
-            state(key).value = ThumbnailState.Ready(key)
-        } else if (task.attempts < MAX_RETRIES) {
-            pending += task.copy(sequence = sequence++, attempts = task.attempts + 1)
-            state(key).value = ThumbnailState.Queued
-        } else {
-            state(key).value = ThumbnailState.Failed
+            // Cache maintenance can enumerate a large directory. Do it before
+            // taking the scheduler monitor so UI requests are not blocked by
+            // disk housekeeping.
+            runCatching { thumbnailCache.put(key) }
         }
-        pump()
+        synchronized(this) {
+            running.remove(key)
+            if (success) {
+                state(key).value = ThumbnailState.Ready(key)
+            } else if (task.attempts < MAX_RETRIES) {
+                pending += task.copy(sequence = sequence++, attempts = task.attempts + 1)
+                state(key).value = ThumbnailState.Queued
+            } else {
+                state(key).value = ThumbnailState.Failed
+            }
+            pump()
+        }
     }
 
     private fun state(key: ThumbnailKey): MutableStateFlow<ThumbnailState> =

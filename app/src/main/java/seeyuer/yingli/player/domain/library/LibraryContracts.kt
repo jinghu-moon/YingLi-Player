@@ -193,11 +193,25 @@ data class LibraryMedia(
             ?: 0f
 }
 
+fun LibraryMedia.cursorFor(sort: SortSpec): LibraryCursor = when (sort.field) {
+    LibrarySortField.NAME -> LibraryCursor(sort.field, sort.direction, id, textValue = title.lowercase())
+    LibrarySortField.RECENTLY_ADDED -> LibraryCursor(sort.field, sort.direction, id, longValue = modifiedEpochMillis)
+    LibrarySortField.DURATION -> LibraryCursor(sort.field, sort.direction, id, longValue = durationMillis ?: -1L)
+    LibrarySortField.PLAY_COUNT -> LibraryCursor(sort.field, sort.direction, id, longValue = playCount.toLong())
+}
+
 data class LibraryPage(
     val items: List<LibraryMedia>,
     val nextCursor: LibraryCursor?,
     val totalCount: Int,
+    val previousCursor: LibraryCursor? = null,
 )
+
+enum class LibraryPageDirection {
+    REFRESH,
+    APPEND,
+    PREPEND,
+}
 
 sealed interface LibraryResult<out T> {
     data class Success<T>(val value: T) : LibraryResult<T>
@@ -207,6 +221,16 @@ sealed interface LibraryResult<out T> {
 interface LibraryRepository {
     fun observe(query: LibraryQuery): Flow<LibraryResult<LibraryPage>>
     suspend fun query(query: LibraryQuery): LibraryResult<LibraryPage>
+}
+
+/** Database-backed paging boundary for the media library UI. */
+interface LibraryPagingRepository : LibraryRepository {
+    suspend fun page(
+        query: LibraryQuery,
+        direction: LibraryPageDirection = LibraryPageDirection.APPEND,
+    ): LibraryPage
+    fun observeCount(query: LibraryQuery): Flow<Int>
+    fun observeInvalidations(): Flow<Unit>
 }
 
 interface SearchRepository {

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.FlowPreview
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import seeyuer.yingli.player.core.database.LibraryMediaRow
 import seeyuer.yingli.player.core.database.MediaItemEntity
 import seeyuer.yingli.player.core.database.MediaItemLocationEntity
@@ -27,8 +28,10 @@ import seeyuer.yingli.player.domain.library.LibraryCursor
 import seeyuer.yingli.player.domain.library.LibraryGroup
 import seeyuer.yingli.player.domain.library.LibraryMedia
 import seeyuer.yingli.player.domain.library.LibraryPage
+import seeyuer.yingli.player.domain.library.LibraryPageDirection
 import seeyuer.yingli.player.domain.library.LibraryQuery
 import seeyuer.yingli.player.domain.library.LibraryRepository
+import seeyuer.yingli.player.domain.library.LibraryPagingRepository
 import seeyuer.yingli.player.domain.library.LibraryResult
 import seeyuer.yingli.player.domain.library.LibrarySortField
 import seeyuer.yingli.player.domain.library.SearchRepository
@@ -36,9 +39,9 @@ import seeyuer.yingli.player.domain.library.SortDirection
 
 @OptIn(FlowPreview::class)
 class RoomLibraryRepository(
-    database: YingLiDatabase,
+    private val database: YingLiDatabase,
     private val dispatchers: AppDispatchers,
-) : LibraryRepository, SearchRepository {
+) : LibraryPagingRepository, SearchRepository {
     private val libraryDao = database.libraryDao()
     private val catalogDao = database.mediaCatalogDao()
     private val countCache = ConcurrentHashMap<String, Int>()
@@ -54,14 +57,7 @@ class RoomLibraryRepository(
         .flowOn(dispatchers.io)
 
     override suspend fun query(query: LibraryQuery): LibraryResult<LibraryPage> = try {
-        val rows = libraryDao.page(buildQuery(query, countOnly = false))
-        val count = if (query.cursor != null) {
-            countCache[countKey(query)] ?: libraryDao.count(buildQuery(query.copy(cursor = null), countOnly = true))
-        } else {
-            libraryDao.count(buildQuery(query.copy(cursor = null), countOnly = true))
-        }
-        countCache[countKey(query)] = count
-        LibraryResult.Success(toPage(query, rows, count, catalogDao.tagsSnapshot()))
+        LibraryResult.Success(page(query))
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
@@ -70,25 +66,73 @@ class RoomLibraryRepository(
 
     override suspend fun search(query: LibraryQuery): LibraryResult<LibraryPage> = query(query)
 
+    override suspend fun page(query: LibraryQuery, direction: LibraryPageDirection): LibraryPage {
+        val rows = libraryDao.page(buildQuery(query, countOnly = false, direction = direction))
+        val count = if (query.cursor != null) {
+            countCache[countKey(query)] ?: libraryDao.count(buildQuery(query.copy(cursor = null), countOnly = true))
+        } else {
+            libraryDao.count(buildQuery(query.copy(cursor = null), countOnly = true))
+        }
+        countCache[countKey(query)] = count
+        val pageRows = rows.take(query.pageSize)
+        val tags = if (pageRows.isEmpty()) emptyList() else catalogDao.tagsForItems(pageRows.map(LibraryMediaRow::id))
+        return toPage(query, rows, count, tags, direction)
+    }
+
+    override fun observeCount(query: LibraryQuery): Flow<Int> =
+        libraryDao.observeCount(buildQuery(query.copy(cursor = null), countOnly = true))
+            .distinctUntilChanged()
+            .flowOn(dispatchers.io)
+
+    override fun observeInvalidations(): Flow<Unit> = database.invalidationTracker
+        .createFlow(*OBSERVED_TABLES, emitInitialState = false)
+        .map { }
+
     private fun toPage(
         query: LibraryQuery,
         rows: List<LibraryMediaRow>,
         count: Int,
         tags: List<MediaTagEntity>,
+        direction: LibraryPageDirection = LibraryPageDirection.APPEND,
     ): LibraryPage {
         val tagsByMedia = tags.groupBy(MediaTagEntity::mediaItemId)
             .mapValues { (_, values) -> values.map(MediaTagEntity::tag).toSet() }
         // Fetch one sentinel row so a full final page does not produce a bogus cursor.
         val hasMore = rows.size > query.pageSize
-        val items = rows.take(query.pageSize).map { it.toModel(tagsByMedia[it.id].orEmpty()) }
-        val next = items.lastOrNull()?.takeIf { hasMore }
-            ?.let { it.cursor(query) }
-        return LibraryPage(items, next, count)
+        val pageRows = rows.take(query.pageSize).let { page ->
+            if (direction == LibraryPageDirection.PREPEND) page.asReversed() else page
+        }
+        val items = pageRows.map { it.toModel(tagsByMedia[it.id].orEmpty()) }
+        // Paging's prevKey is the cursor at the beginning of this page. It is
+        // deliberately derived from the first returned item, not from the
+        // cursor used to issue the query (that cursor belongs to the page
+        // before an appended page and would skip records during prepend).
+        val previous = pageRows.firstOrNull()
+            ?.takeIf {
+                when (direction) {
+                    LibraryPageDirection.PREPEND -> hasMore
+                    LibraryPageDirection.REFRESH,
+                    LibraryPageDirection.APPEND,
+                    -> query.cursor != null
+                }
+            }
+            ?.let { it.toModel(tagsByMedia[it.id].orEmpty()).cursor(query) }
+        val next = when (direction) {
+            LibraryPageDirection.PREPEND -> items.lastOrNull()?.cursor(query)
+            LibraryPageDirection.REFRESH,
+            LibraryPageDirection.APPEND,
+            -> items.lastOrNull()?.takeIf { hasMore }?.cursor(query)
+        }
+        return LibraryPage(items, next, count, previous)
     }
 
     private fun countKey(query: LibraryQuery): String = query.copy(cursor = null).toString()
 
-    private fun buildQuery(query: LibraryQuery, countOnly: Boolean): SimpleSQLiteQuery {
+    private fun buildQuery(
+        query: LibraryQuery,
+        countOnly: Boolean,
+        direction: LibraryPageDirection = LibraryPageDirection.APPEND,
+    ): SimpleSQLiteQuery {
         val args = mutableListOf<Any?>()
         val where = mutableListOf(
             "trash_entries.mediaItemId IS NULL",
@@ -126,12 +170,29 @@ class RoomLibraryRepository(
         }
         query.cursor?.let { cursor ->
             val column = query.sort.field.valueColumn
-            val operator = if (query.sort.direction == SortDirection.ASCENDING) ">" else "<"
+            val appendOperator = if (query.sort.direction == SortDirection.ASCENDING) ">" else "<"
+            val reverseOperator = if (query.sort.direction == SortDirection.ASCENDING) "<" else ">"
+            val primaryOperator = when (direction) {
+                LibraryPageDirection.REFRESH,
+                LibraryPageDirection.APPEND,
+                -> appendOperator
+                LibraryPageDirection.PREPEND -> reverseOperator
+            }
+            val tieOperator = when (direction) {
+                // A refresh key identifies the first item of the page to
+                // restore, so only refresh includes that exact tie breaker.
+                LibraryPageDirection.REFRESH -> if (query.sort.direction == SortDirection.ASCENDING) ">=" else "<="
+                LibraryPageDirection.APPEND -> appendOperator
+                // Prepend queries run in reverse order, but the cursor row must
+                // remain exclusive. Including it creates a duplicate at the
+                // boundary when Paging restores a dropped page.
+                LibraryPageDirection.PREPEND -> reverseOperator
+            }
             val cursorValue: Any = when (query.sort.field) {
                 LibrarySortField.NAME -> cursor.textValue.orEmpty()
                 else -> cursor.longValue ?: 0L
             }
-            where += "($column $operator ? OR ($column = ? AND media_items.id $operator ?))"
+            where += "($column $primaryOperator ? OR ($column = ? AND media_items.id $tieOperator ?))"
             args += cursorValue; args += cursorValue; args += cursor.mediaId.value
         }
         val select = if (countOnly) {
@@ -156,7 +217,14 @@ class RoomLibraryRepository(
             append(" LEFT JOIN playback_history ON playback_history.mediaItemId = media_items.id")
             append(" LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id")
             append(" WHERE ").append(where.joinToString(" AND "))
-            if (!countOnly) append(" ORDER BY ${query.sort.field.valueColumn} ${query.sort.direction.sql}, media_items.id ${query.sort.direction.sql} LIMIT ${query.pageSize + 1}")
+            if (!countOnly) {
+                val orderDirection = if (direction == LibraryPageDirection.PREPEND) {
+                    query.sort.direction.reverseSql
+                } else {
+                    query.sort.direction.sql
+                }
+                append(" ORDER BY ${query.sort.field.valueColumn} $orderDirection, media_items.id $orderDirection LIMIT ${query.pageSize + 1}")
+            }
         }
         return SimpleSQLiteQuery(sql, args.toTypedArray())
     }
@@ -169,12 +237,25 @@ class RoomLibraryRepository(
     }
 
     private val SortDirection.sql: String get() = if (this == SortDirection.ASCENDING) "ASC" else "DESC"
+    private val SortDirection.reverseSql: String get() = if (this == SortDirection.ASCENDING) "DESC" else "ASC"
 
     private fun LibraryMedia.cursor(query: LibraryQuery): LibraryCursor = when (query.sort.field) {
         LibrarySortField.NAME -> LibraryCursor(query.sort.field, query.sort.direction, id, textValue = title.lowercase())
         LibrarySortField.RECENTLY_ADDED -> LibraryCursor(query.sort.field, query.sort.direction, id, longValue = modifiedEpochMillis)
         LibrarySortField.DURATION -> LibraryCursor(query.sort.field, query.sort.direction, id, longValue = durationMillis ?: -1L)
         LibrarySortField.PLAY_COUNT -> LibraryCursor(query.sort.field, query.sort.direction, id, longValue = playCount.toLong())
+    }
+
+    private companion object {
+        val OBSERVED_TABLES = arrayOf(
+            "media_items",
+            "media_locations",
+            "media_item_locations",
+            "media_sources",
+            "playback_history",
+            "trash_entries",
+            "media_tags",
+        )
     }
 
     private fun LibraryMediaRow.toModel(tags: Set<String>) = LibraryMedia(

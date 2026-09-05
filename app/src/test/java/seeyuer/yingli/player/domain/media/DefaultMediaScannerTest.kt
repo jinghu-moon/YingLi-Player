@@ -223,7 +223,9 @@ class DefaultMediaScannerTest {
         val elapsed = measureTimeMillis { scanner.scan(ScanRequest(setOf(SOURCE.id))) }
 
         assertEquals(count, catalog.mutations.sumOf { it.upsertLocations.size })
-        assertEquals(1, catalog.mutations.count { it.upsertLocations.isNotEmpty() })
+        assertEquals((count + 399) / 400, catalog.mutations.count { it.upsertLocations.isNotEmpty() })
+        assertTrue(catalog.mutations.dropLast(1).none { it.markMissing })
+        assertTrue(catalog.mutations.last().markMissing)
         assertTrue("$count candidates took ${elapsed}ms", elapsed < targetMillis)
     }
 

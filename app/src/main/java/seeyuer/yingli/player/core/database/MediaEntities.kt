@@ -17,7 +17,11 @@ data class MediaSourceEntity(
     val mediaCount: Int,
 )
 
-@Entity(tableName = "media_items", primaryKeys = ["id"])
+@Entity(
+    tableName = "media_items",
+    primaryKeys = ["id"],
+    indices = [Index("title"), Index("completed"), Index("playbackPositionMillis")],
+)
 data class MediaItemEntity(
     val id: String,
     val title: String,
@@ -37,6 +41,10 @@ data class MediaItemEntity(
         Index("sourceId"),
         Index(value = ["uri"], unique = true),
         Index(value = ["volumeId", "documentId"]),
+        Index("modifiedEpochMillis"),
+        Index("durationMillis"),
+        Index("width"),
+        Index("missingScanCount"),
     ],
     primaryKeys = ["id"],
 )

@@ -141,8 +141,11 @@ data class LibraryDisplayPreference(
 }
 
 data class LibraryCursor(
-    val sortKey: String,
+    val field: LibrarySortField,
+    val direction: SortDirection,
     val mediaId: MediaItemId,
+    val textValue: String? = null,
+    val longValue: Long? = null,
 )
 
 data class LibraryQuery(

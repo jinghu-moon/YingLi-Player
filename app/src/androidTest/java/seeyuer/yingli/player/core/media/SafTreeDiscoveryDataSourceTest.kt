@@ -37,7 +37,7 @@ class SafTreeDiscoveryDataSourceTest {
     }
 
     @Test
-    fun videoMetadataIsAddedToCandidate() = runTest {
+    fun videoMetadataIsDeferredFromCandidate() = runTest {
         val video = MutableNode(
             uri = "content://documents/tree/root/document/video",
             name = "movie.mp4",
@@ -46,17 +46,15 @@ class SafTreeDiscoveryDataSourceTest {
         val root = MutableNode("content://documents/tree/root", "root", isDirectory = true).apply {
             children = { listOf(video) }
         }
-        val metadata = VideoMetadata(durationMillis = 65_000L, width = 1_920, height = 1_080)
-
-        val candidate = dataSource(root, MediaMetadataReader { metadata })
+        val candidate = dataSource(root)
             .discover(SOURCE)
             .toList()
             .filterIsInstance<MediaDiscoveryEvent.Candidate>()
             .single()
 
-        assertEquals(metadata.durationMillis, candidate.value.evidence.durationMillis)
-        assertEquals(metadata.width, candidate.value.evidence.width)
-        assertEquals(metadata.height, candidate.value.evidence.height)
+        assertEquals(null, candidate.value.evidence.durationMillis)
+        assertEquals(null, candidate.value.evidence.width)
+        assertEquals(null, candidate.value.evidence.height)
     }
 
     @Test
@@ -70,7 +68,7 @@ class SafTreeDiscoveryDataSourceTest {
             children = { listOf(video) }
         }
 
-        val candidate = dataSource(root, MediaMetadataReader { error("unreadable metadata") })
+        val candidate = dataSource(root)
             .discover(SOURCE)
             .toList()
             .filterIsInstance<MediaDiscoveryEvent.Candidate>()
@@ -133,13 +131,9 @@ class SafTreeDiscoveryDataSourceTest {
         assertTrue(events.filterIsInstance<MediaDiscoveryEvent.Candidate>().isEmpty())
     }
 
-    private fun dataSource(
-        root: SafDocumentNode,
-        metadataReader: MediaMetadataReader = MediaMetadataReader.None,
-    ) = SafTreeDiscoveryDataSource(
+    private fun dataSource(root: SafDocumentNode) = SafTreeDiscoveryDataSource(
         documents = SafDocumentGateway { root },
         dispatchers = TestDispatchers,
-        metadataReader = metadataReader,
     )
 
     private class MutableNode(

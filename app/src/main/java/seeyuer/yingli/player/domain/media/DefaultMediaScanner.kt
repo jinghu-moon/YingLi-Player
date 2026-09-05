@@ -1,6 +1,8 @@
 package seeyuer.yingli.player.domain.media
 
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import seeyuer.yingli.player.core.foundation.AppClock
 import seeyuer.yingli.player.core.foundation.IdGenerator
 import seeyuer.yingli.player.core.media.*
@@ -8,6 +10,10 @@ import seeyuer.yingli.player.core.model.media.*
 
 fun interface MediaScanner {
     suspend fun scan(request: ScanRequest): ScanResult
+}
+
+interface ScanProgressSource {
+    val progress: StateFlow<ScanProgress>
 }
 
 class DefaultMediaScanner(
@@ -18,15 +24,19 @@ class DefaultMediaScanner(
     private val contentHasher: MediaContentHasher = MediaContentHasher.None,
     private val idGenerator: IdGenerator,
     private val clock: AppClock,
-) : MediaScanner {
+) : MediaScanner, ScanProgressSource {
+    private val progressState = MutableStateFlow(ScanProgress())
+    override val progress: StateFlow<ScanProgress> = progressState
     private val sourceByMode = dataSources.associateBy(MediaDiscoveryDataSource::mode)
 
     override suspend fun scan(request: ScanRequest): ScanResult {
+        progressState.value = ScanProgress()
         val started = clock.now().toEpochMilli()
         var added = 0
         var updated = 0
         var missing = 0
         var unsupported = 0
+        var progressProcessed = 0
         val failures = mutableListOf<ScanFailure>()
         request.sourceIds.forEach { sourceId ->
             val source = sourceRepository.get(sourceId) ?: return@forEach
@@ -58,6 +68,13 @@ class DefaultMediaScanner(
                         if (event.value.kind in TERMINAL_FAILURES) scanComplete = false
                     }
                     is MediaDiscoveryEvent.Candidate -> {
+                        progressProcessed++
+                        if (progressProcessed % PROGRESS_BATCH == 0) {
+                            progressState.value = progressState.value.copy(
+                                processed = progressProcessed,
+                                discovered = progressProcessed,
+                            )
+                        }
                         val candidate = event.value
                         val exactLocation = locationsByUri[candidate.evidence.uri]
                         val exactItemId = exactLocation?.let { links[it.id] }
@@ -130,6 +147,11 @@ class DefaultMediaScanner(
                     sourceRepository.markAccessState(sourceId, MediaSourceAccessState.OFFLINE)
             }
         }
+        progressState.value = progressState.value.copy(
+            processed = progressProcessed,
+            discovered = progressProcessed,
+            completed = true,
+        )
         return ScanResult(added, updated, missing, unsupported, failures, (clock.now().toEpochMilli() - started).coerceAtLeast(0))
     }
 
@@ -175,6 +197,7 @@ class DefaultMediaScanner(
     private fun String.stableId(): String = replace(Regex("[^A-Za-z0-9_-]"), "_").take(128).ifBlank { "generated" }
 
     private companion object {
+        const val PROGRESS_BATCH = 64
         val TERMINAL_FAILURES = setOf(ScanFailureKind.PERMISSION, ScanFailureKind.SOURCE_OFFLINE, ScanFailureKind.IO)
     }
 }

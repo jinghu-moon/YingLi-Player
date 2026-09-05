@@ -4,6 +4,12 @@ import android.content.Context
 import android.os.BatteryManager
 import android.os.StatFs
 import androidx.room.Room
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.video.VideoFrameDecoder
+import coil3.annotation.DelicateCoilApi
+import coil3.disk.DiskCache
+import okio.Path.Companion.toPath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
@@ -14,6 +20,7 @@ import seeyuer.yingli.player.core.datastore.DataStoreMediaOnboardingRepository
 import seeyuer.yingli.player.core.datastore.MediaOnboardingRepository
 import seeyuer.yingli.player.core.foundation.AppContainer
 import seeyuer.yingli.player.core.media.*
+import seeyuer.yingli.player.app.library.RoomLibraryRepository
 import seeyuer.yingli.player.domain.media.DefaultMediaIdentityResolver
 import seeyuer.yingli.player.domain.media.DefaultMediaScanner
 import seeyuer.yingli.player.domain.media.MediaScanner
@@ -54,7 +61,7 @@ data class MediaContainer(
     val catalogRepository: MediaCatalogRepository,
     val permissionGateway: MediaPermissionGateway,
     val scanner: MediaScanner,
-    val thumbnailRepository: ThumbnailRepository,
+    val thumbnailRepository: ThumbnailLoader,
     val onboardingRepository: MediaOnboardingRepository,
     val playbackSourceRepository: PlaybackSourceRepository,
     val playbackProgressRepository: PlaybackProgressRepository,
@@ -90,6 +97,8 @@ data class MediaContainer(
 )
 
 object ProductionMediaContainerFactory {
+    @OptIn(DelicateCoilApi::class)
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
     fun create(context: Context, foundation: AppContainer): MediaContainer {
         val database = Room.databaseBuilder(context, YingLiDatabase::class.java, "yingli-media.db")
             .addMigrations(
@@ -98,6 +107,7 @@ object ProductionMediaContainerFactory {
                 YingLiDatabase.MIGRATION_3_4,
                 YingLiDatabase.MIGRATION_4_5,
                 YingLiDatabase.MIGRATION_5_6,
+                YingLiDatabase.MIGRATION_6_7,
             )
             .build()
         val sourceRepository = RoomMediaSourceRepository(database.mediaSourceDao())
@@ -106,7 +116,6 @@ object ProductionMediaContainerFactory {
         val dataSources = setOf(
             MediaStoreDiscoveryDataSource(context, foundation.dispatchers),
             SafTreeDiscoveryDataSource(context, foundation.dispatchers),
-            AllFilesDiscoveryDataSource(foundation.dispatchers),
         )
         val scanner = DefaultMediaScanner(
             dataSources,
@@ -118,6 +127,16 @@ object ProductionMediaContainerFactory {
             foundation.clock,
         )
         val thumbnailScope = CoroutineScope(SupervisorJob() + foundation.dispatchers.io)
+        val thumbnailImageLoader = ImageLoader.Builder(context.applicationContext)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .diskCache(
+                DiskCache.Builder()
+                    .directory(context.cacheDir.resolve("thumbnails").absolutePath.toPath())
+                    .maxSizeBytes(256L * 1024 * 1024)
+                    .build()
+            )
+            .build()
+        SingletonImageLoader.setUnsafe(thumbnailImageLoader)
         val playbackRepository = RoomPlaybackRepository(database)
         val libraryRepository = RoomLibraryRepository(database, foundation.dispatchers)
         val trashRepository = RoomTrashRepository(database)
@@ -226,12 +245,19 @@ object ProductionMediaContainerFactory {
             foundation.idGenerator,
             foundation.clock,
         )
+        val thumbnailExtractor = FallbackThumbnailExtractor(
+            CoilThumbnailExtractor(context, thumbnailImageLoader),
+            FallbackThumbnailExtractor(
+                ContentResolverThumbnailSource(context),
+                Media3FrameThumbnailSource(context, foundation.dispatchers),
+            ),
+        )
         return MediaContainer(
             sourceRepository,
             catalogRepository,
             permissionGateway,
             scanner,
-            PriorityThumbnailRepository(thumbnailScope, CoilThumbnailExtractor(context)),
+            PriorityThumbnailRepository(thumbnailScope, thumbnailExtractor),
             DataStoreMediaOnboardingRepository(context),
             playbackRepository,
             playbackRepository,

@@ -10,7 +10,10 @@ import seeyuer.yingli.player.core.model.media.MediaSource
 import seeyuer.yingli.player.core.model.media.MediaSourceId
 import seeyuer.yingli.player.core.model.media.MediaSourceMode
 import seeyuer.yingli.player.core.model.media.ScanFailure
+import seeyuer.yingli.player.core.model.media.ScanProgress
 import seeyuer.yingli.player.core.model.media.ThumbnailRequest
+import seeyuer.yingli.player.core.model.media.ThumbnailKey
+import seeyuer.yingli.player.core.model.media.ScrollDirection
 
 data class MediaPermissionSnapshot(
     val allFilesAccess: Boolean,
@@ -81,16 +84,29 @@ interface MediaSourceRepository {
 sealed interface ThumbnailState {
     data object Queued : ThumbnailState
     data object Loading : ThumbnailState
-    data class Ready(val cacheKey: String) : ThumbnailState
+    data class Ready(val key: ThumbnailKey) : ThumbnailState
     data object Failed : ThumbnailState
 }
 
 interface ThumbnailRepository {
-    fun observe(cacheKey: String): Flow<ThumbnailState>
+    fun observe(key: ThumbnailKey): Flow<ThumbnailState>
 
     fun enqueue(request: ThumbnailRequest)
 
-    fun cancel(cacheKey: String)
+    fun cancel(key: ThumbnailKey)
+}
+
+interface ThumbnailLoader {
+    fun observe(request: ThumbnailRequest): Flow<ThumbnailState>
+    fun request(request: ThumbnailRequest)
+    fun requestVisible(requests: List<ThumbnailRequest>)
+    /**
+     * Queues background work for one scroll session. The caller keeps the same
+     * generation while the user continues in the same direction and changes it
+     * only when the direction changes.
+     */
+    fun prefetch(requests: List<ThumbnailRequest>, direction: ScrollDirection, generation: Long)
+    fun cancelPrefetch(generation: Long)
 }
 
 fun interface MediaContentHasher {

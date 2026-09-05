@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -70,6 +71,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import seeyuer.yingli.player.core.media.ThumbnailLoader
+import seeyuer.yingli.player.core.model.media.ThumbnailPriority
+import seeyuer.yingli.player.core.model.media.ThumbnailRequest
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.util.Locale
@@ -93,6 +98,7 @@ fun LibraryRoute(
     isWide: Boolean,
     onMediaSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
+    thumbnailRepository: ThumbnailLoader? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LibraryScreen(
@@ -114,6 +120,7 @@ fun LibraryRoute(
         onRestore = viewModel::restore,
         onPurge = viewModel::purge,
         onMediaSelected = onMediaSelected,
+        thumbnailRepository = thumbnailRepository,
         onLoadMore = viewModel::loadMore,
         modifier = modifier,
     )
@@ -141,6 +148,7 @@ fun LibraryScreen(
     onPurge: (TrashEntry) -> Unit,
     onMediaSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
+    thumbnailRepository: ThumbnailLoader? = null,
     onLoadMore: () -> Unit = {},
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
@@ -161,6 +169,7 @@ fun LibraryScreen(
             onRestore = onRestore,
             onRequestPurge = { confirmPurge = it },
             onLoadMore = onLoadMore,
+            thumbnailRepository = thumbnailRepository,
             contentModifier,
         )
     }
@@ -245,6 +254,7 @@ private fun LibraryContent(
     onRestore: (TrashEntry) -> Unit,
     onRequestPurge: (TrashEntry) -> Unit,
     onLoadMore: () -> Unit,
+    thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier,
 ) {
     Column(modifier.fillMaxSize()) {
@@ -308,7 +318,7 @@ private fun LibraryContent(
                 stringResource(R.string.library_empty_result_message),
                 Modifier.fillMaxSize(),
             )
-            else -> MediaLayout(state, onToggleSelection, onMediaSelected, onLoadMore, Modifier.weight(1f))
+            else -> MediaLayout(state, onToggleSelection, onMediaSelected, onLoadMore, thumbnailRepository, Modifier.weight(1f))
         }
     }
 }
@@ -378,6 +388,7 @@ private fun MediaLayout(
     onToggleSelection: (seeyuer.yingli.player.core.model.media.MediaItemId) -> Unit,
     onMediaSelected: (String) -> Unit,
     onLoadMore: () -> Unit,
+    thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier,
 ) {
     val select: (LibraryMedia) -> Unit = { item ->
@@ -393,8 +404,8 @@ private fun MediaLayout(
                 modifier = modifier.testTag(LibraryTestTags.GRID),
                 contentPadding = PaddingValues(12.dp),
             ) {
-                items(state.items, key = { it.id.value }) { item ->
-                    MediaCard(item, item.id in state.selectedIds, VIDEO_ASPECT_RATIO, select, onToggleSelection)
+                items(state.items, key = { it.id.value }, contentType = { "media" }) { item ->
+                    MediaCard(item, item.id in state.selectedIds, VIDEO_ASPECT_RATIO, select, onToggleSelection, thumbnailRepository)
                 }
                 if (state.loadingMore || state.loadMoreFailed) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
@@ -412,8 +423,8 @@ private fun MediaLayout(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                items(state.items, key = { it.id.value }) { item ->
-                    MediaListRow(item, item.id in state.selectedIds, select, onToggleSelection)
+                items(state.items, key = { it.id.value }, contentType = { "media" }) { item ->
+                    MediaListRow(item, item.id in state.selectedIds, select, onToggleSelection, thumbnailRepository)
                 }
                 if (state.loadingMore || state.loadMoreFailed) {
                     item { LoadMoreFooter(state.loadingMore, state.loadMoreFailed, onLoadMore) }
@@ -484,6 +495,17 @@ private fun LoadMoreFooter(
 
 private const val LOAD_MORE_THRESHOLD = 12
 
+private fun LibraryMedia.thumbnailRequest(priority: ThumbnailPriority) = ThumbnailRequest(
+    mediaItemId = id,
+    locationId = locationId,
+    uri = uri,
+    widthPixels = 320,
+    heightPixels = 180,
+    priority = priority,
+    modifiedEpochMillis = modifiedEpochMillis,
+    sizeBytes = sizeBytes,
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MediaCard(
@@ -492,7 +514,9 @@ private fun MediaCard(
     ratio: Float,
     onClick: (LibraryMedia) -> Unit,
     onLongClick: (seeyuer.yingli.player.core.model.media.MediaItemId) -> Unit,
+    thumbnailRepository: ThumbnailLoader?,
 ) {
+    val thumbnail = item.thumbnailRequest(ThumbnailPriority.VISIBLE)
     Column(
         modifier = Modifier
             .padding(4.dp)
@@ -506,12 +530,7 @@ private fun MediaCard(
             },
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(ratio).clip(RoundedCornerShape(8.dp))) {
-            AsyncImage(
-                model = item.uri.value,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            ThumbnailImage(thumbnail, thumbnailRepository)
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
                 color = YingLiTheme.player.edgeScrim,
@@ -558,7 +577,9 @@ private fun MediaListRow(
     selected: Boolean,
     onClick: (LibraryMedia) -> Unit,
     onLongClick: (seeyuer.yingli.player.core.model.media.MediaItemId) -> Unit,
+    thumbnailRepository: ThumbnailLoader?,
 ) {
+    val thumbnail = item.thumbnailRequest(ThumbnailPriority.VISIBLE)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -579,12 +600,7 @@ private fun MediaListRow(
                 .height(LIST_THUMBNAIL_HEIGHT)
                 .clip(RoundedCornerShape(6.dp)),
         ) {
-            AsyncImage(
-                model = item.uri.value,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            ThumbnailImage(thumbnail, thumbnailRepository)
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp),
                 color = YingLiTheme.player.edgeScrim,
@@ -625,6 +641,29 @@ private fun MediaListRow(
             }
         }
     }
+}
+
+/** Displays only the result produced by the shared thumbnail pipeline. */
+@Composable
+private fun ThumbnailImage(request: ThumbnailRequest, repository: ThumbnailLoader?) {
+    val context = LocalContext.current
+    val cachedFile = remember(request.key) {
+        context.cacheDir.resolve("thumbnails/${request.key.diskName()}.png")
+    }
+    val imageRequest = remember(request.key) {
+        ImageRequest.Builder(context)
+            .data(cachedFile.takeIf { it.exists() } ?: request.uri.value)
+            .size(request.widthPixels, request.heightPixels)
+            .memoryCacheKey(request.key.diskName())
+            .diskCacheKey(request.key.diskName())
+            .build()
+    }
+    AsyncImage(
+        model = imageRequest,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+    )
 }
 
 @Composable

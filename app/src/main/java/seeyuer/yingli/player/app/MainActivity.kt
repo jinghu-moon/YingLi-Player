@@ -139,6 +139,7 @@ class MainActivity : ComponentActivity() {
                 onSecureSessionLocked = (application as YingLiApplication).playbackController::invalidateSecureSession,
                 biometricAvailable = biometricAvailable(),
                 onBiometricUnlock = ::authenticateBiometric,
+                thumbnailRepository = (application as YingLiApplication).mediaContainer.thumbnailRepository,
             )
         }
     }

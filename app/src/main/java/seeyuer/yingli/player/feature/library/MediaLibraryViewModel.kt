@@ -24,6 +24,7 @@ data class MediaLibraryUiState(
     val items: List<MediaItem> = emptyList(),
     val sources: List<MediaSource> = emptyList(),
     val scanning: Boolean = false,
+    val scanProgress: ScanProgress = ScanProgress(),
     val notice: MediaLibraryNotice? = null,
 )
 
@@ -42,17 +43,23 @@ class MediaLibraryViewModel(
 ) : ViewModel() {
     private val scanning = MutableStateFlow(false)
     private val notice = MutableStateFlow<MediaLibraryNotice?>(null)
+    private val scanProgress = (scanner as? seeyuer.yingli.player.domain.media.ScanProgressSource)?.progress
+        ?: MutableStateFlow(ScanProgress())
     private val effects = Channel<MediaLibraryEffect>(Channel.BUFFERED)
     private var initialized = false
     val effect: Flow<MediaLibraryEffect> = effects.receiveAsFlow()
-    val state: StateFlow<MediaLibraryUiState> = combine(
+    private val baseState = combine(
         onboardingRepository.completed,
         catalogRepository.observeItems(),
         sourceRepository.observeSources(),
         scanning,
         notice,
     ) { completed, items, sources, isScanning, currentNotice ->
-        MediaLibraryUiState(!completed, items, sources, isScanning, currentNotice)
+        MediaLibraryUiState(!completed, items, sources, isScanning, scanProgress = ScanProgress(), notice = currentNotice)
+    }
+
+    val state: StateFlow<MediaLibraryUiState> = combine(baseState, scanProgress) { base, progress ->
+        base.copy(scanProgress = progress)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), MediaLibraryUiState())
 
     /** Restores granted access after process start and starts the initial index scan. */

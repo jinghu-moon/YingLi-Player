@@ -26,7 +26,9 @@ import seeyuer.yingli.player.domain.library.LibraryPreferenceRepository
 import seeyuer.yingli.player.domain.library.LibraryQuery
 import seeyuer.yingli.player.domain.library.LibraryRepository
 import seeyuer.yingli.player.domain.library.LibraryResult
+import seeyuer.yingli.player.domain.library.LibrarySortField
 import seeyuer.yingli.player.domain.library.LibraryViewMode
+import seeyuer.yingli.player.domain.library.SortDirection
 import seeyuer.yingli.player.domain.library.TrashEntry
 import seeyuer.yingli.player.testing.MainDispatcherRule
 
@@ -61,7 +63,12 @@ class LibraryViewModelTest {
     fun `load more appends pages until the final cursor`() = runTest {
         val firstItems = (0 until 60).map(::media)
         val nextItems = (60 until 75).map(::media)
-        val nextCursor = LibraryCursor("59", firstItems.last().id)
+        val nextCursor = LibraryCursor(
+            LibrarySortField.RECENTLY_ADDED,
+            SortDirection.DESCENDING,
+            firstItems.last().id,
+            longValue = 59L,
+        )
         val repository = FakeLibraryRepository(
             firstPage = LibraryPage(firstItems, nextCursor, 75),
             nextPage = LibraryPage(nextItems, null, 75),

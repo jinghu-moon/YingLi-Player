@@ -8,22 +8,49 @@ import coil3.video.VideoFrameDecoder
 import java.util.PriorityQueue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import seeyuer.yingli.player.core.model.media.ThumbnailKey
 import seeyuer.yingli.player.core.model.media.ThumbnailRequest
+import seeyuer.yingli.player.core.model.media.ThumbnailPriority
+import seeyuer.yingli.player.core.model.media.ScrollDirection
 
 fun interface ThumbnailExtractor {
     suspend fun extract(request: ThumbnailRequest): Boolean
 }
 
+class FallbackThumbnailExtractor(
+    private val primary: ThumbnailExtractor,
+    private val fallback: ThumbnailExtractor,
+) : ThumbnailExtractor {
+    override suspend fun extract(request: ThumbnailRequest): Boolean =
+        if (primary.extract(request)) true else fallback.extract(request)
+}
+
+interface ThumbnailCache {
+    fun contains(key: ThumbnailKey): Boolean
+    fun put(key: ThumbnailKey)
+}
+
+class MemoryThumbnailCache(private val maxSize: Int = 256) : ThumbnailCache {
+    private val entries = object : LinkedHashMap<ThumbnailKey, Unit>(maxSize, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ThumbnailKey, Unit>?): Boolean = size > maxSize
+    }
+
+    @Synchronized override fun contains(key: ThumbnailKey): Boolean = entries.containsKey(key)
+    @Synchronized override fun put(key: ThumbnailKey) { entries[key] = Unit }
+}
+
 class CoilThumbnailExtractor(
     context: Context,
+    private val sharedImageLoader: ImageLoader? = null,
 ) : ThumbnailExtractor {
     private val appContext = context.applicationContext
-    private val imageLoader = ImageLoader.Builder(appContext)
+    private val imageLoader = sharedImageLoader ?: ImageLoader.Builder(appContext)
         .components { add(VideoFrameDecoder.Factory()) }
         .build()
 
@@ -31,6 +58,8 @@ class CoilThumbnailExtractor(
         val imageRequest = ImageRequest.Builder(appContext)
             .data(request.uri.value)
             .size(request.widthPixels, request.heightPixels)
+            .memoryCacheKey(request.key.diskName())
+            .diskCacheKey(request.key.diskName())
             .build()
         return imageLoader.execute(imageRequest) is SuccessResult
     }
@@ -41,13 +70,25 @@ class PriorityThumbnailRepository(
     private val extractor: ThumbnailExtractor,
     private val maxConcurrent: Int = 2,
     private val maxCachedKeys: Int = 256,
-) : ThumbnailRepository {
-    private data class Pending(val request: ThumbnailRequest, val sequence: Long, val attempts: Int = 0)
+    cache: ThumbnailCache? = null,
+) : ThumbnailRepository, ThumbnailLoader {
+    private data class Pending(
+        val request: ThumbnailRequest,
+        val sequence: Long,
+        val generation: Long?,
+        val attempts: Int = 0,
+    )
+
+    private data class Running(
+        val request: ThumbnailRequest,
+        val generation: Long?,
+        val job: Job,
+    )
 
     private val pending = PriorityQueue<Pending>(compareBy<Pending> { it.request.priority.rank }.thenBy { it.sequence })
-    private val states = mutableMapOf<String, MutableStateFlow<ThumbnailState>>()
-    private val running = mutableMapOf<String, Job>()
-    private val cachedKeys = LinkedHashMap<String, Unit>(maxCachedKeys, 0.75f, true)
+    private val states = mutableMapOf<ThumbnailKey, MutableStateFlow<ThumbnailState>>()
+    private val running = mutableMapOf<ThumbnailKey, Running>()
+    private val thumbnailCache: ThumbnailCache = cache ?: MemoryThumbnailCache(maxCachedKeys)
     private var sequence = 0L
 
     init {
@@ -56,37 +97,82 @@ class PriorityThumbnailRepository(
     }
 
     @Synchronized
-    override fun observe(cacheKey: String): Flow<ThumbnailState> =
-        states.getOrPut(cacheKey) { MutableStateFlow(ThumbnailState.Queued) }.asStateFlow()
+    override fun observe(key: ThumbnailKey): Flow<ThumbnailState> =
+        states.getOrPut(key) { MutableStateFlow(ThumbnailState.Queued) }.asStateFlow()
 
     @Synchronized
     override fun enqueue(request: ThumbnailRequest) {
-        if (request.cacheKey in cachedKeys) {
-            state(request.cacheKey).value = ThumbnailState.Ready(request.cacheKey)
+        if (thumbnailCache.contains(request.key)) {
+            state(request.key).value = ThumbnailState.Ready(request.key)
             return
         }
-        pending.removeAll { it.request.cacheKey == request.cacheKey }
-        pending += Pending(request, sequence++)
-        state(request.cacheKey).value = ThumbnailState.Queued
+        if (request.key in running) return
+        pending.removeAll { it.request.key == request.key }
+        pending += Pending(request, sequence++, generation = null)
+        state(request.key).value = ThumbnailState.Queued
+        pump()
+    }
+
+    override fun observe(request: ThumbnailRequest): Flow<ThumbnailState> = observe(request.key)
+
+    override fun request(request: ThumbnailRequest) = enqueue(request)
+
+    override fun requestVisible(requests: List<ThumbnailRequest>) {
+        requests.forEach { enqueue(it.copy(priority = ThumbnailPriority.VISIBLE)) }
+    }
+
+    @Synchronized
+    override fun prefetch(requests: List<ThumbnailRequest>, direction: ScrollDirection, generation: Long) {
+        val requestedKeys = requests.mapTo(mutableSetOf(), ThumbnailRequest::key)
+        // Keep one bounded window per direction. Work that has already
+        // entered the decoder is intentionally allowed to finish.
+        pending.removeAll { it.generation == generation && it.request.key !in requestedKeys }
+        requests.forEach { request ->
+            if (thumbnailCache.contains(request.key)) {
+                state(request.key).value = ThumbnailState.Ready(request.key)
+                return@forEach
+            }
+            pending.removeAll { it.request.key == request.key }
+            pending += Pending(
+                request.copy(priority = ThumbnailPriority.BACKGROUND),
+                sequence++,
+                generation,
+            )
+            state(request.key).value = ThumbnailState.Queued
+        }
         pump()
     }
 
     @Synchronized
-    override fun cancel(cacheKey: String) {
-        pending.removeAll { it.request.cacheKey == cacheKey }
-        running.remove(cacheKey)?.cancel()
-        states.remove(cacheKey)
+    override fun cancelPrefetch(generation: Long) {
+        // Let an already decoding frame finish and populate the cache. Only
+        // discard work that has not started; visible requests will preempt a
+        // background worker explicitly when necessary.
+        pending.removeAll { it.request.priority != ThumbnailPriority.VISIBLE && it.generation == generation }
+        pump()
+    }
+
+    @Synchronized
+    override fun cancel(key: ThumbnailKey) {
+        pending.removeAll { it.request.key == key }
+        running.remove(key)?.job?.cancel()
+        states.remove(key)
         pump()
     }
 
     @Synchronized
     private fun pump() {
         while (running.size < maxConcurrent && pending.isNotEmpty()) {
+            val next = pending.peek() ?: return
+            val runningBackground = running.values.count { it.request.priority != ThumbnailPriority.VISIBLE }
+            if (next.request.priority != ThumbnailPriority.VISIBLE &&
+                runningBackground >= backgroundConcurrency
+            ) return
             val task = pending.remove()
-            val key = task.request.cacheKey
+            val key = task.request.key
             if (key in running) continue
             state(key).value = ThumbnailState.Loading
-            running[key] = scope.launch {
+            val job = scope.launch(start = CoroutineStart.LAZY) {
                 val success = try {
                     extractor.extract(task.request)
                 } catch (cancelled: CancellationException) {
@@ -96,16 +182,17 @@ class PriorityThumbnailRepository(
                 }
                 complete(task, success)
             }
+            running[key] = Running(task.request, task.generation, job)
+            job.start()
         }
     }
 
     @Synchronized
     private fun complete(task: Pending, success: Boolean) {
-        val key = task.request.cacheKey
+        val key = task.request.key
         running.remove(key)
         if (success) {
-            cachedKeys[key] = Unit
-            while (cachedKeys.size > maxCachedKeys) cachedKeys.remove(cachedKeys.keys.first())
+            thumbnailCache.put(key)
             state(key).value = ThumbnailState.Ready(key)
         } else if (task.attempts < MAX_RETRIES) {
             pending += task.copy(sequence = sequence++, attempts = task.attempts + 1)
@@ -116,8 +203,11 @@ class PriorityThumbnailRepository(
         pump()
     }
 
-    private fun state(key: String): MutableStateFlow<ThumbnailState> =
+    private fun state(key: ThumbnailKey): MutableStateFlow<ThumbnailState> =
         states.getOrPut(key) { MutableStateFlow(ThumbnailState.Queued) }
+
+    private val backgroundConcurrency: Int
+        get() = if (maxConcurrent == 1) 1 else maxConcurrent - 1
 
     private companion object { const val MAX_RETRIES = 1 }
 }

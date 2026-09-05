@@ -34,7 +34,7 @@ import androidx.sqlite.execSQL
         DuplicateGroupMemberEntity::class,
         VaultItemEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class YingLiDatabase : RoomDatabase() {
@@ -76,6 +76,20 @@ abstract class YingLiDatabase : RoomDatabase() {
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(connection: SQLiteConnection) {
                 vaultStatements.forEach(connection::execSQL)
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(connection: SQLiteConnection) {
+                listOf(
+                    "CREATE INDEX IF NOT EXISTS `index_media_items_title` ON `media_items` (`title`)",
+                    "CREATE INDEX IF NOT EXISTS `index_media_items_completed` ON `media_items` (`completed`)",
+                    "CREATE INDEX IF NOT EXISTS `index_media_items_playbackPositionMillis` ON `media_items` (`playbackPositionMillis`)",
+                    "CREATE INDEX IF NOT EXISTS `index_media_locations_modifiedEpochMillis` ON `media_locations` (`modifiedEpochMillis`)",
+                    "CREATE INDEX IF NOT EXISTS `index_media_locations_durationMillis` ON `media_locations` (`durationMillis`)",
+                    "CREATE INDEX IF NOT EXISTS `index_media_locations_width` ON `media_locations` (`width`)",
+                    "CREATE INDEX IF NOT EXISTS `index_media_locations_missingScanCount` ON `media_locations` (`missingScanCount`)",
+                ).forEach(connection::execSQL)
             }
         }
 

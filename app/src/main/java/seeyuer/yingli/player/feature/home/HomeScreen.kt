@@ -18,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,9 +30,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.component.*
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
@@ -39,6 +42,20 @@ import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.feature.library.MediaLibraryNotice
 import seeyuer.yingli.player.feature.library.MediaLibraryUiState
+
+@Composable
+private fun homeImageRequest(item: seeyuer.yingli.player.domain.library.LibraryMedia): ImageRequest {
+    val context = LocalContext.current
+    val key = "${item.id.value}_${item.locationId.value}_${item.modifiedEpochMillis}_${item.sizeBytes}_320_180_video-frame"
+    return remember(item.id, item.modifiedEpochMillis, item.sizeBytes) {
+        ImageRequest.Builder(context)
+            .data(item.uri.value)
+            .size(320, 180)
+            .memoryCacheKey(key)
+            .diskCacheKey(key)
+            .build()
+    }
+}
 
 @Composable
 fun HomeRoute(
@@ -133,7 +150,12 @@ private fun HomeDashboardContent(
                             ) {
                                 Column(Modifier.clip(RoundedCornerShape(8.dp)).background(YingLiTheme.colors.surfaceComponent)) {
                                     Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                                        AsyncImage(item.uri.value, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                                        AsyncImage(
+                                            model = homeImageRequest(item),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
                                         Box(Modifier.fillMaxSize().background(YingLiTheme.colors.scrimSubtle))
                                         Icon(
                                             imageVector = YingLiIcon.PLAY.imageVector,
@@ -167,7 +189,12 @@ private fun HomeDashboardContent(
                         items(dashboard.recentlyAdded, key = { "recent_${it.id.value}" }) { item ->
                             Surface(onClick = { onMediaSelected(item.id.value) }, modifier = Modifier.width(156.dp), color = YingLiTheme.colors.surfaceComponent, shape = RoundedCornerShape(8.dp)) {
                                 Column {
-                                    AsyncImage(item.uri.value, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)))
+                                    AsyncImage(
+                                        model = homeImageRequest(item),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
+                                    )
                                     Text(item.title, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(8.dp, 8.dp, 8.dp, 2.dp))
                                     Text(item.folderAlias, maxLines = 1, color = YingLiTheme.colors.textSecondary, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                                 }

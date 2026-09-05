@@ -47,9 +47,21 @@ class RoomMediaCatalogRepository(private val database: YingLiDatabase) : MediaCa
             require(mutation.evidenceUpdates.all { it.sourceId == sourceId }) {
                 "Catalog mutation contains evidence owned by another source."
             }
-            val existing = dao.locationsForSource(sourceId.value)
-            val existingIds = existing.map(MediaLocationEntity::id).toSet()
             val incoming = mutation.upsertLocations.map { it.copy(missingScanCount = 0).toEntity() }
+            val existing = if (mutation.markMissing) {
+                dao.locationsForSource(sourceId.value)
+            } else {
+                emptyList()
+            }
+            val existingIds = if (mutation.markMissing) {
+                existing.map(MediaLocationEntity::id).toSet()
+            } else if (incoming.isEmpty() && mutation.evidenceUpdates.isEmpty()) {
+                emptySet()
+            } else {
+                dao.existingLocationIds(
+                    (incoming.map(MediaLocationEntity::id) + mutation.evidenceUpdates.map { it.id.value }).distinct(),
+                ).toSet()
+            }
             val evidenceById = mutation.evidenceUpdates
                 .filter { it.id.value in existingIds }
                 .associate { it.id.value to it.toEntity() }
@@ -77,11 +89,13 @@ class RoomMediaCatalogRepository(private val database: YingLiDatabase) : MediaCa
                 val tags = mutation.upsertItems.flatMap { item -> item.tags.map { MediaTagEntity(item.id.value, it) } }
                 if (tags.isNotEmpty()) dao.insertTags(tags)
             }
-            database.mediaSourceDao().updateScanSummary(
-                sourceId.value,
-                dao.availableItemCount(sourceId.value),
-                mutation.scanCompletedAtEpochMillis,
-            )
+            if (mutation.markMissing) {
+                database.mediaSourceDao().updateScanSummary(
+                    sourceId.value,
+                    dao.availableItemCount(sourceId.value),
+                    mutation.scanCompletedAtEpochMillis,
+                )
+            }
             val added = incoming.count { it.id !in existingIds }
             added to (incoming.size - added)
         }

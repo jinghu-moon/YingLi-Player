@@ -53,7 +53,8 @@ class HomeViewModel(
         search,
         historyRepository.history,
     ) { text, libraryResult, searchResult, history ->
-        val items = libraryResult.pageItems()
+        val libraryPage = (libraryResult as? LibraryResult.Success)?.value
+        val items = libraryPage?.items.orEmpty()
         val historyByMedia = history.associateBy(HistoryEntry::mediaId)
         HomeDashboardUiState(
             keyword = text,
@@ -70,7 +71,7 @@ class HomeViewModel(
             frequentFolders = items.groupingBy(LibraryMedia::folderAlias).eachCount()
                 .entries.sortedByDescending(Map.Entry<String, Int>::value)
                 .take(8).map { FrequentFolder(it.key, it.value) },
-            totalCount = items.size,
+            totalCount = libraryPage?.totalCount ?: 0,
             totalDurationMillis = items.sumOf { it.durationMillis ?: 0L },
             completedCount = items.count(LibraryMedia::completed),
         )

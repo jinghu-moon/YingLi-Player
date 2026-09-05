@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.domain.library.BatchOperationSummary
 import seeyuer.yingli.player.domain.library.DurationFilter
@@ -72,6 +74,8 @@ class LibraryViewModel(
     private val lastBatchResult = MutableStateFlow<BatchOperationSummary?>(null)
     private val trashOpen = MutableStateFlow(false)
     private val pageState = MutableStateFlow(PageState())
+    private val loadMoreMutex = Mutex()
+    private var queryGeneration = 0L
 
     init {
         viewModelScope.launch {
@@ -93,11 +97,13 @@ class LibraryViewModel(
     init {
         viewModelScope.launch {
             queryInput.collectLatest { input ->
-                pageState.value = PageState(input = input, loading = true)
+                val generation = ++queryGeneration
+                pageState.value = PageState(input = input, generation = generation, loading = true)
                 repository.observe(input.toQuery()).collect { result ->
                     pageState.value = when (result) {
                         is LibraryResult.Success -> PageState(
                             input = input,
+                            generation = generation,
                             items = result.value.items,
                             totalCount = result.value.totalCount,
                             nextCursor = result.value.nextCursor,
@@ -153,26 +159,29 @@ class LibraryViewModel(
     }
 
     fun loadMore() {
-        val current = pageState.value
-        val input = current.input ?: return
-        val cursor = current.nextCursor ?: return
-        if (current.loading || current.loadingMore) return
-        pageState.update { it.copy(loadingMore = true, loadMoreFailed = false) }
         viewModelScope.launch {
-            when (val result = repository.query(input.toQuery(cursor))) {
-                is LibraryResult.Success -> pageState.update { previous ->
-                    if (previous.input != input || previous.nextCursor != cursor) previous else {
-                        previous.copy(
-                            items = (previous.items + result.value.items).distinctBy(LibraryMedia::id),
-                            totalCount = result.value.totalCount,
-                            nextCursor = result.value.nextCursor,
-                            loadingMore = false,
-                        )
+            loadMoreMutex.withLock {
+                val current = pageState.value
+                val input = current.input ?: return@withLock
+                val cursor = current.nextCursor ?: return@withLock
+                if (current.loading || current.loadingMore) return@withLock
+                val generation = current.generation
+                pageState.update { it.copy(loadingMore = true, loadMoreFailed = false) }
+                when (val result = repository.query(input.toQuery(cursor))) {
+                    is LibraryResult.Success -> pageState.update { previous ->
+                        if (previous.input != input || previous.nextCursor != cursor || previous.generation != generation) previous else {
+                            previous.copy(
+                                items = (previous.items + result.value.items).distinctBy(LibraryMedia::id),
+                                totalCount = result.value.totalCount,
+                                nextCursor = result.value.nextCursor,
+                                loadingMore = false,
+                            )
+                        }
                     }
-                }
-                LibraryResult.RetryableFailure -> pageState.update {
-                    if (it.input != input || it.nextCursor != cursor) it else {
-                        it.copy(loadingMore = false, loadMoreFailed = true)
+                    LibraryResult.RetryableFailure -> pageState.update {
+                        if (it.input != input || it.nextCursor != cursor || it.generation != generation) it else {
+                            it.copy(loadingMore = false, loadMoreFailed = true)
+                        }
                     }
                 }
             }
@@ -278,6 +287,7 @@ class LibraryViewModel(
 
     private data class PageState(
         val input: QueryInput? = null,
+        val generation: Long = 0L,
         val items: List<LibraryMedia> = emptyList(),
         val totalCount: Int = 0,
         val nextCursor: seeyuer.yingli.player.domain.library.LibraryCursor? = null,

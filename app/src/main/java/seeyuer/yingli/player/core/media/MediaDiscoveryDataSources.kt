@@ -5,9 +5,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
-import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
-import java.io.File
 import java.util.ArrayDeque
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -99,12 +97,10 @@ fun interface MediaStoreQuery {
 class SafTreeDiscoveryDataSource(
     private val documents: SafDocumentGateway,
     private val dispatchers: AppDispatchers,
-    private val metadataReader: MediaMetadataReader = MediaMetadataReader.None,
 ) : MediaDiscoveryDataSource {
     constructor(context: Context, dispatchers: AppDispatchers) : this(
         DocumentFileGateway(context),
         dispatchers,
-        AndroidMediaMetadataReader(context),
     )
 
     override val mode = MediaSourceMode.SAF_TREE
@@ -144,13 +140,12 @@ class SafTreeDiscoveryDataSource(
                     val uri = child.uri
                     if (visited.add(uri)) {
                         val mediaUri = MediaUri(uri)
-                        val metadata = readMetadata(mediaUri)
                         emit(MediaDiscoveryEvent.Candidate(MediaCandidate(
                             source.id,
                             MediaIdentityEvidence(
                                 mediaUri, source.volumeId, uri.substringAfterLast('/'), name,
                                 child.length.coerceAtLeast(0), child.lastModified.coerceAtLeast(0),
-                                metadata.durationMillis, metadata.width, metadata.height,
+                                null, null, null,
                             ),
                             child.mimeType ?: "video/*",
                         )))
@@ -159,9 +154,6 @@ class SafTreeDiscoveryDataSource(
             }
         }
     }.flowOn(dispatchers.io)
-
-    private fun readMetadata(uri: MediaUri): VideoMetadata =
-        runCatching { metadataReader.read(uri) }.getOrDefault(VideoMetadata())
 
     private companion object { const val MAX_DEPTH = 64 }
 }
@@ -196,49 +188,4 @@ private class DocumentFileNode(private val document: DocumentFile) : SafDocument
     override val length: Long get() = document.length()
     override val lastModified: Long get() = document.lastModified()
     override fun children(): List<SafDocumentNode> = document.listFiles().map(::DocumentFileNode)
-}
-
-class AllFilesDiscoveryDataSource(
-    private val dispatchers: AppDispatchers,
-) : MediaDiscoveryDataSource {
-    override val mode = MediaSourceMode.ALL_FILES
-
-    override fun discover(source: MediaSource): Flow<MediaDiscoveryEvent> = flow {
-        val root = runCatching { File(java.net.URI(source.rootUri.value)) }.getOrNull()
-        if (root == null || !root.canRead()) {
-            emit(MediaDiscoveryEvent.Failure(ScanFailure(source.id, ScanFailureKind.SOURCE_OFFLINE, true)))
-            return@flow
-        }
-        val pending = ArrayDeque<Pair<File, Int>>()
-        pending.add(root to 0)
-        while (pending.isNotEmpty()) {
-            coroutineContext.ensureActive()
-            val (file, depth) = pending.removeFirst()
-            if (depth > MAX_DEPTH || (!source.includeHidden && file.isHidden)) continue
-            if (file.isDirectory) {
-                file.listFiles()?.forEach { pending.add(it to depth + 1) }
-            } else {
-                val mime = file.videoMimeType() ?: continue
-                // Indexing discovers files only. Expensive container parsing belongs to lazy enrichment.
-                val mediaUri = MediaUri(Uri.fromFile(file).toString())
-                emit(MediaDiscoveryEvent.Candidate(MediaCandidate(
-                    source.id,
-                    MediaIdentityEvidence(
-                        mediaUri, source.volumeId, null, file.name,
-                        file.length().coerceAtLeast(0), file.lastModified().coerceAtLeast(0),
-                        null, null, null,
-                    ),
-                    mime,
-                )))
-            }
-        }
-    }.flowOn(dispatchers.io)
-
-    private fun File.videoMimeType(): String? {
-        val extension = extension.lowercase()
-        val resolved = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-        return resolved?.takeIf { it.startsWith("video/") }
-    }
-
-    private companion object { const val MAX_DEPTH = 64 }
 }

@@ -40,6 +40,9 @@ interface MediaCatalogDao {
     @Query("SELECT * FROM media_locations WHERE sourceId = :sourceId")
     suspend fun locationsForSource(sourceId: String): List<MediaLocationEntity>
 
+    @Query("SELECT id FROM media_locations WHERE id IN (:ids)")
+    suspend fun existingLocationIds(ids: List<String>): List<String>
+
     @Query("SELECT media_item_locations.* FROM media_item_locations INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId WHERE media_locations.sourceId = :sourceId")
     suspend fun linksForSource(sourceId: String): List<MediaItemLocationEntity>
 

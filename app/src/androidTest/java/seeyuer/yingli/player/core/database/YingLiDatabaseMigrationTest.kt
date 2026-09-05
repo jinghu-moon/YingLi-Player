@@ -76,18 +76,31 @@ class YingLiDatabaseMigrationTest {
     }
 
     @Test
-    fun migrateFromOneToSixValidatesCompleteUpgradeChain() {
-        helper.createDatabase("migration-1-6", 1).close()
+    fun migrateFromSixToSevenCreatesLibraryQueryIndexes() {
+        helper.createDatabase("migration-6-7", 6).close()
 
         helper.runMigrationsAndValidate(
-            "migration-1-6",
-            6,
+            "migration-6-7",
+            7,
+            true,
+            YingLiDatabase.MIGRATION_6_7,
+        ).close()
+    }
+
+    @Test
+    fun migrateFromOneToSevenValidatesCompleteUpgradeChain() {
+        helper.createDatabase("migration-1-7", 1).close()
+
+        helper.runMigrationsAndValidate(
+            "migration-1-7",
+            7,
             true,
             YingLiDatabase.MIGRATION_1_2,
             YingLiDatabase.MIGRATION_2_3,
             YingLiDatabase.MIGRATION_3_4,
             YingLiDatabase.MIGRATION_4_5,
             YingLiDatabase.MIGRATION_5_6,
+            YingLiDatabase.MIGRATION_6_7,
         ).close()
     }
 

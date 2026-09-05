@@ -15,9 +15,22 @@ import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.core.model.media.MediaUri
 import seeyuer.yingli.player.core.model.media.ThumbnailPriority
 import seeyuer.yingli.player.core.model.media.ThumbnailRequest
+import seeyuer.yingli.player.core.model.media.ScrollDirection
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PriorityThumbnailRepositoryTest {
+    @Test
+    fun `fallback extractor is used after primary failure`() = runTest {
+        var fallbackCalls = 0
+        val fallback = FallbackThumbnailExtractor(
+            ThumbnailExtractor { false },
+            ThumbnailExtractor { fallbackCalls++; true },
+        )
+
+        assertTrue(fallback.extract(request("fallback", ThumbnailPriority.VISIBLE)))
+        assertEquals(1, fallbackCalls)
+    }
+
     @Test
     fun `visible pending work runs before background pending work`() = runTest {
         val firstGate = CompletableDeferred<Unit>()
@@ -57,11 +70,11 @@ class PriorityThumbnailRepositoryTest {
 
         repository.enqueue(request)
         runCurrent()
-        repository.cancel(request.cacheKey)
+        repository.cancel(request.key)
         advanceUntilIdle()
 
         assertEquals(1, calls)
-        assertEquals(ThumbnailState.Queued, repository.observe(request.cacheKey).first())
+        assertEquals(ThumbnailState.Queued, repository.observe(request.key).first())
     }
 
     @Test
@@ -77,7 +90,7 @@ class PriorityThumbnailRepositoryTest {
         advanceUntilIdle()
 
         assertEquals(2, calls)
-        assertTrue(repository.observe(request.cacheKey).first() is ThumbnailState.Ready)
+        assertTrue(repository.observe(request.key).first() is ThumbnailState.Ready)
     }
 
     @Test
@@ -99,6 +112,88 @@ class PriorityThumbnailRepositoryTest {
         advanceUntilIdle()
 
         assertEquals(3, calls)
+    }
+
+    @Test
+    fun `visible request promotes a queued prefetch without duplicate work`() = runTest {
+        val calls = mutableListOf<String>()
+        val gate = CompletableDeferred<Unit>()
+        val request = request("same", ThumbnailPriority.BACKGROUND)
+        val repository = PriorityThumbnailRepository(
+            scope = this,
+            extractor = ThumbnailExtractor {
+                calls += it.mediaItemId.value
+                gate.await()
+                true
+            },
+            maxConcurrent = 1,
+        )
+
+        repository.prefetch(listOf(request), ScrollDirection.FORWARD, generation = 1)
+        repository.requestVisible(listOf(request.copy(priority = ThumbnailPriority.VISIBLE)))
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf("same"), calls)
+        assertTrue(repository.observe(request).first() is ThumbnailState.Ready)
+    }
+
+    @Test
+    fun `replacing a prefetch window drops obsolete pending work`() = runTest {
+        val calls = mutableListOf<String>()
+        val gate = CompletableDeferred<Unit>()
+        val repository = PriorityThumbnailRepository(
+            scope = this,
+            extractor = ThumbnailExtractor {
+                calls += it.mediaItemId.value
+                if (it.mediaItemId.value == "blocker") gate.await()
+                true
+            },
+            maxConcurrent = 1,
+        )
+        repository.requestVisible(listOf(request("blocker", ThumbnailPriority.VISIBLE)))
+        runCurrent()
+        repository.prefetch(
+            listOf(request("old", ThumbnailPriority.BACKGROUND), request("keep", ThumbnailPriority.BACKGROUND)),
+            ScrollDirection.FORWARD,
+            generation = 2,
+        )
+        repository.prefetch(
+            listOf(request("keep", ThumbnailPriority.BACKGROUND)),
+            ScrollDirection.FORWARD,
+            generation = 2,
+        )
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf("blocker", "keep"), calls)
+    }
+
+    @Test
+    fun `background prefetch keeps a slot for visible work`() = runTest {
+        val firstGate = CompletableDeferred<Unit>()
+        val calls = mutableListOf<String>()
+        val repository = PriorityThumbnailRepository(
+            scope = this,
+            extractor = ThumbnailExtractor {
+                calls += it.mediaItemId.value
+                if (it.mediaItemId.value == "background") firstGate.await()
+                true
+            },
+            maxConcurrent = 2,
+        )
+        repository.prefetch(
+            listOf(request("background", ThumbnailPriority.BACKGROUND), request("background2", ThumbnailPriority.BACKGROUND)),
+            ScrollDirection.FORWARD,
+            generation = 1,
+        )
+        runCurrent()
+        repository.requestVisible(listOf(request("visible", ThumbnailPriority.VISIBLE)))
+        runCurrent()
+
+        assertEquals(listOf("background", "visible"), calls)
+        firstGate.complete(Unit)
+        advanceUntilIdle()
     }
 
     private fun request(id: String, priority: ThumbnailPriority) = ThumbnailRequest(

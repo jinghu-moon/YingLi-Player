@@ -5,15 +5,23 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
+import androidx.room.RawQuery
+import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface LibraryDao {
-    @Query("SELECT media_items.id, media_items.title, media_items.playbackPositionMillis, media_items.completed, media_locations.id AS locationId, media_locations.uri, media_locations.fileName, media_sources.displayName AS folderAlias, media_locations.sizeBytes, media_locations.durationMillis, media_locations.width, media_locations.height, media_locations.modifiedEpochMillis, COALESCE(playback_history.playCount, 0) AS playCount FROM media_items INNER JOIN media_item_locations ON media_item_locations.mediaItemId = media_items.id INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId INNER JOIN media_sources ON media_sources.id = media_locations.sourceId LEFT JOIN playback_history ON playback_history.mediaItemId = media_items.id LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id WHERE media_locations.missingScanCount = 0 AND trash_entries.mediaItemId IS NULL")
-    fun observeRows(): Flow<List<LibraryMediaRow>>
+    @RawQuery(observedEntities = [MediaItemEntity::class, MediaLocationEntity::class, MediaItemLocationEntity::class, MediaSourceEntity::class, PlaybackHistoryEntity::class, TrashEntryEntity::class, MediaTagEntity::class])
+    fun observePage(query: SupportSQLiteQuery): Flow<List<LibraryMediaRow>>
 
-    @Query("SELECT media_items.id, media_items.title, media_items.playbackPositionMillis, media_items.completed, media_locations.id AS locationId, media_locations.uri, media_locations.fileName, media_sources.displayName AS folderAlias, media_locations.sizeBytes, media_locations.durationMillis, media_locations.width, media_locations.height, media_locations.modifiedEpochMillis, COALESCE(playback_history.playCount, 0) AS playCount FROM media_items INNER JOIN media_item_locations ON media_item_locations.mediaItemId = media_items.id INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId INNER JOIN media_sources ON media_sources.id = media_locations.sourceId LEFT JOIN playback_history ON playback_history.mediaItemId = media_items.id LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id WHERE media_locations.missingScanCount = 0 AND trash_entries.mediaItemId IS NULL")
-    suspend fun rows(): List<LibraryMediaRow>
+    @RawQuery(observedEntities = [MediaItemEntity::class, MediaLocationEntity::class, MediaItemLocationEntity::class, MediaSourceEntity::class, PlaybackHistoryEntity::class, TrashEntryEntity::class, MediaTagEntity::class])
+    fun observeCount(query: SupportSQLiteQuery): Flow<Int>
+
+    @RawQuery
+    suspend fun page(query: SupportSQLiteQuery): List<LibraryMediaRow>
+
+    @RawQuery
+    suspend fun count(query: SupportSQLiteQuery): Int
 
     @Query("SELECT * FROM trash_entries ORDER BY deletedAtEpochMillis DESC")
     fun observeTrash(): Flow<List<TrashEntryEntity>>

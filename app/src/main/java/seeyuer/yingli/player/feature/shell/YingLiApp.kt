@@ -93,6 +93,7 @@ import seeyuer.yingli.player.feature.security.SecurityViewModel
 import seeyuer.yingli.player.feature.security.VaultRoute
 import seeyuer.yingli.player.feature.security.VaultViewModel
 import seeyuer.yingli.player.domain.security.VaultItemId
+import seeyuer.yingli.player.core.media.ThumbnailLoader
 
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
@@ -114,6 +115,7 @@ fun YingLiApp(
     onSecureSessionLocked: () -> Unit = {},
     biometricAvailable: Boolean = false,
     onBiometricUnlock: () -> Unit = {},
+    thumbnailRepository: ThumbnailLoader? = null,
 ) {
     val settings by viewModel.appearanceSettings.collectAsStateWithLifecycle()
     val securityState by securityViewModel.state.collectAsStateWithLifecycle()
@@ -269,6 +271,7 @@ fun YingLiApp(
             onSkipMediaOnboarding = mediaLibraryViewModel::skipOnboarding,
             onRescan = mediaLibraryViewModel::rescan,
             onMediaSelected = viewModel::openPlayer,
+            thumbnailRepository = thumbnailRepository,
             playerContent = { route, onBack ->
                 LaunchedEffect(route.mediaId) {
                     playerViewModel.open(route.mediaId, route.source.toPlaybackSourceContext())
@@ -401,6 +404,7 @@ internal fun AdaptiveAppShell(
     onSkipMediaOnboarding: () -> Unit = {},
     onRescan: () -> Unit = {},
     onMediaSelected: (String) -> Unit = {},
+    thumbnailRepository: ThumbnailLoader? = null,
     playerContent: @Composable (AppRoute.Player, () -> Unit) -> Unit = { _, onBack ->
         FullScreenPlayerPlaceholder(onBack)
     },
@@ -455,6 +459,7 @@ internal fun AdaptiveAppShell(
                 onSkipMediaOnboarding = onSkipMediaOnboarding,
                 onRescan = onRescan,
                 onMediaSelected = onMediaSelected,
+                thumbnailRepository = thumbnailRepository,
                 modifier = Modifier.weight(1f),
                 bottomBar = miniPlayerContent,
             )
@@ -488,6 +493,7 @@ internal fun AdaptiveAppShell(
             onSkipMediaOnboarding = onSkipMediaOnboarding,
             onRescan = onRescan,
             onMediaSelected = onMediaSelected,
+            thumbnailRepository = thumbnailRepository,
             bottomBar = {
                 Column {
                     miniPlayerContent()
@@ -534,6 +540,7 @@ private fun AppScaffold(
     onSkipMediaOnboarding: () -> Unit,
     onRescan: () -> Unit,
     onMediaSelected: (String) -> Unit,
+    thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier = Modifier,
     bottomBar: @Composable () -> Unit = {},
 ) {
@@ -634,6 +641,7 @@ private fun AppScaffold(
             onSkipMediaOnboarding = onSkipMediaOnboarding,
             onRescan = onRescan,
             onMediaSelected = onMediaSelected,
+            thumbnailRepository = thumbnailRepository,
             modifier = Modifier.padding(padding),
         )
     }
@@ -666,6 +674,7 @@ private fun RouteContent(
     onSkipMediaOnboarding: () -> Unit,
     onRescan: () -> Unit,
     onMediaSelected: (String) -> Unit,
+    thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier = Modifier,
 ) {
     when (route) {
@@ -708,6 +717,7 @@ private fun RouteContent(
                     viewModel = viewModel,
                     isWide = libraryIsWide,
                     onMediaSelected = onMediaSelected,
+                    thumbnailRepository = thumbnailRepository,
                     modifier = modifier,
                 )
             } ?: Unit

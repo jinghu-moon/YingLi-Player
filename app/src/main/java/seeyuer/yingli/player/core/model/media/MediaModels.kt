@@ -173,11 +173,22 @@ data class ScanResult(
     }
 }
 
+data class ScanProgress(
+    val processed: Int = 0,
+    val discovered: Int = 0,
+    val completed: Boolean = false,
+)
+
 enum class ThumbnailPriority(val rank: Int) {
     VISIBLE(0),
     CONTINUE_WATCHING(1),
     RECENTLY_ADDED(2),
     BACKGROUND(3),
+}
+
+enum class ScrollDirection {
+    FORWARD,
+    BACKWARD,
 }
 
 data class ThumbnailRequest(
@@ -187,12 +198,44 @@ data class ThumbnailRequest(
     val widthPixels: Int,
     val heightPixels: Int,
     val priority: ThumbnailPriority,
+    val modifiedEpochMillis: Long = 0L,
+    val sizeBytes: Long = 0L,
+    val variant: String = "video-frame",
 ) {
     init {
         require(widthPixels > 0 && heightPixels > 0)
+        require(modifiedEpochMillis >= 0)
+        require(sizeBytes >= 0)
+        require(variant.isNotBlank())
     }
 
-    val cacheKey: String = "${mediaItemId.value}:${locationId.value}:$widthPixels:$heightPixels"
+    val key: ThumbnailKey
+        get() = ThumbnailKey(
+            mediaItemId, locationId, modifiedEpochMillis, sizeBytes,
+            widthPixels, heightPixels, variant,
+        )
+}
+
+data class ThumbnailKey(
+    val mediaItemId: MediaItemId,
+    val locationId: MediaLocationId,
+    val modifiedEpochMillis: Long,
+    val sizeBytes: Long,
+    val widthPixels: Int,
+    val heightPixels: Int,
+    val variant: String,
+) {
+    init {
+        require(modifiedEpochMillis >= 0)
+        require(sizeBytes >= 0)
+        require(widthPixels > 0 && heightPixels > 0)
+        require(variant.isNotBlank())
+    }
+
+    fun diskName(): String = listOf(
+        mediaItemId.value, locationId.value, modifiedEpochMillis, sizeBytes,
+        widthPixels, heightPixels, variant,
+    ).joinToString("_") { it.toString().replace(Regex("[^A-Za-z0-9_.-]"), "_") }
 }
 
 private fun String.isStableId(): Boolean = matches(Regex("[A-Za-z0-9_-]{1,128}"))

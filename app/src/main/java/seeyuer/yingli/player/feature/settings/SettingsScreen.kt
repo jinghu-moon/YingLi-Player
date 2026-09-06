@@ -24,8 +24,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.res.stringResource
 import seeyuer.yingli.player.R
-import seeyuer.yingli.player.core.datastore.AppearanceSettings
-import seeyuer.yingli.player.core.datastore.LibraryLayoutPreference
+import seeyuer.yingli.player.data.preferences.AppearanceSettings
+import seeyuer.yingli.player.data.preferences.LibraryLayoutPreference
 import seeyuer.yingli.player.core.designsystem.component.YingLiBanner
 import seeyuer.yingli.player.core.designsystem.component.YingLiButton
 import seeyuer.yingli.player.core.designsystem.component.YingLiCheckbox

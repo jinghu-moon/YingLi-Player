@@ -1,16 +1,16 @@
 package seeyuer.yingli.player.app
 
 import android.content.Context
-import seeyuer.yingli.player.core.datastore.DataStoreThemeRepository
-import seeyuer.yingli.player.core.foundation.AppContainer
-import seeyuer.yingli.player.core.foundation.DefaultAppContainer
-import seeyuer.yingli.player.core.foundation.DefaultAppDispatchers
-import seeyuer.yingli.player.core.foundation.DefaultSensitiveValueRedactor
-import seeyuer.yingli.player.core.foundation.CompositeAppLogSink
-import seeyuer.yingli.player.core.foundation.RedactingAppLogger
-import seeyuer.yingli.player.core.foundation.RollingDiagnosticLogStore
-import seeyuer.yingli.player.core.foundation.SystemAppClock
-import seeyuer.yingli.player.core.foundation.UuidGenerator
+import seeyuer.yingli.player.data.preferences.DataStoreThemeRepository
+import seeyuer.yingli.player.core.common.AppContainer
+import seeyuer.yingli.player.core.common.DefaultAppContainer
+import seeyuer.yingli.player.core.common.DefaultAppDispatchers
+import seeyuer.yingli.player.core.common.DefaultSensitiveValueRedactor
+import seeyuer.yingli.player.core.common.CompositeAppLogSink
+import seeyuer.yingli.player.core.common.RedactingAppLogger
+import seeyuer.yingli.player.core.common.RollingDiagnosticLogStore
+import seeyuer.yingli.player.core.common.SystemAppClock
+import seeyuer.yingli.player.core.common.UuidGenerator
 import seeyuer.yingli.player.core.model.DefaultAppFailureMapper
 
 object ProductionAppContainerFactory {

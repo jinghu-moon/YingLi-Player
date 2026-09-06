@@ -59,7 +59,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import seeyuer.yingli.player.R
-import seeyuer.yingli.player.core.datastore.AppearanceSettings
+import seeyuer.yingli.player.data.preferences.AppearanceSettings
 import seeyuer.yingli.player.core.designsystem.component.YingLiEmptyState
 import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
@@ -99,7 +99,7 @@ import seeyuer.yingli.player.feature.security.SecurityViewModel
 import seeyuer.yingli.player.feature.security.VaultRoute
 import seeyuer.yingli.player.feature.security.VaultViewModel
 import seeyuer.yingli.player.domain.security.VaultItemId
-import seeyuer.yingli.player.core.media.ThumbnailLoader
+import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
 
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable

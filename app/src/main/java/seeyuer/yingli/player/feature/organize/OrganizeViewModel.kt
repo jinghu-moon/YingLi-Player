@@ -16,7 +16,7 @@ import seeyuer.yingli.player.domain.organize.OrganizeMutationResult
 import seeyuer.yingli.player.domain.organize.OrganizeRepository
 import seeyuer.yingli.player.domain.organize.OrganizeSnapshot
 import seeyuer.yingli.player.domain.organize.TagColor
-import seeyuer.yingli.player.core.foundation.AppClock
+import seeyuer.yingli.player.core.common.AppClock
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.domain.duplicates.DuplicateDeletionExecutor
 import seeyuer.yingli.player.domain.duplicates.DuplicateDeletionPlan

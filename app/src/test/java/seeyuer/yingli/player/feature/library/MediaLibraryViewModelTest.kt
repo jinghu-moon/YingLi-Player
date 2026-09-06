@@ -11,14 +11,14 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import seeyuer.yingli.player.core.datastore.MediaOnboardingRepository
-import seeyuer.yingli.player.core.media.CatalogMutation
-import seeyuer.yingli.player.core.media.CatalogSnapshot
-import seeyuer.yingli.player.core.media.MediaCatalogRepository
-import seeyuer.yingli.player.core.media.MediaPermissionGateway
-import seeyuer.yingli.player.core.media.MediaPermissionSnapshot
-import seeyuer.yingli.player.core.media.MediaSourceRepository
-import seeyuer.yingli.player.core.media.PermissionActionResult
+import seeyuer.yingli.player.data.preferences.MediaOnboardingRepository
+import seeyuer.yingli.player.domain.catalog.CatalogMutation
+import seeyuer.yingli.player.domain.catalog.CatalogSnapshot
+import seeyuer.yingli.player.domain.catalog.MediaCatalogRepository
+import seeyuer.yingli.player.domain.catalog.MediaPermissionGateway
+import seeyuer.yingli.player.domain.catalog.MediaPermissionSnapshot
+import seeyuer.yingli.player.domain.catalog.MediaSourceRepository
+import seeyuer.yingli.player.domain.catalog.PermissionActionResult
 import seeyuer.yingli.player.core.model.media.MediaItem
 import seeyuer.yingli.player.core.model.media.MediaSource
 import seeyuer.yingli.player.core.model.media.MediaSourceAccessState
@@ -28,7 +28,7 @@ import seeyuer.yingli.player.core.model.media.ScanFailure
 import seeyuer.yingli.player.core.model.media.ScanFailureKind
 import seeyuer.yingli.player.core.model.media.ScanRequest
 import seeyuer.yingli.player.core.model.media.ScanResult
-import seeyuer.yingli.player.domain.media.MediaScanner
+import seeyuer.yingli.player.domain.catalog.MediaScanner
 import seeyuer.yingli.player.testing.MainDispatcherRule
 
 @OptIn(ExperimentalCoroutinesApi::class)

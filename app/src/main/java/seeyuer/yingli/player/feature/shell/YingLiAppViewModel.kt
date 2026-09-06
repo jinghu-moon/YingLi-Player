@@ -10,9 +10,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import seeyuer.yingli.player.core.datastore.AppearanceSettings
-import seeyuer.yingli.player.core.datastore.LibraryLayoutPreference
-import seeyuer.yingli.player.core.datastore.ThemeRepository
+import seeyuer.yingli.player.data.preferences.AppearanceSettings
+import seeyuer.yingli.player.data.preferences.LibraryLayoutPreference
+import seeyuer.yingli.player.data.preferences.ThemeRepository
 import seeyuer.yingli.player.domain.navigation.GlobalAppAction
 import seeyuer.yingli.player.domain.navigation.NavigationState
 import seeyuer.yingli.player.domain.navigation.RootDestination

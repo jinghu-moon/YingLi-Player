@@ -15,6 +15,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import seeyuer.yingli.player.engine.media3.ActivityPictureInPictureGateway
+import seeyuer.yingli.player.engine.media3.Media3ScreenshotGateway
+import seeyuer.yingli.player.engine.media3.Media3VideoSurface
+import seeyuer.yingli.player.engine.media3.Media3PlaybackController
 import seeyuer.yingli.player.feature.shell.YingLiApp
 import seeyuer.yingli.player.feature.shell.YingLiAppViewModel
 import seeyuer.yingli.player.feature.library.MediaLibraryViewModel

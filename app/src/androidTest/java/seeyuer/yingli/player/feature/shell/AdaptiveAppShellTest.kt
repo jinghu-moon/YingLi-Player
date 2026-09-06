@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
-import seeyuer.yingli.player.core.datastore.AppearanceSettings
+import seeyuer.yingli.player.data.preferences.AppearanceSettings
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.navigation.AppRoute
 import seeyuer.yingli.player.domain.navigation.NavigationState

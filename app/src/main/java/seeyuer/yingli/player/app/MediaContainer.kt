@@ -13,23 +13,34 @@ import okio.Path.Companion.toPath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
-import seeyuer.yingli.player.core.database.RoomMediaCatalogRepository
-import seeyuer.yingli.player.core.database.RoomMediaSourceRepository
-import seeyuer.yingli.player.core.database.YingLiDatabase
-import seeyuer.yingli.player.core.datastore.DataStoreMediaOnboardingRepository
-import seeyuer.yingli.player.core.datastore.MediaOnboardingRepository
-import seeyuer.yingli.player.core.foundation.AppContainer
-import seeyuer.yingli.player.core.media.*
-import seeyuer.yingli.player.app.library.RoomLibraryRepository
-import seeyuer.yingli.player.app.home.AndroidDeviceStorageRepository
-import seeyuer.yingli.player.app.home.DataStoreHomeLayoutRepository
-import seeyuer.yingli.player.app.home.RoomHomeRepository
+import seeyuer.yingli.player.data.room.RoomMediaCatalogRepository
+import seeyuer.yingli.player.data.room.RoomMediaSourceRepository
+import seeyuer.yingli.player.data.room.YingLiDatabase
+import seeyuer.yingli.player.data.preferences.DataStoreMediaOnboardingRepository
+import seeyuer.yingli.player.data.preferences.MediaOnboardingRepository
+import seeyuer.yingli.player.core.common.AppContainer
+import seeyuer.yingli.player.data.sources.*
+import seeyuer.yingli.player.engine.thumbnail.*
+import seeyuer.yingli.player.engine.thumbnail.frame.Media3FrameThumbnailSource
+import seeyuer.yingli.player.engine.thumbnail.system.ContentResolverThumbnailSource
+import seeyuer.yingli.player.data.library.RoomLibraryRepository
+import seeyuer.yingli.player.data.library.DefaultLibraryMutationRepository
+import seeyuer.yingli.player.data.library.RoomTrashRepository
+import seeyuer.yingli.player.data.filesystem.AndroidFileOperationGateway
+import seeyuer.yingli.player.data.filesystem.AndroidMediaContentHasher
+import seeyuer.yingli.player.data.home.AndroidDeviceStorageRepository
+import seeyuer.yingli.player.data.home.DataStoreHomeLayoutRepository
+import seeyuer.yingli.player.data.home.RoomHomeRepository
 import seeyuer.yingli.player.domain.home.DeviceStorageRepository
 import seeyuer.yingli.player.domain.home.HomeLayoutRepository
 import seeyuer.yingli.player.domain.home.HomeRepository
-import seeyuer.yingli.player.domain.media.DefaultMediaIdentityResolver
-import seeyuer.yingli.player.domain.media.DefaultMediaScanner
-import seeyuer.yingli.player.domain.media.MediaScanner
+import seeyuer.yingli.player.domain.catalog.DefaultMediaIdentityResolver
+import seeyuer.yingli.player.domain.catalog.DefaultMediaScanner
+import seeyuer.yingli.player.domain.catalog.MediaCatalogRepository
+import seeyuer.yingli.player.domain.catalog.MediaPermissionGateway
+import seeyuer.yingli.player.domain.catalog.MediaScanner
+import seeyuer.yingli.player.domain.catalog.MediaSourceRepository
+import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
 import seeyuer.yingli.player.domain.playback.PlaybackProgressRepository
 import seeyuer.yingli.player.domain.playback.PlaybackSourceRepository
 import seeyuer.yingli.player.domain.library.LibraryMutationRepository
@@ -59,9 +70,14 @@ import seeyuer.yingli.player.domain.transcode.TranscodeQueue
 import seeyuer.yingli.player.domain.duplicates.DuplicateDeletionExecutor
 import seeyuer.yingli.player.domain.duplicates.DuplicateRepository
 import seeyuer.yingli.player.domain.duplicates.DuplicateScanner
-import seeyuer.yingli.player.app.security.AppLockManager
+import seeyuer.yingli.player.data.security.AppLockManager
 import seeyuer.yingli.player.domain.security.SecurePlaybackSource
 import seeyuer.yingli.player.domain.security.VaultRepository
+import seeyuer.yingli.player.data.organize.RoomOrganizeRepository
+import seeyuer.yingli.player.data.preferences.DataStorePlayerPreferenceRepository
+import seeyuer.yingli.player.data.preferences.DataStoreLibraryPreferenceRepository
+import seeyuer.yingli.player.data.preferences.InMemoryPlaybackQueueRepository
+import seeyuer.yingli.player.data.room.RoomPlaybackRepository
 
 data class MediaContainer(
     val sourceRepository: MediaSourceRepository,
@@ -158,36 +174,36 @@ object ProductionMediaContainerFactory {
             retentionDays = { foundation.themeRepository.settings.first().trashRetentionDays },
         )
         val organizeRepository = RoomOrganizeRepository(database, foundation.clock, foundation.idGenerator)
-        val duplicateRepository = seeyuer.yingli.player.app.duplicates.RoomDuplicateRepository(database)
-        val fingerprintGenerator = seeyuer.yingli.player.app.duplicates.AndroidDuplicateFingerprintGenerator(
+        val duplicateRepository = seeyuer.yingli.player.data.duplicates.RoomDuplicateRepository(database)
+        val fingerprintGenerator = seeyuer.yingli.player.data.duplicates.AndroidDuplicateFingerprintGenerator(
             context,
             foundation.dispatchers,
         )
-        val duplicateScanner = seeyuer.yingli.player.app.duplicates.DefaultDuplicateScanner(
+        val duplicateScanner = seeyuer.yingli.player.data.duplicates.DefaultDuplicateScanner(
             libraryRepository,
             duplicateRepository,
             fingerprintGenerator,
             foundation.clock,
         )
-        val duplicateDeletionExecutor = seeyuer.yingli.player.app.duplicates.DefaultDuplicateDeletionExecutor(
+        val duplicateDeletionExecutor = seeyuer.yingli.player.data.duplicates.DefaultDuplicateDeletionExecutor(
             duplicateRepository,
             libraryRepository,
             mutationRepository,
             fingerprintGenerator,
         )
         val securityScope = CoroutineScope(SupervisorJob() + foundation.dispatchers.main)
-        val appLockManager = seeyuer.yingli.player.app.security.AppLockManager(
-            seeyuer.yingli.player.app.security.DataStoreAppLockRepository(context),
+        val appLockManager = seeyuer.yingli.player.data.security.AppLockManager(
+            seeyuer.yingli.player.data.security.DataStoreAppLockRepository(context),
             seeyuer.yingli.player.core.security.Pbkdf2CredentialHasher(),
             foundation.clock,
             foundation.dispatchers,
             securityScope,
         )
-        val vaultKeys = seeyuer.yingli.player.app.security.AndroidKeystoreKeyManagementGateway(
+        val vaultKeys = seeyuer.yingli.player.data.security.AndroidKeystoreKeyManagementGateway(
             context,
             foundation.dispatchers,
         )
-        val vaultRepository = seeyuer.yingli.player.app.security.AndroidVaultRepository(
+        val vaultRepository = seeyuer.yingli.player.data.security.AndroidVaultRepository(
             context,
             database,
             vaultKeys,
@@ -197,49 +213,49 @@ object ProductionMediaContainerFactory {
             foundation.dispatchers,
         )
         val playerPreferences = DataStorePlayerPreferenceRepository(context, foundation.themeRepository)
-        val backupGateway = seeyuer.yingli.player.app.settings.RoomBackupGateway(
+        val backupGateway = seeyuer.yingli.player.data.settings.RoomBackupGateway(
             database,
             foundation.themeRepository,
             foundation.clock,
         )
-        val processingRepository = seeyuer.yingli.player.app.processing.RoomProcessingRepository(database)
-        val artifactStore = seeyuer.yingli.player.app.processing.AndroidProcessingArtifactStore(
+        val processingRepository = seeyuer.yingli.player.data.processing.RoomProcessingRepository(database)
+        val artifactStore = seeyuer.yingli.player.data.processing.AndroidProcessingArtifactStore(
             context,
             foundation.dispatchers,
             foundation.idGenerator,
         )
-        val clipRepository = seeyuer.yingli.player.app.clips.RoomClipProjectRepository(database)
-        val clipEngine = seeyuer.yingli.player.app.clips.PlatformClipEngine(context, foundation.dispatchers)
-        val mediaCapabilityProbe = seeyuer.yingli.player.app.transcode.AndroidMediaCapabilityProbe(
+        val clipRepository = seeyuer.yingli.player.data.processing.clips.RoomClipProjectRepository(database)
+        val clipEngine = seeyuer.yingli.player.data.processing.clips.PlatformClipEngine(context, foundation.dispatchers)
+        val mediaCapabilityProbe = seeyuer.yingli.player.data.processing.transcode.AndroidMediaCapabilityProbe(
             context,
             foundation.dispatchers,
             foundation.clock,
         )
-        val transcodeQueue = seeyuer.yingli.player.app.transcode.TranscodeCoordinator(
+        val transcodeQueue = seeyuer.yingli.player.data.processing.transcode.TranscodeCoordinator(
             processingRepository,
             foundation.idGenerator,
             foundation.clock,
         )
-        val clipExecutor = seeyuer.yingli.player.app.clips.ClipProcessingExecutor(
+        val clipExecutor = seeyuer.yingli.player.data.processing.clips.ClipProcessingExecutor(
             processingRepository,
             clipRepository,
             playbackRepository,
             clipEngine,
             artifactStore,
         )
-        val transcodeExecutor = seeyuer.yingli.player.app.transcode.TranscodeProcessingExecutor(
+        val transcodeExecutor = seeyuer.yingli.player.data.processing.transcode.TranscodeProcessingExecutor(
             processingRepository,
             mediaCapabilityProbe,
-            seeyuer.yingli.player.app.transcode.Media3TranscodeEngine(context, foundation.dispatchers),
-            seeyuer.yingli.player.app.transcode.MediaExtractorOutputVerifier(foundation.dispatchers),
+            seeyuer.yingli.player.data.processing.transcode.Media3TranscodeEngine(context, foundation.dispatchers),
+            seeyuer.yingli.player.data.processing.transcode.MediaExtractorOutputVerifier(foundation.dispatchers),
             artifactStore,
             availableBytes = { runCatching { StatFs(context.cacheDir.absolutePath).availableBytes }.getOrDefault(0) },
         )
         val processingScope = CoroutineScope(SupervisorJob() + foundation.dispatchers.main)
-        val scheduler = seeyuer.yingli.player.app.processing.InAppProcessingScheduler(
+        val scheduler = seeyuer.yingli.player.data.processing.InAppProcessingScheduler(
             processingScope,
             processingRepository,
-            seeyuer.yingli.player.app.processing.RoutingProcessingExecutor(
+            seeyuer.yingli.player.data.processing.RoutingProcessingExecutor(
                 processingRepository,
                 clipExecutor,
                 transcodeExecutor,
@@ -251,7 +267,7 @@ object ProductionMediaContainerFactory {
                 seeyuer.yingli.player.app.processing.YingLiProcessingService.setActive(context, active)
             },
         ).also { it.start() }
-        val clipExportQueue = seeyuer.yingli.player.app.clips.ClipExportCoordinator(
+        val clipExportQueue = seeyuer.yingli.player.data.processing.clips.ClipExportCoordinator(
             processingRepository,
             foundation.idGenerator,
             foundation.clock,
@@ -287,20 +303,20 @@ object ProductionMediaContainerFactory {
             playerPreferences,
             InMemoryPlaybackQueueRepository(),
             backupGateway,
-            seeyuer.yingli.player.app.settings.LocalDiagnosticsReporter(
+            seeyuer.yingli.player.data.settings.LocalDiagnosticsReporter(
                 context,
                 foundation.diagnosticLogStore,
                 foundation.dispatchers,
             ),
-            seeyuer.yingli.player.app.settings.AndroidSettingsDocumentGateway(context, foundation.dispatchers),
-            seeyuer.yingli.player.app.settings.GitHubReleaseUpdateSource(foundation.dispatchers, foundation.clock),
+            seeyuer.yingli.player.data.settings.AndroidSettingsDocumentGateway(context, foundation.dispatchers),
+            seeyuer.yingli.player.data.settings.GitHubReleaseUpdateSource(foundation.dispatchers, foundation.clock),
             processingRepository,
             artifactStore,
             clipRepository,
             scheduler,
             scheduler,
             clipExportQueue,
-            seeyuer.yingli.player.app.clips.AndroidTimelineFrameProvider(context, foundation.dispatchers),
+            seeyuer.yingli.player.data.processing.clips.AndroidTimelineFrameProvider(context, foundation.dispatchers),
             mediaCapabilityProbe,
             transcodeQueue,
             duplicateRepository,

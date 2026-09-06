@@ -1,9 +1,9 @@
 package seeyuer.yingli.player.app
 
 import android.util.Log
-import seeyuer.yingli.player.core.foundation.AppLogLevel
-import seeyuer.yingli.player.core.foundation.AppLogRecord
-import seeyuer.yingli.player.core.foundation.AppLogSink
+import seeyuer.yingli.player.core.common.AppLogLevel
+import seeyuer.yingli.player.core.common.AppLogRecord
+import seeyuer.yingli.player.core.common.AppLogSink
 
 class AndroidLogSink : AppLogSink {
     override fun emit(record: AppLogRecord) {

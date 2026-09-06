@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import seeyuer.yingli.player.core.foundation.AppDispatchers
+import seeyuer.yingli.player.core.common.AppDispatchers
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.domain.playback.PlaybackCommandResult
 import seeyuer.yingli.player.domain.playback.PlaybackConnectionState

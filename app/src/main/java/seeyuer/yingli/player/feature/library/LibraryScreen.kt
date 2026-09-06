@@ -74,7 +74,7 @@ import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
-import seeyuer.yingli.player.core.media.ThumbnailLoader
+import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
 import seeyuer.yingli.player.core.model.media.ThumbnailPriority
 import seeyuer.yingli.player.core.model.media.ThumbnailRequest
 import seeyuer.yingli.player.core.model.media.ScrollDirection
@@ -84,7 +84,6 @@ import seeyuer.yingli.player.core.designsystem.component.BannerKind
 import seeyuer.yingli.player.core.designsystem.component.YingLiBanner
 import seeyuer.yingli.player.core.designsystem.component.YingLiButton
 import seeyuer.yingli.player.core.designsystem.component.YingLiEmptyState
-import seeyuer.yingli.player.core.designsystem.component.YingLiThumbnail
 import seeyuer.yingli.player.core.designsystem.component.YingLiSegmentedControl
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.library.LibraryDisplayPreference

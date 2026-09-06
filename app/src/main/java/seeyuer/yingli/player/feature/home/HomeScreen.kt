@@ -48,7 +48,7 @@ import seeyuer.yingli.player.core.designsystem.component.*
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
-import seeyuer.yingli.player.core.media.ThumbnailLoader
+import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
 import seeyuer.yingli.player.core.model.media.ThumbnailPriority
 import seeyuer.yingli.player.core.model.media.ThumbnailRequest
 import seeyuer.yingli.player.domain.home.HomeCardId
@@ -61,6 +61,7 @@ import seeyuer.yingli.player.domain.home.MaintenanceItem
 import seeyuer.yingli.player.domain.home.MaintenanceKind
 import seeyuer.yingli.player.feature.library.MediaLibraryNotice
 import seeyuer.yingli.player.feature.library.MediaLibraryUiState
+import seeyuer.yingli.player.feature.library.YingLiThumbnail
 import java.util.Locale
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.ReorderableCollectionItemScope

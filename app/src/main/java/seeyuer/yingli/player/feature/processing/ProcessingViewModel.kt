@@ -15,8 +15,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import seeyuer.yingli.player.core.foundation.AppClock
-import seeyuer.yingli.player.core.foundation.IdGenerator
+import seeyuer.yingli.player.core.common.AppClock
+import seeyuer.yingli.player.core.common.IdGenerator
 import seeyuer.yingli.player.domain.clips.ClipEditCommand
 import seeyuer.yingli.player.domain.clips.ClipEditResult
 import seeyuer.yingli.player.domain.clips.ClipEditState

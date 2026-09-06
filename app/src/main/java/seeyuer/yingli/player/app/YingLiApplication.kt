@@ -1,7 +1,9 @@
 package seeyuer.yingli.player.app
 
 import android.app.Application
-import seeyuer.yingli.player.core.foundation.AppContainer
+import android.content.ComponentName
+import seeyuer.yingli.player.core.common.AppContainer
+import seeyuer.yingli.player.engine.media3.Media3PlaybackController
 
 class YingLiApplication : Application() {
     lateinit var container: AppContainer
@@ -17,6 +19,7 @@ class YingLiApplication : Application() {
         mediaContainer = ProductionMediaContainerFactory.create(this, container)
         playbackController = Media3PlaybackController(
             this,
+            ComponentName(this, YingLiPlaybackService::class.java),
             mediaContainer.playbackSourceRepository,
             container.dispatchers,
             container.logger,

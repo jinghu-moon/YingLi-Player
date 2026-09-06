@@ -12,7 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.Rule
-import seeyuer.yingli.player.core.foundation.AppDispatchers
+import seeyuer.yingli.player.core.common.AppDispatchers
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.domain.playback.PlaybackCommandResult

@@ -8,10 +8,13 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import seeyuer.yingli.player.core.datastore.MediaOnboardingRepository
-import seeyuer.yingli.player.core.media.*
+import seeyuer.yingli.player.data.preferences.MediaOnboardingRepository
 import seeyuer.yingli.player.core.model.media.*
-import seeyuer.yingli.player.domain.media.MediaScanner
+import seeyuer.yingli.player.domain.catalog.MediaScanner
+import seeyuer.yingli.player.domain.catalog.MediaCatalogRepository
+import seeyuer.yingli.player.domain.catalog.MediaPermissionGateway
+import seeyuer.yingli.player.domain.catalog.MediaSourceRepository
+import seeyuer.yingli.player.domain.catalog.PermissionActionResult
 
 enum class MediaLibraryNotice {
     PERMISSION_DENIED,
@@ -44,7 +47,7 @@ class MediaLibraryViewModel(
 ) : ViewModel() {
     private val scanning = MutableStateFlow(false)
     private val notice = MutableStateFlow<MediaLibraryNotice?>(null)
-    private val scanProgress = (scanner as? seeyuer.yingli.player.domain.media.ScanProgressSource)?.progress
+    private val scanProgress = (scanner as? seeyuer.yingli.player.domain.catalog.ScanProgressSource)?.progress
         ?: MutableStateFlow(ScanProgress())
     private val effects = Channel<MediaLibraryEffect>(Channel.BUFFERED)
     private var initializeStarted = false

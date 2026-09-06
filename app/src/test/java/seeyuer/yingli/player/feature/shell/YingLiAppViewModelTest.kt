@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
-import seeyuer.yingli.player.core.datastore.LibraryLayoutPreference
+import seeyuer.yingli.player.data.preferences.LibraryLayoutPreference
 import seeyuer.yingli.player.domain.navigation.RootDestination
 import seeyuer.yingli.player.testing.FakeThemeRepository
 import seeyuer.yingli.player.testing.MainDispatcherRule

@@ -5,7 +5,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import org.junit.Rule
 import org.junit.Test
-import seeyuer.yingli.player.core.datastore.AppearanceSettings
+import seeyuer.yingli.player.data.preferences.AppearanceSettings
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.settings.BackupPreview
 

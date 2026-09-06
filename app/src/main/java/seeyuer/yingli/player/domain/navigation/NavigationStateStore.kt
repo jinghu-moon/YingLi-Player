@@ -15,6 +15,7 @@ enum class RootDestination {
 enum class GlobalAppAction {
     OPEN_PROCESSING,
     OPEN_SETTINGS,
+    OPEN_HOME_STATS,
 }
 
 sealed interface AppRoute {
@@ -23,6 +24,8 @@ sealed interface AppRoute {
     data object Processing : AppRoute
 
     data object Settings : AppRoute
+
+    data object HomeStats : AppRoute
 
     data object Vault : AppRoute
 
@@ -46,18 +49,12 @@ data class NavigationState(
     val lastStandardRoot: RootDestination = RootDestination.HOME,
     val stacks: Map<RootDestination, List<AppRoute>> = initialStacks(),
     val overlay: AppRoute? = null,
-    val processingPinned: Boolean = false,
 ) {
     val currentRoute: AppRoute
         get() = overlay ?: stacks[currentRoot].orEmpty().lastOrNull() ?: AppRoute.Root(currentRoot)
 
     val primaryDestinations: List<RootDestination>
-        get() = buildList {
-            add(RootDestination.HOME)
-            add(RootDestination.LIBRARY)
-            add(RootDestination.ORGANIZE)
-            if (processingPinned) add(RootDestination.PROCESSING)
-        }
+        get() = listOf(RootDestination.HOME, RootDestination.LIBRARY, RootDestination.ORGANIZE)
 
     val showPrimaryNavigation: Boolean
         get() = currentRoute !is AppRoute.Player && currentRoute !is AppRoute.VaultPlayer &&
@@ -93,7 +90,6 @@ interface NavigationStateStore {
 
     fun navigateBack(): Boolean
 
-    fun setProcessingPinned(pinned: Boolean)
 }
 
 class SavedStateNavigationStateStore(
@@ -104,7 +100,7 @@ class SavedStateNavigationStateStore(
 
     override fun selectRoot(destination: RootDestination) {
         val current = mutableState.value
-        if (destination == RootDestination.PROCESSING && !current.processingPinned) return
+        if (destination == RootDestination.PROCESSING) return
         if (destination == current.currentRoot && current.overlay == null) return
         val lastStandard = if (destination == RootDestination.PROCESSING) {
             current.lastStandardRoot
@@ -118,6 +114,7 @@ class SavedStateNavigationStateStore(
         val route = when (action) {
             GlobalAppAction.OPEN_PROCESSING -> AppRoute.Processing
             GlobalAppAction.OPEN_SETTINGS -> AppRoute.Settings
+            GlobalAppAction.OPEN_HOME_STATS -> AppRoute.HomeStats
         }
         if (mutableState.value.overlay == route) return
         update(mutableState.value.copy(overlay = route))
@@ -162,6 +159,7 @@ class SavedStateNavigationStateStore(
             "organize" -> selectRoot(RootDestination.ORGANIZE)
             "processing" -> openGlobalAction(GlobalAppAction.OPEN_PROCESSING)
             "settings" -> openGlobalAction(GlobalAppAction.OPEN_SETTINGS)
+            "home-stats" -> openGlobalAction(GlobalAppAction.OPEN_HOME_STATS)
             "lock" -> openAppLock()
             "vault" -> openVault()
             else -> {
@@ -191,23 +189,6 @@ class SavedStateNavigationStateStore(
         return true
     }
 
-    override fun setProcessingPinned(pinned: Boolean) {
-        val current = mutableState.value
-        if (current.processingPinned == pinned) return
-        val migratedRoot = if (!pinned && current.currentRoot == RootDestination.PROCESSING) {
-            current.lastStandardRoot
-        } else {
-            current.currentRoot
-        }
-        update(
-            current.copy(
-                currentRoot = migratedRoot,
-                processingPinned = pinned,
-                overlay = if (!pinned && current.overlay == AppRoute.Processing) null else current.overlay,
-            ),
-        )
-    }
-
     private fun push(route: AppRoute) {
         val current = mutableState.value
         val stack = current.stacks[current.currentRoot].orEmpty()
@@ -224,7 +205,6 @@ class SavedStateNavigationStateStore(
         mutableState.value = state
         savedStateHandle[CURRENT_ROOT_KEY] = state.currentRoot.name
         savedStateHandle[LAST_STANDARD_ROOT_KEY] = state.lastStandardRoot.name
-        savedStateHandle[PROCESSING_PINNED_KEY] = state.processingPinned
         savedStateHandle[OVERLAY_KEY] = state.overlay?.encode()
         state.stacks.forEach { (root, routes) ->
             savedStateHandle[stackKey(root)] = ArrayList(routes.map { route -> route.encode() })
@@ -236,8 +216,7 @@ class SavedStateNavigationStateStore(
         val lastStandard = savedStateHandle.get<String>(LAST_STANDARD_ROOT_KEY).toRootOrNull()
             ?.takeUnless { it == RootDestination.PROCESSING }
             ?: RootDestination.HOME
-        val pinned = savedStateHandle.get<Boolean>(PROCESSING_PINNED_KEY) ?: false
-        val safeCurrentRoot = if (currentRoot == RootDestination.PROCESSING && !pinned) lastStandard else currentRoot
+        val safeCurrentRoot = if (currentRoot == RootDestination.PROCESSING) lastStandard else currentRoot
         val stacks = RootDestination.entries.associateWith { root ->
             savedStateHandle.get<ArrayList<String>>(stackKey(root))
                 ?.mapNotNull { route -> route.decodeRoute() }
@@ -249,7 +228,6 @@ class SavedStateNavigationStateStore(
             lastStandardRoot = lastStandard,
             stacks = stacks,
             overlay = savedStateHandle.get<String>(OVERLAY_KEY)?.decodeRoute(),
-            processingPinned = pinned,
         )
     }
 
@@ -257,6 +235,7 @@ class SavedStateNavigationStateStore(
         is AppRoute.Root -> "root:${destination.name}"
         AppRoute.Processing -> "processing"
         AppRoute.Settings -> "settings"
+        AppRoute.HomeStats -> "home-stats"
         AppRoute.Vault -> "vault"
         is AppRoute.Detail -> "detail:${source.name}:$mediaId"
         is AppRoute.Player -> "player:${source.name}:$mediaId"
@@ -269,6 +248,7 @@ class SavedStateNavigationStateStore(
         return when {
             this == "processing" -> AppRoute.Processing
             this == "settings" -> AppRoute.Settings
+            this == "home-stats" -> AppRoute.HomeStats
             this == "vault" -> AppRoute.Vault
             this == "lock" -> AppRoute.AppLock
             segments.size == 2 && segments[0] == "root" ->
@@ -291,7 +271,6 @@ class SavedStateNavigationStateStore(
     private companion object {
         const val CURRENT_ROOT_KEY = "navigation.current_root"
         const val LAST_STANDARD_ROOT_KEY = "navigation.last_standard_root"
-        const val PROCESSING_PINNED_KEY = "navigation.processing_pinned"
         const val OVERLAY_KEY = "navigation.overlay"
         val STABLE_ID_PATTERN = Regex("[A-Za-z0-9_-]{1,128}")
 

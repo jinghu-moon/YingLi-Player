@@ -19,8 +19,6 @@ class SettingsScreenTest {
             YingLiTheme(darkTheme = false) {
                 SettingsScreen(
                     settings = AppearanceSettings(),
-                    onThemePreferenceChanged = {},
-                    onProcessingPinnedChanged = {},
                     tools = SettingsToolActions(
                         state = SettingsToolsState(
                             preview = BackupPreview(1, 2, 3, 4, 5, 6, 7),

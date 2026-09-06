@@ -22,7 +22,7 @@ class NavigationStateStoreTest {
     }
 
     @Test
-    fun `processing is a top action until pinned as a fourth destination`() {
+    fun `processing remains a top action and never changes fixed primary destinations`() {
         val store = SavedStateNavigationStateStore(SavedStateHandle())
 
         store.selectRoot(RootDestination.PROCESSING)
@@ -30,14 +30,9 @@ class NavigationStateStoreTest {
         store.openGlobalAction(GlobalAppAction.OPEN_PROCESSING)
         assertEquals(AppRoute.Processing, store.state.value.currentRoute)
 
-        store.setProcessingPinned(true)
         store.selectRoot(RootDestination.PROCESSING)
-        assertEquals(4, store.state.value.primaryDestinations.size)
-        assertEquals(RootDestination.PROCESSING, store.state.value.currentRoot)
-
-        store.setProcessingPinned(false)
-        assertEquals(RootDestination.HOME, store.state.value.currentRoot)
         assertEquals(3, store.state.value.primaryDestinations.size)
+        assertEquals(RootDestination.HOME, store.state.value.currentRoot)
     }
 
     @Test

@@ -10,6 +10,7 @@ import compose.icons.tablericons.Check
 import compose.icons.tablericons.DotsVertical
 import compose.icons.tablericons.Folder
 import compose.icons.tablericons.Home
+import compose.icons.tablericons.GripVertical
 import compose.icons.tablericons.LayoutGrid
 import compose.icons.tablericons.List
 import compose.icons.tablericons.Loader
@@ -29,6 +30,8 @@ import compose.icons.tablericons.Download
 import compose.icons.tablericons.Upload
 import compose.icons.tablericons.FileText
 import compose.icons.tablericons.BrandGithub
+import compose.icons.tablericons.Eye
+import compose.icons.tablericons.EyeOff
 
 enum class IconProvider {
     TABLER,
@@ -47,8 +50,11 @@ enum class YingLiIcon(
     OVERFLOW(IconProvider.TABLER),
     GRID(IconProvider.TABLER),
     LIST(IconProvider.TABLER),
+    DRAG_HANDLE(IconProvider.TABLER),
     SUCCESS(IconProvider.TABLER),
     WARNING(IconProvider.TABLER),
+    VISIBILITY(IconProvider.TABLER),
+    VISIBILITY_OFF(IconProvider.TABLER),
     LOADING(IconProvider.TABLER),
     LOCK(IconProvider.TABLER),
     BACK(IconProvider.TABLER),
@@ -78,8 +84,11 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.OVERFLOW -> TablerIcons.DotsVertical
         YingLiIcon.GRID -> TablerIcons.LayoutGrid
         YingLiIcon.LIST -> TablerIcons.List
+        YingLiIcon.DRAG_HANDLE -> TablerIcons.GripVertical
         YingLiIcon.SUCCESS -> TablerIcons.Check
         YingLiIcon.WARNING -> TablerIcons.AlertCircle
+        YingLiIcon.VISIBILITY -> TablerIcons.Eye
+        YingLiIcon.VISIBILITY_OFF -> TablerIcons.EyeOff
         YingLiIcon.LOADING -> TablerIcons.Loader
         YingLiIcon.LOCK -> TablerIcons.Lock
         YingLiIcon.BACK -> TablerIcons.ArrowLeft

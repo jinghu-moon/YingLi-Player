@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import seeyuer.yingli.player.core.datastore.AppearanceSettings
-import seeyuer.yingli.player.core.datastore.ThemePreference
 import seeyuer.yingli.player.core.datastore.LibraryLayoutPreference
 import seeyuer.yingli.player.core.datastore.ThemeRepository
 import seeyuer.yingli.player.domain.navigation.GlobalAppAction
@@ -34,14 +33,6 @@ class YingLiAppViewModel(
         initialValue = AppearanceSettings(),
     )
 
-    init {
-        viewModelScope.launch {
-            themeRepository.settings.collect { settings ->
-                navigationStore.setProcessingPinned(settings.processingPinned)
-            }
-        }
-    }
-
     fun selectRoot(destination: RootDestination) = navigationStore.selectRoot(destination)
 
     fun openGlobalAction(action: GlobalAppAction) = navigationStore.openGlobalAction(action)
@@ -53,14 +44,6 @@ class YingLiAppViewModel(
     fun openVaultPlayer(itemId: String) = navigationStore.openVaultPlayer(itemId)
 
     fun navigateBack(): Boolean = navigationStore.navigateBack()
-
-    fun setThemePreference(preference: ThemePreference) {
-        viewModelScope.launch { themeRepository.setThemePreference(preference) }
-    }
-
-    fun setProcessingPinned(pinned: Boolean) {
-        viewModelScope.launch { themeRepository.setProcessingPinned(pinned) }
-    }
 
     fun setLibraryLayout(layout: LibraryLayoutPreference) {
         viewModelScope.launch { themeRepository.update { it.copy(libraryLayout = layout) } }

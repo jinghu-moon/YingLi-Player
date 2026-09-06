@@ -15,7 +15,6 @@ import seeyuer.yingli.player.core.datastore.ExportDirectoryPreference
 import seeyuer.yingli.player.core.datastore.LibraryLayoutPreference
 import seeyuer.yingli.player.core.datastore.LibrarySortPreference
 import seeyuer.yingli.player.core.datastore.SortDirectionPreference
-import seeyuer.yingli.player.core.datastore.ThemePreference
 import seeyuer.yingli.player.core.datastore.ThemeRepository
 import seeyuer.yingli.player.core.datastore.UserPreferences
 import seeyuer.yingli.player.core.foundation.AppClock
@@ -175,8 +174,6 @@ class RoomBackupGateway(
     )
 
     private fun UserPreferences.toBackupMap(): Map<String, String> = mapOf(
-        "theme" to themePreference.name,
-        "processingPinned" to processingPinned.toString(),
         "libraryLayout" to libraryLayout.name,
         "thumbnailScale" to thumbnailScale.toString(),
         "librarySort" to librarySort.name,
@@ -189,8 +186,6 @@ class RoomBackupGateway(
 
     private fun Map<String, String>.toUserPreferences(fallback: UserPreferences): UserPreferences = UserPreferences.sanitize(
         schemaVersion = UserPreferences.CURRENT_SCHEMA_VERSION,
-        theme = get("theme") ?: fallback.themePreference.name,
-        processingPinned = get("processingPinned")?.toBooleanStrictOrNull() ?: fallback.processingPinned,
         libraryLayout = get("libraryLayout") ?: fallback.libraryLayout.name,
         thumbnailScale = get("thumbnailScale")?.toFloatOrNull() ?: fallback.thumbnailScale,
         librarySort = get("librarySort") ?: fallback.librarySort.name,

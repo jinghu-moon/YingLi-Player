@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,8 +23,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -47,13 +51,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.datastore.AppearanceSettings
-import seeyuer.yingli.player.core.datastore.ThemePreference
 import seeyuer.yingli.player.core.designsystem.component.YingLiEmptyState
 import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
@@ -119,12 +125,8 @@ fun YingLiApp(
 ) {
     val settings by viewModel.appearanceSettings.collectAsStateWithLifecycle()
     val securityState by securityViewModel.state.collectAsStateWithLifecycle()
-    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val darkTheme = when (settings.themePreference) {
-        ThemePreference.LIGHT -> false
-        ThemePreference.DARK -> true
-        ThemePreference.SYSTEM -> systemDark
-    }
+    val mediaState by mediaLibraryViewModel.state.collectAsStateWithLifecycle()
+    val darkTheme = false
     val context = LocalContext.current
     val allFilesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         mediaLibraryViewModel.onAllFilesSettingsReturned()
@@ -195,9 +197,8 @@ fun YingLiApp(
         return
     }
 
-    YingLiTheme(darkTheme = darkTheme) {
-        val navigationState by viewModel.navigationState.collectAsStateWithLifecycle()
-        val mediaState by mediaLibraryViewModel.state.collectAsStateWithLifecycle()
+        YingLiTheme(darkTheme = darkTheme) {
+            val navigationState by viewModel.navigationState.collectAsStateWithLifecycle()
         val playerState by playerViewModel.state.collectAsStateWithLifecycle()
         val settingsToolsState by settingsViewModel.state.collectAsStateWithLifecycle()
         SideEffect {
@@ -221,8 +222,6 @@ fun YingLiApp(
             onRootSelected = viewModel::selectRoot,
             onGlobalAction = viewModel::openGlobalAction,
             onBack = viewModel::navigateBack,
-            onThemePreferenceChanged = viewModel::setThemePreference,
-            onProcessingPinnedChanged = viewModel::setProcessingPinned,
             onMiniPlayerChanged = playerViewModel::setMiniPlayerEnabled,
             onAutoPipChanged = playerViewModel::setAutoPictureInPicture,
             settingsTools = SettingsToolActions(
@@ -383,8 +382,6 @@ internal fun AdaptiveAppShell(
     onRootSelected: (RootDestination) -> Unit,
     onGlobalAction: (GlobalAppAction) -> Unit,
     onBack: () -> Unit,
-    onThemePreferenceChanged: (ThemePreference) -> Unit,
-    onProcessingPinnedChanged: (Boolean) -> Unit,
     onMiniPlayerChanged: (Boolean) -> Unit = {},
     onAutoPipChanged: (Boolean) -> Unit = {},
     settingsTools: SettingsToolActions = SettingsToolActions(),
@@ -428,17 +425,14 @@ internal fun AdaptiveAppShell(
                 destinations = destinations,
                 selected = navigationState.currentRoot,
                 onSelected = onRootSelected,
-                settingsSelected = navigationState.currentRoute == AppRoute.Settings,
-                onSettingsSelected = { onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
             )
             AppScaffold(
                 navigationState = navigationState,
                 settings = settings,
                 playerPreferences = playerPreferences,
                 onGlobalAction = onGlobalAction,
+                onRootSelected = onRootSelected,
                 onBack = onBack,
-                onThemePreferenceChanged = onThemePreferenceChanged,
-                onProcessingPinnedChanged = onProcessingPinnedChanged,
                 onMiniPlayerChanged = onMiniPlayerChanged,
                 onAutoPipChanged = onAutoPipChanged,
                 settingsTools = settingsTools,
@@ -470,9 +464,8 @@ internal fun AdaptiveAppShell(
             settings = settings,
             playerPreferences = playerPreferences,
             onGlobalAction = onGlobalAction,
+            onRootSelected = onRootSelected,
             onBack = onBack,
-            onThemePreferenceChanged = onThemePreferenceChanged,
-            onProcessingPinnedChanged = onProcessingPinnedChanged,
             onMiniPlayerChanged = onMiniPlayerChanged,
             onAutoPipChanged = onAutoPipChanged,
             settingsTools = settingsTools,
@@ -501,8 +494,6 @@ internal fun AdaptiveAppShell(
                     destinations = destinations,
                     selected = navigationState.currentRoot,
                     onSelected = onRootSelected,
-                    settingsSelected = navigationState.currentRoute == AppRoute.Settings,
-                    onSettingsSelected = { onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
                 )
                 }
             },
@@ -517,9 +508,8 @@ private fun AppScaffold(
     settings: AppearanceSettings,
     playerPreferences: PlayerPreferences,
     onGlobalAction: (GlobalAppAction) -> Unit,
+    onRootSelected: (RootDestination) -> Unit,
     onBack: () -> Unit,
-    onThemePreferenceChanged: (ThemePreference) -> Unit,
-    onProcessingPinnedChanged: (Boolean) -> Unit,
     onMiniPlayerChanged: (Boolean) -> Unit,
     onAutoPipChanged: (Boolean) -> Unit,
     settingsTools: SettingsToolActions,
@@ -548,6 +538,7 @@ private fun AppScaffold(
     val mediaOnboarding = route == AppRoute.Root(RootDestination.HOME) && mediaState.onboarding
     var homeSearchExpanded by remember(route) { mutableStateOf(false) }
     var homeSearchQuery by remember(route) { mutableStateOf("") }
+    var homeMoreExpanded by remember(route) { mutableStateOf(false) }
     Scaffold(
         modifier = modifier,
         containerColor = YingLiTheme.colors.page,
@@ -556,62 +547,120 @@ private fun AppScaffold(
                 androidx.compose.material3.TopAppBar(
                     title = { Text(stringResource(R.string.app_name)) },
                 )
-            } else CenterAlignedTopAppBar(
-                title = {
-                    if (route == AppRoute.Root(RootDestination.HOME) && homeSearchExpanded) {
-                        OutlinedTextField(
-                            value = homeSearchQuery,
-                            onValueChange = {
-                                homeSearchQuery = it
-                                homeViewModel?.setKeyword(it)
-                            },
-                            placeholder = { Text(stringResource(R.string.library_search)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        Text(route.title())
-                    }
-                },
-                navigationIcon = {
-                    if (navigationState.canNavigateBack) {
-                        YingLiIconButton(
-                            icon = YingLiIcon.BACK,
-                            contentDescription = stringResource(R.string.action_back),
-                            onClick = onBack,
-                        )
-                    }
-                },
-                actions = {
-                    if (route != AppRoute.Processing && route != AppRoute.Root(RootDestination.PROCESSING)) {
-                        YingLiIconButton(
-                            icon = YingLiIcon.PROCESSING,
-                            contentDescription = stringResource(R.string.action_open_processing),
-                            onClick = { onGlobalAction(GlobalAppAction.OPEN_PROCESSING) },
-                        )
-                    }
-                    if (route == AppRoute.Root(RootDestination.HOME)) {
-                        YingLiIconButton(
-                            icon = if (homeSearchExpanded) YingLiIcon.BACK else YingLiIcon.SEARCH,
-                            contentDescription = stringResource(R.string.library_search),
-                            onClick = {
-                                homeSearchExpanded = !homeSearchExpanded
-                                if (!homeSearchExpanded) {
-                                    homeSearchQuery = ""
-                                    homeViewModel?.setKeyword("")
+            } else Column {
+                if (route == AppRoute.Root(RootDestination.HOME)) {
+                    androidx.compose.material3.TopAppBar(
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                FiveLineLogo()
+                                Column(Modifier.padding(start = 10.dp)) {
+                                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        if (mediaState.scanning) stringResource(R.string.home_scanning_status)
+                                        else stringResource(R.string.home_source_status, mediaState.sources.size),
+                                        color = YingLiTheme.colors.textSecondary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
                                 }
-                            },
+                            }
+                        },
+                        actions = {
+                            YingLiIconButton(
+                                icon = if (homeSearchExpanded) YingLiIcon.BACK else YingLiIcon.SEARCH,
+                                contentDescription = stringResource(R.string.library_search),
+                                onClick = {
+                                    homeMoreExpanded = false
+                                    homeSearchExpanded = !homeSearchExpanded
+                                    if (!homeSearchExpanded) {
+                                        homeSearchQuery = ""
+                                        homeViewModel?.setKeyword("")
+                                    }
+                                },
+                            )
+                            Box {
+                                YingLiIconButton(
+                                    icon = YingLiIcon.OVERFLOW,
+                                    contentDescription = stringResource(R.string.home_more),
+                                    onClick = {
+                                        homeSearchExpanded = false
+                                        homeSearchQuery = ""
+                                        homeViewModel?.setKeyword("")
+                                        homeMoreExpanded = true
+                                    },
+                                )
+                                DropdownMenu(expanded = homeMoreExpanded, onDismissRequest = { homeMoreExpanded = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.home_add_media_directory)) },
+                                        leadingIcon = { Icon(YingLiIcon.ORGANIZE.imageVector, contentDescription = null) },
+                                        onClick = { homeMoreExpanded = false; onSafSource() },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.media_rescan)) },
+                                        leadingIcon = { Icon(YingLiIcon.REPLAY.imageVector, contentDescription = null) },
+                                        onClick = { homeMoreExpanded = false; onRescan() },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.home_customize)) },
+                                        leadingIcon = { Icon(YingLiIcon.GRID.imageVector, contentDescription = null) },
+                                        onClick = { homeMoreExpanded = false; homeViewModel?.showEditor() },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.nav_settings)) },
+                                        leadingIcon = { Icon(YingLiIcon.SETTINGS.imageVector, contentDescription = null) },
+                                        onClick = { homeMoreExpanded = false; onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
+                                    )
+                                }
+                            }
+                        },
+                    )
+                    if (mediaState.scanning) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().height(2.dp),
+                            color = YingLiTheme.functional.info.base,
+                            trackColor = YingLiTheme.colors.surfaceMuted,
                         )
                     }
-                    if (route == AppRoute.Root(RootDestination.LIBRARY)) {
-                        YingLiIconButton(
-                            icon = YingLiIcon.OVERFLOW,
-                            contentDescription = stringResource(R.string.library_view_settings),
-                            onClick = { libraryViewModel?.toggleFilterPanel() },
-                        )
+                    if (homeSearchExpanded) {
+                        Surface(color = YingLiTheme.colors.surface, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = homeSearchQuery,
+                                onValueChange = {
+                                    homeSearchQuery = it
+                                    homeViewModel?.setKeyword(it)
+                                },
+                                placeholder = { Text(stringResource(R.string.library_search)) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
                     }
-                },
-            )
+                } else {
+                    CenterAlignedTopAppBar(
+                        title = { Text(route.title()) },
+                        navigationIcon = {
+                            if (navigationState.canNavigateBack) {
+                                YingLiIconButton(YingLiIcon.BACK, stringResource(R.string.action_back), onBack)
+                            }
+                        },
+                        actions = {
+                            if (route != AppRoute.Processing && route != AppRoute.Root(RootDestination.PROCESSING)) {
+                                YingLiIconButton(
+                                    icon = YingLiIcon.PROCESSING,
+                                    contentDescription = stringResource(R.string.action_open_processing),
+                                    onClick = { onGlobalAction(GlobalAppAction.OPEN_PROCESSING) },
+                                )
+                            }
+                            if (route == AppRoute.Root(RootDestination.LIBRARY)) {
+                                YingLiIconButton(
+                                    icon = YingLiIcon.OVERFLOW,
+                                    contentDescription = stringResource(R.string.library_view_settings),
+                                    onClick = { libraryViewModel?.toggleFilterPanel() },
+                                )
+                            }
+                        },
+                    )
+                }
+            }
         },
         bottomBar = if (mediaOnboarding) ({}) else bottomBar,
     ) { padding ->
@@ -619,8 +668,6 @@ private fun AppScaffold(
             route = route,
             settings = settings,
             playerPreferences = playerPreferences,
-            onThemePreferenceChanged = onThemePreferenceChanged,
-            onProcessingPinnedChanged = onProcessingPinnedChanged,
             onMiniPlayerChanged = onMiniPlayerChanged,
             onAutoPipChanged = onAutoPipChanged,
             settingsTools = settingsTools,
@@ -641,6 +688,8 @@ private fun AppScaffold(
             onSkipMediaOnboarding = onSkipMediaOnboarding,
             onRescan = onRescan,
             onMediaSelected = onMediaSelected,
+            onRootSelected = onRootSelected,
+            onGlobalAction = onGlobalAction,
             thumbnailRepository = thumbnailRepository,
             modifier = Modifier.padding(padding),
         )
@@ -652,8 +701,6 @@ private fun RouteContent(
     route: AppRoute,
     settings: AppearanceSettings,
     playerPreferences: PlayerPreferences,
-    onThemePreferenceChanged: (ThemePreference) -> Unit,
-    onProcessingPinnedChanged: (Boolean) -> Unit,
     onMiniPlayerChanged: (Boolean) -> Unit,
     onAutoPipChanged: (Boolean) -> Unit,
     settingsTools: SettingsToolActions,
@@ -674,6 +721,8 @@ private fun RouteContent(
     onSkipMediaOnboarding: () -> Unit,
     onRescan: () -> Unit,
     onMediaSelected: (String) -> Unit,
+    onRootSelected: (RootDestination) -> Unit,
+    onGlobalAction: (GlobalAppAction) -> Unit,
     thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier = Modifier,
 ) {
@@ -683,14 +732,17 @@ private fun RouteContent(
         } ?: ProcessingPlaceholder(modifier)
         AppRoute.Settings -> SettingsScreen(
             settings = settings,
-            onThemePreferenceChanged = onThemePreferenceChanged,
-            onProcessingPinnedChanged = onProcessingPinnedChanged,
             playerPreferences = playerPreferences,
             onMiniPlayerChanged = onMiniPlayerChanged,
             onAutoPipChanged = onAutoPipChanged,
             tools = settingsTools,
             security = securitySettings,
             modifier = modifier,
+        )
+        AppRoute.HomeStats -> YingLiEmptyState(
+            title = stringResource(R.string.home_statistics_title),
+            message = stringResource(R.string.home_statistics_placeholder),
+            modifier = modifier.fillMaxSize(),
         )
         AppRoute.Vault -> vaultViewModel?.let {
             VaultRoute(it, onVaultImport, onVaultPlay, onVaultExport, modifier)
@@ -709,7 +761,12 @@ private fun RouteContent(
                     onSkipMediaOnboarding,
                     onRescan,
                     onMediaSelected,
-                    modifier,
+                    thumbnailRepository = thumbnailRepository,
+                    onOpenLibrary = { onRootSelected(RootDestination.LIBRARY) },
+                    onOpenOrganize = { onRootSelected(RootDestination.ORGANIZE) },
+                    onOpenStats = { onGlobalAction(GlobalAppAction.OPEN_HOME_STATS) },
+                    onFolderSelected = { onRootSelected(RootDestination.LIBRARY) },
+                    modifier = modifier,
                 )
             } ?: Unit
             RootDestination.LIBRARY -> libraryViewModel?.let { viewModel ->
@@ -742,6 +799,34 @@ private fun ProcessingPlaceholder(modifier: Modifier = Modifier) {
         message = stringResource(R.string.processing_empty_message),
         modifier = modifier.fillMaxSize(),
     )
+}
+
+@Composable
+private fun FiveLineLogo() {
+    val lineColor = YingLiTheme.colors.textPrimary
+    Surface(
+        modifier = Modifier.size(34.dp),
+        shape = YingLiTheme.components.compactCorner,
+        color = YingLiTheme.colors.surfaceMuted,
+    ) {
+        Canvas(Modifier.padding(6.dp)) {
+            rotate(-45f) {
+                val lengths = listOf(.42f, .66f, .86f, .66f, .42f)
+                val alphas = listOf(.4f, .7f, 1f, .7f, .4f)
+                lengths.forEachIndexed { index, length ->
+                    val y = size.height * (.18f + index * .16f)
+                    val half = size.width * length / 2f
+                    drawLine(
+                        color = lineColor.copy(alpha = alphas[index]),
+                        start = androidx.compose.ui.geometry.Offset(size.width / 2f - half, y),
+                        end = androidx.compose.ui.geometry.Offset(size.width / 2f + half, y),
+                        strokeWidth = 3.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -812,8 +897,6 @@ private fun PrimaryBottomNavigation(
     destinations: List<RootDestination>,
     selected: RootDestination,
     onSelected: (RootDestination) -> Unit,
-    settingsSelected: Boolean,
-    onSettingsSelected: () -> Unit,
 ) {
     NavigationBar(
         modifier = Modifier
@@ -824,7 +907,7 @@ private fun PrimaryBottomNavigation(
         destinations.forEach { destination ->
             val label = destination.label()
             NavigationBarItem(
-                selected = destination == selected && !settingsSelected,
+                selected = destination == selected,
                 onClick = { onSelected(destination) },
                 icon = {
                     Icon(
@@ -843,25 +926,6 @@ private fun PrimaryBottomNavigation(
                 ),
             )
         }
-        NavigationBarItem(
-            selected = settingsSelected,
-            onClick = onSettingsSelected,
-            icon = {
-                Icon(
-                    imageVector = YingLiIcon.SETTINGS.imageVector,
-                    contentDescription = stringResource(R.string.nav_settings),
-                    modifier = Modifier.size(YingLiTheme.components.iconSize),
-                )
-            },
-            label = { Text(stringResource(R.string.nav_settings), maxLines = 1) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = YingLiTheme.colors.selectionOnStructural,
-                selectedTextColor = YingLiTheme.colors.textPrimary,
-                indicatorColor = YingLiTheme.colors.selectionStructural,
-                unselectedIconColor = YingLiTheme.colors.textSecondary,
-                unselectedTextColor = YingLiTheme.colors.textSecondary,
-            ),
-        )
     }
 }
 
@@ -870,8 +934,6 @@ private fun PrimaryNavigationRail(
     destinations: List<RootDestination>,
     selected: RootDestination,
     onSelected: (RootDestination) -> Unit,
-    settingsSelected: Boolean,
-    onSettingsSelected: () -> Unit,
 ) {
     NavigationRail(
         modifier = Modifier
@@ -883,7 +945,7 @@ private fun PrimaryNavigationRail(
         destinations.forEach { destination ->
             val label = destination.label()
             NavigationRailItem(
-                selected = destination == selected && !settingsSelected,
+                selected = destination == selected,
                 onClick = { onSelected(destination) },
                 icon = {
                     Icon(
@@ -903,25 +965,6 @@ private fun PrimaryNavigationRail(
             )
         }
         Spacer(Modifier.weight(1f))
-        NavigationRailItem(
-            selected = settingsSelected,
-            onClick = onSettingsSelected,
-            icon = {
-                Icon(
-                    imageVector = YingLiIcon.SETTINGS.imageVector,
-                    contentDescription = stringResource(R.string.nav_settings),
-                    modifier = Modifier.size(YingLiTheme.components.iconSize),
-                )
-            },
-            label = { Text(stringResource(R.string.nav_settings), maxLines = 1) },
-            colors = NavigationRailItemDefaults.colors(
-                selectedIconColor = YingLiTheme.colors.selectionOnStructural,
-                selectedTextColor = YingLiTheme.colors.textPrimary,
-                indicatorColor = YingLiTheme.colors.selectionStructural,
-                unselectedIconColor = YingLiTheme.colors.textSecondary,
-                unselectedTextColor = YingLiTheme.colors.textSecondary,
-            ),
-        )
     }
 }
 
@@ -947,6 +990,7 @@ private fun AppRoute.title(): String = when (this) {
     is AppRoute.Root -> destination.label()
     AppRoute.Processing -> stringResource(R.string.nav_processing)
     AppRoute.Settings -> stringResource(R.string.nav_settings)
+    AppRoute.HomeStats -> stringResource(R.string.home_statistics_title)
     AppRoute.Vault -> stringResource(R.string.vault_title)
     is AppRoute.Detail -> stringResource(R.string.detail_title)
     is AppRoute.Player -> stringResource(R.string.player_placeholder)

@@ -8,6 +8,7 @@ import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import android.hardware.biometrics.BiometricPrompt
 import android.os.CancellationSignal
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -77,7 +78,14 @@ class MainActivity : ComponentActivity() {
     }
     private val homeViewModel: HomeViewModel by viewModels {
         val media = (application as YingLiApplication).mediaContainer
-        HomeViewModel.factory(media.libraryRepository, media.historyRepository)
+        HomeViewModel.factory(
+            media.homeRepository,
+            media.libraryRepository,
+            media.homeLayoutRepository,
+            media.deviceStorageRepository,
+            media.duplicateRepository,
+            media.trashRepository,
+        )
     }
     private val settingsViewModel: SettingsViewModel by viewModels {
         val media = (application as YingLiApplication).mediaContainer
@@ -115,7 +123,12 @@ class MainActivity : ComponentActivity() {
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
+        splashScreen.setKeepOnScreenCondition {
+            !securityViewModel.state.value.initialized || !mediaLibraryViewModel.state.value.initialized
+        }
         super.onCreate(savedInstanceState)
+        mediaLibraryViewModel.initialize()
         setSecureContent(true)
         enableEdgeToEdge()
         setContent {

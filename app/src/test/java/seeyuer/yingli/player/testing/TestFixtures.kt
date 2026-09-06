@@ -12,7 +12,6 @@ import seeyuer.yingli.player.core.foundation.IdGenerator
 import seeyuer.yingli.player.core.foundation.RedactingAppLogger
 import seeyuer.yingli.player.core.foundation.SensitiveValueRedactor
 import seeyuer.yingli.player.core.datastore.AppearanceSettings
-import seeyuer.yingli.player.core.datastore.ThemePreference
 import seeyuer.yingli.player.core.datastore.ThemeRepository
 import seeyuer.yingli.player.core.model.AppFailureMapper
 import seeyuer.yingli.player.core.model.DefaultAppFailureMapper
@@ -67,13 +66,6 @@ class FakeThemeRepository(
         mutableSettings.value = transform(mutableSettings.value)
     }
 
-    override suspend fun setThemePreference(preference: ThemePreference) {
-        mutableSettings.value = mutableSettings.value.copy(themePreference = preference)
-    }
-
-    override suspend fun setProcessingPinned(pinned: Boolean) {
-        mutableSettings.value = mutableSettings.value.copy(processingPinned = pinned)
-    }
 }
 
 class AppContainerFixtureBuilder : FixtureBuilder<AppContainer> {

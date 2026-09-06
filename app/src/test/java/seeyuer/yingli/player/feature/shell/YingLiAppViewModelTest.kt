@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
-import seeyuer.yingli.player.core.datastore.ThemePreference
+import seeyuer.yingli.player.core.datastore.LibraryLayoutPreference
 import seeyuer.yingli.player.domain.navigation.RootDestination
 import seeyuer.yingli.player.testing.FakeThemeRepository
 import seeyuer.yingli.player.testing.MainDispatcherRule
@@ -19,25 +19,23 @@ class YingLiAppViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun `repository processing preference updates primary destinations`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
-        val repository = FakeThemeRepository()
-        val viewModel = YingLiAppViewModel(repository, SavedStateHandle())
+    fun `primary destinations remain fixed`() {
+        val viewModel = YingLiAppViewModel(FakeThemeRepository(), SavedStateHandle())
 
-        viewModel.setProcessingPinned(true)
-        advanceUntilIdle()
-
-        assertEquals(RootDestination.entries, viewModel.navigationState.value.primaryDestinations)
+        assertEquals(
+            listOf(RootDestination.HOME, RootDestination.LIBRARY, RootDestination.ORGANIZE),
+            viewModel.navigationState.value.primaryDestinations,
+        )
     }
 
     @Test
-    fun `theme mutations are delegated to repository`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+    fun `library mutations are delegated to repository`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = FakeThemeRepository()
         val viewModel = YingLiAppViewModel(repository, SavedStateHandle())
 
-        viewModel.setThemePreference(ThemePreference.DARK)
+        viewModel.setLibraryLayout(LibraryLayoutPreference.LIST)
         advanceUntilIdle()
 
-        val settings = repository.settings.first()
-        assertEquals(ThemePreference.DARK, settings.themePreference)
+        assertEquals(LibraryLayoutPreference.LIST, repository.settings.first().libraryLayout)
     }
 }

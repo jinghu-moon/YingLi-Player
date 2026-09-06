@@ -41,6 +41,7 @@ abstract class YingLiDatabase : RoomDatabase() {
     abstract fun mediaSourceDao(): MediaSourceDao
     abstract fun mediaCatalogDao(): MediaCatalogDao
     abstract fun libraryDao(): LibraryDao
+    abstract fun homeDao(): HomeDao
     abstract fun organizeDao(): OrganizeDao
     abstract fun backupDao(): BackupDao
     abstract fun processingDao(): ProcessingDao

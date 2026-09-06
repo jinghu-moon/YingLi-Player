@@ -140,9 +140,9 @@ class RoomLibraryRepository(
         )
         val keyword = query.normalizedKeyword.trim().lowercase()
         if (keyword.isNotEmpty()) {
-            where += "(LOWER(media_items.title) LIKE ? OR LOWER(media_locations.fileName) LIKE ? OR LOWER(media_sources.displayName) LIKE ? OR EXISTS (SELECT 1 FROM media_tags searchTag WHERE searchTag.mediaItemId = media_items.id AND LOWER(searchTag.tag) LIKE ?))"
+            where += "(LOWER(media_items.title) LIKE ? OR LOWER(media_locations.fileName) LIKE ? OR LOWER(media_sources.displayName) LIKE ? OR EXISTS (SELECT 1 FROM media_tags searchTag WHERE searchTag.mediaItemId = media_items.id AND LOWER(searchTag.tag) LIKE ?) OR EXISTS (SELECT 1 FROM collection_items searchCollectionItem INNER JOIN collections searchCollection ON searchCollection.id = searchCollectionItem.collectionId WHERE searchCollectionItem.mediaItemId = media_items.id AND LOWER(searchCollection.name) LIKE ?))"
             val pattern = "%$keyword%"
-            repeat(4) { args += pattern }
+            repeat(5) { args += pattern }
         }
         if (query.group == LibraryGroup.UNWATCHED) where += "media_items.completed = 0 AND media_items.playbackPositionMillis = 0"
         query.filter.minimumWidth?.let { where += "COALESCE(media_locations.width, 0) >= ?"; args += it }
@@ -255,6 +255,8 @@ class RoomLibraryRepository(
             "playback_history",
             "trash_entries",
             "media_tags",
+            "collections",
+            "collection_items",
         )
     }
 

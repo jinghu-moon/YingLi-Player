@@ -32,7 +32,7 @@ class AdaptiveAppShellTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun compactUsesSettingsInBottomNavigationAndProcessingInTopBar() {
+    fun compactUsesThreeFixedDestinationsAndHomeTopActions() {
         setShell(WindowWidthSizeClass.Compact)
 
         composeRule.onNodeWithTag(ShellTestTags.BOTTOM_NAVIGATION).assertExists()
@@ -40,11 +40,13 @@ class AdaptiveAppShellTest {
         composeRule.onNode(hasText("首页") and isSelected()).assertExists()
         composeRule.onNodeWithText("视频").assertExists()
         composeRule.onNodeWithText("整理").assertExists()
-        composeRule.onNodeWithText("设置").assertExists()
+        composeRule.onNodeWithText("设置").assertDoesNotExist()
         composeRule.onNodeWithText("处理").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("首页", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithContentDescription("打开处理中心").assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithContentDescription("设置", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithContentDescription("搜索").assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithContentDescription("更多").assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithContentDescription("打开处理中心").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("设置", useUnmergedTree = true).assertDoesNotExist()
         composeRule.onNodeWithContentDescription("打开设置").assertDoesNotExist()
     }
 
@@ -65,14 +67,14 @@ class AdaptiveAppShellTest {
     }
 
     @Test
-    fun pinnedProcessingAppearsAsFourthDestination() {
+    fun processingPreferenceDoesNotAddAFourthDestination() {
         setShell(
             width = WindowWidthSizeClass.Compact,
-            navigationState = NavigationState(processingPinned = true),
-            settings = AppearanceSettings(processingPinned = true),
+            navigationState = NavigationState(),
+            settings = AppearanceSettings(),
         )
 
-        composeRule.onNodeWithText("处理").assertExists()
+        composeRule.onNodeWithText("处理").assertDoesNotExist()
     }
 
     @Test
@@ -124,9 +126,9 @@ class AdaptiveAppShellTest {
             fontScale = 2f,
         )
 
-        composeRule.onNodeWithText("外观").assertIsDisplayed()
-        composeRule.onNode(hasText("设置") and isSelected()).assertExists()
-        composeRule.onNodeWithText("将处理中心固定到主导航").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("媒体库").assertIsDisplayed()
+        composeRule.onNode(hasText("首页") and isSelected()).assertExists()
+        composeRule.onNodeWithText("自动画中画").performScrollTo().assertIsDisplayed()
     }
 
     private fun setShell(
@@ -147,8 +149,6 @@ class AdaptiveAppShellTest {
                         onRootSelected = {},
                         onGlobalAction = {},
                         onBack = {},
-                        onThemePreferenceChanged = {},
-                        onProcessingPinnedChanged = {},
                     )
                 }
             }

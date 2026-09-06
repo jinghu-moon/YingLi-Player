@@ -14,16 +14,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
-enum class ThemePreference {
-    LIGHT,
-    DARK,
-    SYSTEM;
-
-    companion object {
-        fun fromStoredValue(value: String?): ThemePreference = value.enumOrDefault(SYSTEM)
-    }
-}
-
 enum class LibraryLayoutPreference {
     GRID,
     LIST,
@@ -48,8 +38,6 @@ enum class ExportDirectoryPreference {
 
 data class UserPreferences(
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
-    val themePreference: ThemePreference = ThemePreference.SYSTEM,
-    val processingPinned: Boolean = false,
     val libraryLayout: LibraryLayoutPreference = LibraryLayoutPreference.GRID,
     val thumbnailScale: Float = 1f,
     val librarySort: LibrarySortPreference = LibrarySortPreference.RECENTLY_ADDED,
@@ -76,8 +64,6 @@ data class UserPreferences(
 
         fun sanitize(
             schemaVersion: Int?,
-            theme: String?,
-            processingPinned: Boolean?,
             libraryLayout: String?,
             thumbnailScale: Float?,
             librarySort: String?,
@@ -92,8 +78,6 @@ data class UserPreferences(
             val safeUri = customExportTreeUri?.takeIf(String::isNotBlank)
             return UserPreferences(
                 schemaVersion = schemaVersion?.takeIf { it in 1..CURRENT_SCHEMA_VERSION } ?: CURRENT_SCHEMA_VERSION,
-                themePreference = theme.enumOrDefault(ThemePreference.SYSTEM),
-                processingPinned = processingPinned ?: false,
                 libraryLayout = libraryLayout.enumOrDefault(LibraryLayoutPreference.GRID),
                 thumbnailScale = (thumbnailScale ?: 1f).coerceIn(MIN_THUMBNAIL_SCALE, MAX_THUMBNAIL_SCALE),
                 librarySort = librarySort.enumOrDefault(LibrarySortPreference.RECENTLY_ADDED),
@@ -120,9 +104,7 @@ interface ThemeRepository {
 
     suspend fun update(transform: (UserPreferences) -> UserPreferences)
 
-    suspend fun setThemePreference(preference: ThemePreference) = update { it.copy(themePreference = preference) }
 
-    suspend fun setProcessingPinned(pinned: Boolean) = update { it.copy(processingPinned = pinned) }
 }
 
 private val Context.userPreferencesDataStore by preferencesDataStore(name = "user_preferences")
@@ -142,8 +124,6 @@ class DataStoreThemeRepository(context: Context) : ThemeRepository {
 
     private fun readPreferences(preferences: Preferences): UserPreferences = UserPreferences.sanitize(
         schemaVersion = preferences[SCHEMA_VERSION],
-        theme = preferences[THEME],
-        processingPinned = preferences[PROCESSING_PINNED],
         libraryLayout = preferences[LIBRARY_LAYOUT],
         thumbnailScale = preferences[THUMBNAIL_SCALE],
         librarySort = preferences[LIBRARY_SORT],
@@ -157,8 +137,6 @@ class DataStoreThemeRepository(context: Context) : ThemeRepository {
 
     private fun writePreferences(preferences: androidx.datastore.preferences.core.MutablePreferences, value: UserPreferences) {
         preferences[SCHEMA_VERSION] = UserPreferences.CURRENT_SCHEMA_VERSION
-        preferences[THEME] = value.themePreference.name
-        preferences[PROCESSING_PINNED] = value.processingPinned
         preferences[LIBRARY_LAYOUT] = value.libraryLayout.name
         preferences[THUMBNAIL_SCALE] = value.thumbnailScale
         preferences[LIBRARY_SORT] = value.librarySort.name
@@ -173,8 +151,6 @@ class DataStoreThemeRepository(context: Context) : ThemeRepository {
 
     private companion object {
         val SCHEMA_VERSION = intPreferencesKey("schema_version")
-        val THEME = stringPreferencesKey("theme_preference")
-        val PROCESSING_PINNED = booleanPreferencesKey("processing_pinned")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
         val THUMBNAIL_SCALE = floatPreferencesKey("thumbnail_scale")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")

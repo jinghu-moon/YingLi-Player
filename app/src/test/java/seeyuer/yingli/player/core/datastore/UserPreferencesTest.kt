@@ -3,27 +3,12 @@ package seeyuer.yingli.player.core.datastore
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class ThemePreferenceTest {
+class UserPreferencesTest {
     @Test
-    fun `stored values restore all three theme modes`() {
-        ThemePreference.entries.forEach { preference ->
-            assertEquals(preference, ThemePreference.fromStoredValue(preference.name))
-        }
-    }
-
-    @Test
-    fun `missing and invalid values fall back to system`() {
-        assertEquals(ThemePreference.SYSTEM, ThemePreference.fromStoredValue(null))
-        assertEquals(ThemePreference.SYSTEM, ThemePreference.fromStoredValue("INVALID"))
-    }
-
-    @Test
-    fun `user preference defaults match the first release contract`() {
+    fun `user preference defaults match current fixed-light contract`() {
         assertEquals(
             UserPreferences(
                 schemaVersion = 1,
-                themePreference = ThemePreference.SYSTEM,
-                processingPinned = false,
                 libraryLayout = LibraryLayoutPreference.GRID,
                 thumbnailScale = 1f,
                 librarySort = LibrarySortPreference.RECENTLY_ADDED,
@@ -42,8 +27,6 @@ class ThemePreferenceTest {
     fun `damaged settings fall back and numeric values are clamped`() {
         val restored = UserPreferences.sanitize(
             schemaVersion = 99,
-            theme = "AMOLED",
-            processingPinned = null,
             libraryLayout = "CAROUSEL",
             thumbnailScale = 9f,
             librarySort = "SIZE",
@@ -56,7 +39,6 @@ class ThemePreferenceTest {
         )
 
         assertEquals(UserPreferences.CURRENT_SCHEMA_VERSION, restored.schemaVersion)
-        assertEquals(ThemePreference.SYSTEM, restored.themePreference)
         assertEquals(LibraryLayoutPreference.GRID, restored.libraryLayout)
         assertEquals(UserPreferences.MAX_THUMBNAIL_SCALE, restored.thumbnailScale)
         assertEquals(UserPreferences.MIN_TRASH_RETENTION_DAYS, restored.trashRetentionDays)

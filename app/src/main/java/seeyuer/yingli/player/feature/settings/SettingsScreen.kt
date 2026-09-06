@@ -26,7 +26,6 @@ import androidx.compose.ui.res.stringResource
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.datastore.AppearanceSettings
 import seeyuer.yingli.player.core.datastore.LibraryLayoutPreference
-import seeyuer.yingli.player.core.datastore.ThemePreference
 import seeyuer.yingli.player.core.designsystem.component.YingLiBanner
 import seeyuer.yingli.player.core.designsystem.component.YingLiButton
 import seeyuer.yingli.player.core.designsystem.component.YingLiCheckbox
@@ -68,8 +67,6 @@ data class SecuritySettingsActions(
 @Composable
 fun SettingsScreen(
     settings: AppearanceSettings,
-    onThemePreferenceChanged: (ThemePreference) -> Unit,
-    onProcessingPinnedChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     playerPreferences: PlayerPreferences = PlayerPreferences(),
     onMiniPlayerChanged: (Boolean) -> Unit = {},
@@ -77,7 +74,6 @@ fun SettingsScreen(
     tools: SettingsToolActions = SettingsToolActions(),
     security: SecuritySettingsActions = SecuritySettingsActions(),
 ) {
-    val preferences = ThemePreference.entries
     var showPinDialog by remember { mutableStateOf(false) }
     var newPin by remember { mutableStateOf("") }
     Column(
@@ -87,17 +83,6 @@ fun SettingsScreen(
             .padding(YingLiTheme.components.pagePadding),
         verticalArrangement = Arrangement.spacedBy(YingLiTheme.components.itemSpacing),
     ) {
-        Text(stringResource(R.string.settings_appearance), style = MaterialTheme.typography.titleLarge)
-        Text(stringResource(R.string.settings_theme), style = MaterialTheme.typography.labelLarge)
-        YingLiSegmentedControl(
-            options = listOf(
-                stringResource(R.string.theme_light),
-                stringResource(R.string.theme_dark),
-                stringResource(R.string.theme_system),
-            ),
-            selectedIndex = preferences.indexOf(settings.themePreference),
-            onSelected = { index -> onThemePreferenceChanged(preferences[index]) },
-        )
         Text(stringResource(R.string.settings_security), style = MaterialTheme.typography.titleLarge)
         if (security.statusCode != null) {
             YingLiBanner(
@@ -169,11 +154,6 @@ fun SettingsScreen(
             label = stringResource(R.string.settings_auto_pip),
             checked = playerPreferences.autoPictureInPicture,
             onCheckedChange = onAutoPipChanged,
-        )
-        YingLiSwitch(
-            label = stringResource(R.string.settings_pin_processing),
-            checked = settings.processingPinned,
-            onCheckedChange = onProcessingPinnedChanged,
         )
 
         Text(stringResource(R.string.settings_data), style = MaterialTheme.typography.titleLarge)

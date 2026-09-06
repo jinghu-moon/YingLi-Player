@@ -21,6 +21,7 @@ enum class MediaLibraryNotice {
 
 data class MediaLibraryUiState(
     val onboarding: Boolean = true,
+    val initialized: Boolean = false,
     val items: List<MediaItem> = emptyList(),
     val sources: List<MediaSource> = emptyList(),
     val scanning: Boolean = false,
@@ -46,7 +47,8 @@ class MediaLibraryViewModel(
     private val scanProgress = (scanner as? seeyuer.yingli.player.domain.media.ScanProgressSource)?.progress
         ?: MutableStateFlow(ScanProgress())
     private val effects = Channel<MediaLibraryEffect>(Channel.BUFFERED)
-    private var initialized = false
+    private var initializeStarted = false
+    private val initialized = MutableStateFlow(false)
     val effect: Flow<MediaLibraryEffect> = effects.receiveAsFlow()
     private val baseState = combine(
         onboardingRepository.completed,
@@ -55,18 +57,27 @@ class MediaLibraryViewModel(
         scanning,
         notice,
     ) { completed, items, sources, isScanning, currentNotice ->
-        MediaLibraryUiState(!completed, items, sources, isScanning, scanProgress = ScanProgress(), notice = currentNotice)
+        MediaLibraryUiState(
+            onboarding = !completed,
+            items = items,
+            sources = sources,
+            scanning = isScanning,
+            scanProgress = ScanProgress(),
+            notice = currentNotice,
+        )
     }
 
-    val state: StateFlow<MediaLibraryUiState> = combine(baseState, scanProgress) { base, progress ->
-        base.copy(scanProgress = progress)
+    val state: StateFlow<MediaLibraryUiState> = combine(baseState, scanProgress, initialized) { base, progress, ready ->
+        base.copy(initialized = ready, scanProgress = progress)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), MediaLibraryUiState())
 
     /** Restores granted access after process start and starts the initial index scan. */
     fun initialize() {
-        if (initialized) return
-        initialized = true
+        if (initializeStarted) return
+        initializeStarted = true
         viewModelScope.launch {
+            // Do not expose the default onboarding state before persisted state is available.
+            baseState.first()
             val permission = permissionGateway.inspect()
             when {
                 permission.allFilesAccess -> {
@@ -74,6 +85,7 @@ class MediaLibraryViewModel(
                     val existing = sourceRepository.get(source.id)
                     sourceRepository.upsert(source)
                     onboardingRepository.setCompleted(true)
+                    initialized.value = true
                     if (existing.requiresInitialScan(source)) scan(setOf(source.id))
                 }
                 permission.mediaStoreReadAccess -> {
@@ -81,6 +93,7 @@ class MediaLibraryViewModel(
                     val existing = sourceRepository.get(source.id)
                     sourceRepository.upsert(source)
                     onboardingRepository.setCompleted(true)
+                    initialized.value = true
                     if (existing.requiresInitialScan(source)) scan(setOf(source.id))
                 }
                 else -> {
@@ -88,6 +101,7 @@ class MediaLibraryViewModel(
                         .filter { it.accessState == MediaSourceAccessState.AVAILABLE }
                         .map { it.id }
                         .toSet()
+                    initialized.value = true
                     if (sourceIds.isNotEmpty() && catalogRepository.observeItems().first().isEmpty()) scan(sourceIds)
                 }
             }

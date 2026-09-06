@@ -46,7 +46,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,10 +55,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -75,13 +72,9 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
-import coil3.request.CachePolicy
-import coil3.request.crossfade
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import seeyuer.yingli.player.core.media.ThumbnailLoader
-import seeyuer.yingli.player.core.media.ThumbnailState
-import seeyuer.yingli.player.core.media.ThumbnailStorage
 import seeyuer.yingli.player.core.model.media.ThumbnailPriority
 import seeyuer.yingli.player.core.model.media.ThumbnailRequest
 import seeyuer.yingli.player.core.model.media.ScrollDirection
@@ -91,6 +84,7 @@ import seeyuer.yingli.player.core.designsystem.component.BannerKind
 import seeyuer.yingli.player.core.designsystem.component.YingLiBanner
 import seeyuer.yingli.player.core.designsystem.component.YingLiButton
 import seeyuer.yingli.player.core.designsystem.component.YingLiEmptyState
+import seeyuer.yingli.player.core.designsystem.component.YingLiThumbnail
 import seeyuer.yingli.player.core.designsystem.component.YingLiSegmentedControl
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.library.LibraryDisplayPreference
@@ -572,7 +566,7 @@ private fun MediaCard(
             },
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(ratio).clip(RoundedCornerShape(8.dp))) {
-            ThumbnailImage(thumbnail, thumbnailRepository)
+            YingLiThumbnail(thumbnail, thumbnailRepository)
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
                 color = YingLiTheme.player.edgeScrim,
@@ -642,7 +636,7 @@ private fun MediaListRow(
                 .height(LIST_THUMBNAIL_HEIGHT)
                 .clip(RoundedCornerShape(6.dp)),
         ) {
-            ThumbnailImage(thumbnail, thumbnailRepository)
+            YingLiThumbnail(thumbnail, thumbnailRepository)
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp),
                 color = YingLiTheme.player.edgeScrim,
@@ -682,48 +676,6 @@ private fun MediaListRow(
                 MetadataCapsule(item.resolutionLabel())
             }
         }
-    }
-}
-
-/** Displays only the result produced by the shared thumbnail pipeline. */
-@Composable
-private fun ThumbnailImage(request: ThumbnailRequest, repository: ThumbnailLoader?) {
-    if (repository == null) {
-        Box(Modifier.fillMaxSize().background(YingLiTheme.colors.surfaceMuted))
-        return
-    }
-    val context = LocalContext.current
-    DisposableEffect(request.key, repository) {
-        repository.request(request)
-        onDispose { repository.cancel(request) }
-    }
-    val thumbnailState = repository.observe(request).collectAsStateWithLifecycle(ThumbnailState.Queued).value
-    val cachedFile = remember(request.key, context) {
-        context.cacheDir.resolve("${ThumbnailStorage.DIRECTORY_NAME}/${request.key.diskName()}.png")
-    }
-    if (cachedFile.isFile && thumbnailState is ThumbnailState.Ready) {
-        val imageRequest = remember(request.key, context) {
-            coil3.request.ImageRequest.Builder(context)
-                .data(cachedFile)
-                .size(request.widthPixels, request.heightPixels)
-                .memoryCacheKey(request.key.diskName())
-                // The source file is already managed by DiskThumbnailCache.
-                // Avoid a second encoded copy in Coil's disk cache.
-                .diskCachePolicy(CachePolicy.DISABLED)
-                .crossfade(true)
-                .build()
-        }
-        coil3.compose.AsyncImage(
-            model = imageRequest,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-    } else {
-        // The repository is the only component allowed to decode video
-        // frames. Until it atomically publishes the PNG, show a bounded
-        // placeholder instead of falling back to the raw URI.
-        Box(Modifier.fillMaxSize().background(YingLiTheme.colors.surfaceMuted))
     }
 }
 

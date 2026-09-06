@@ -21,6 +21,12 @@ import seeyuer.yingli.player.core.datastore.MediaOnboardingRepository
 import seeyuer.yingli.player.core.foundation.AppContainer
 import seeyuer.yingli.player.core.media.*
 import seeyuer.yingli.player.app.library.RoomLibraryRepository
+import seeyuer.yingli.player.app.home.AndroidDeviceStorageRepository
+import seeyuer.yingli.player.app.home.DataStoreHomeLayoutRepository
+import seeyuer.yingli.player.app.home.RoomHomeRepository
+import seeyuer.yingli.player.domain.home.DeviceStorageRepository
+import seeyuer.yingli.player.domain.home.HomeLayoutRepository
+import seeyuer.yingli.player.domain.home.HomeRepository
 import seeyuer.yingli.player.domain.media.DefaultMediaIdentityResolver
 import seeyuer.yingli.player.domain.media.DefaultMediaScanner
 import seeyuer.yingli.player.domain.media.MediaScanner
@@ -68,6 +74,9 @@ data class MediaContainer(
     val playbackProgressRepository: PlaybackProgressRepository,
     val libraryRepository: LibraryPagingRepository,
     val searchRepository: SearchRepository,
+    val homeRepository: HomeRepository,
+    val homeLayoutRepository: HomeLayoutRepository,
+    val deviceStorageRepository: DeviceStorageRepository,
     val libraryPreferenceRepository: LibraryPreferenceRepository,
     val trashRepository: TrashRepository,
     val libraryMutationRepository: LibraryMutationRepository,
@@ -140,6 +149,7 @@ object ProductionMediaContainerFactory {
         SingletonImageLoader.setUnsafe(thumbnailImageLoader)
         val playbackRepository = RoomPlaybackRepository(database)
         val libraryRepository = RoomLibraryRepository(database, foundation.dispatchers)
+        val homeRepository = RoomHomeRepository(database.homeDao())
         val trashRepository = RoomTrashRepository(database)
         val mutationRepository = DefaultLibraryMutationRepository(
             AndroidFileOperationGateway(context, foundation.dispatchers),
@@ -265,6 +275,9 @@ object ProductionMediaContainerFactory {
             playbackRepository,
             libraryRepository,
             libraryRepository,
+            homeRepository,
+            DataStoreHomeLayoutRepository(context),
+            AndroidDeviceStorageRepository(),
             DataStoreLibraryPreferenceRepository(foundation.themeRepository),
             trashRepository,
             mutationRepository,

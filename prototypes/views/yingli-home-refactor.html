@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>影里 · 首页重构</title>
+<style>
+  :root{
+    --paper:#EDEAE5;
+    --bezel:#1B1B1D;
+    --screen-bg:#FAF9F7;
+    --surface:#FFFFFF;
+    --surface-sunken:#F2F0EC;
+    --line:#E6E3DD;
+    --ink:#16171B;
+    --ink-2:#6B6A65;
+    --ink-3:#A7A49C;
+    --accent:#5B4DFF;
+    --accent-ink:#FFFFFF;
+    --accent-soft:#EDEAFF;
+    --r-sm:10px;
+    --r-md:16px;
+    --r-lg:22px;
+    --r-pill:999px;
+    --font-sans:"PingFang SC","Helvetica Neue","Segoe UI",system-ui,-apple-system,"Noto Sans SC",sans-serif;
+    --font-mono:ui-monospace,"SF Mono",Consolas,"Cascadia Code",monospace;
+  }
+
+  *{box-sizing:border-box;}
+
+  html,body{
+    margin:0;
+    height:100%;
+    background:radial-gradient(120% 120% at 50% 0%, #F4F2EE 0%, var(--paper) 60%, #DCD9D2 100%);
+    font-family:var(--font-sans);
+    color:var(--ink);
+  }
+
+  body{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:100vh;
+    padding:40px 16px;
+  }
+
+  .phone-frame{
+    width:390px;
+    height:824px;
+    background:var(--bezel);
+    border-radius:46px;
+    padding:14px;
+    box-shadow:
+      0 40px 80px -30px rgba(20,20,25,.45),
+      0 10px 24px -12px rgba(20,20,25,.35);
+  }
+
+  .screen{
+    position:relative;
+    width:100%;
+    height:100%;
+    background:var(--screen-bg);
+    border-radius:32px;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+
+  .notch{
+    position:absolute;
+    top:8px;
+    left:50%;
+    transform:translateX(-50%);
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:rgba(0,0,0,.55);
+    z-index:5;
+  }
+
+  /* status row */
+  .status-row{
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:14px 24px 2px;
+    font-family:var(--font-mono);
+    font-size:12px;
+    font-weight:600;
+    color:var(--ink);
+    letter-spacing:.02em;
+  }
+  .status-row .glyphs{display:flex;align-items:center;gap:6px;color:var(--ink-2);}
+
+  /* header */
+  .app-header{
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:6px 24px 14px;
+    border-bottom:1px solid var(--line);
+  }
+  .app-header h1{
+    margin:0;
+    font-size:25px;
+    font-weight:700;
+    letter-spacing:-.01em;
+  }
+  .header-actions{display:flex;gap:8px;}
+  .icon-btn{
+    width:38px;height:38px;
+    border-radius:var(--r-pill);
+    border:1px solid var(--line);
+    background:var(--surface);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--ink);
+  }
+  .icon-btn svg{width:18px;height:18px;}
+
+  /* scroll area */
+  .content{
+    flex:1 1 auto;
+    overflow-y:auto;
+    scrollbar-width:none;
+    padding-bottom:28px;
+  }
+  .content::-webkit-scrollbar{display:none;}
+
+  section{padding:22px 24px 0;}
+
+  .section-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:12px;
+  }
+  .section-head h2{
+    margin:0;
+    font-size:15px;
+    font-weight:600;
+  }
+  .section-head .count{
+    font-weight:400;
+    color:var(--ink-3);
+  }
+  .link-more{
+    border:none;background:none;
+    font-size:12.5px;font-weight:600;
+    color:var(--ink-2);
+    display:flex;align-items:center;gap:2px;
+    padding:0;
+  }
+  .link-more svg{width:13px;height:13px;}
+
+  /* hero overview */
+  .hero-overview{
+    margin:20px 20px 0;
+    padding:16px 16px 14px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--r-md);
+  }
+  .hero-stats{
+    display:flex;
+    align-items:flex-start;
+  }
+  .stat{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:4px;
+    text-align:center;
+  }
+  .stat-value{
+    font-family:var(--font-mono);
+    font-variant-numeric:tabular-nums;
+    font-size:21px;
+    font-weight:700;
+    letter-spacing:-.01em;
+  }
+  .stat-value small{font-size:12px;font-weight:600;margin-left:1px;}
+  .stat-label{font-size:11.5px;color:var(--ink-2);}
+  .stat-divider{width:1px;align-self:stretch;background:var(--line);margin:2px 4px;}
+
+  .progress-track{
+    width:36px;
+    height:3px;
+    margin-top:2px;
+    border-radius:var(--r-pill);
+    background:var(--accent-soft);
+    overflow:hidden;
+  }
+  .progress-fill{
+    height:100%;
+    width:0%;
+    background:var(--accent);
+    border-radius:inherit;
+  }
+
+  .hero-actions{
+    display:flex;
+    gap:8px;
+    margin-top:14px;
+    padding-top:14px;
+    border-top:1px solid var(--line);
+  }
+  .btn{
+    flex:1;
+    border-radius:var(--r-sm);
+    border:none;
+    padding:10px 0;
+    font-size:13.5px;
+    font-weight:600;
+    font-family:inherit;
+    display:flex;align-items:center;justify-content:center;
+    gap:6px;
+  }
+  .btn svg{width:14px;height:14px;}
+  .btn-primary{background:var(--accent);color:var(--accent-ink);}
+  .btn-ghost{background:var(--surface-sunken);color:var(--ink);}
+
+  /* continue watching (empty state) */
+  .empty-row{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:14px 14px;
+    background:var(--surface-sunken);
+    border-radius:var(--r-md);
+  }
+  .empty-icon{
+    flex:0 0 auto;
+    width:38px;height:38px;
+    border-radius:var(--r-pill);
+    background:var(--surface);
+    border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--ink-2);
+  }
+  .empty-icon svg{width:15px;height:15px;}
+  .empty-copy{flex:1;min-width:0;}
+  .empty-title{margin:0 0 2px;font-size:13.5px;font-weight:600;}
+  .empty-sub{margin:0;font-size:12px;color:var(--ink-2);}
+  .empty-cta{
+    flex:0 0 auto;
+    border:none;background:none;
+    font-size:12.5px;font-weight:700;
+    color:var(--accent);
+    display:flex;align-items:center;gap:1px;
+    padding:0;
+  }
+  .empty-cta svg{width:13px;height:13px;}
+
+  /* recent added carousel */
+  .thumb-row{
+    display:flex;
+    gap:12px;
+    overflow-x:auto;
+    scrollbar-width:none;
+    margin:0 -24px;
+    padding:0 24px 4px;
+  }
+  .thumb-row::-webkit-scrollbar{display:none;}
+
+  .thumb-card{
+    flex:0 0 auto;
+    width:130px;
+  }
+  .thumb-art{
+    position:relative;
+    width:130px;
+    height:130px;
+    border-radius:var(--r-md);
+    overflow:hidden;
+  }
+  .thumb-art::after{
+    content:"";
+    position:absolute;inset:0;
+    background:repeating-linear-gradient(
+      135deg,
+      rgba(255,255,255,.05) 0px,
+      rgba(255,255,255,.05) 2px,
+      transparent 2px,
+      transparent 7px
+    );
+  }
+  .grad-a{background:linear-gradient(150deg,#26262A,#57565B);}
+  .grad-b{background:linear-gradient(150deg,#8C8A83,#CBC9C1);}
+  .grad-c{background:linear-gradient(150deg,#3B3A3F,#6C6B6F);}
+  .grad-d{background:linear-gradient(150deg,#B7B4AC,#E5E2DB);}
+
+  .thumb-badge{
+    position:absolute;top:8px;right:8px;
+    background:rgba(0,0,0,.55);
+    color:#fff;
+    font-family:var(--font-mono);
+    font-size:10px;font-weight:600;
+    padding:2px 6px;
+    border-radius:var(--r-pill);
+    z-index:2;
+  }
+  .thumb-play{
+    position:absolute;
+    left:8px;bottom:8px;
+    width:24px;height:24px;
+    border-radius:50%;
+    background:rgba(255,255,255,.85);
+    display:flex;align-items:center;justify-content:center;
+    z-index:2;
+  }
+  .thumb-play svg{width:10px;height:10px;color:var(--ink);margin-left:1px;}
+
+  .thumb-meta{padding:8px 1px 0;}
+  .thumb-title{margin:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .thumb-sub{margin:2px 0 0;font-size:11px;color:var(--ink-3);}
+
+  /* folders */
+  .folder-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:14px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--r-md);
+  }
+  .folder-icon{
+    flex:0 0 auto;
+    width:38px;height:38px;
+    border-radius:var(--r-sm);
+    background:var(--accent-soft);
+    color:var(--accent);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .folder-icon svg{width:18px;height:18px;}
+  .folder-info{flex:1;min-width:0;}
+  .folder-name{margin:0;font-size:13.5px;font-weight:600;}
+  .folder-count{font-size:12.5px;color:var(--ink-2);}
+  .chevron{color:var(--ink-3);display:flex;}
+  .chevron svg{width:15px;height:15px;}
+
+  /* bottom nav */
+  .bottom-nav{
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:space-around;
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+    background:var(--surface);
+    border-top:1px solid var(--line);
+  }
+  .nav-item{
+    border:none;background:none;
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding:6px 14px;
+    border-radius:var(--r-pill);
+    color:var(--ink-3);
+    font-size:11px;
+    font-weight:600;
+  }
+  .nav-item svg{width:20px;height:20px;}
+  .nav-item.active{
+    background:var(--accent-soft);
+    color:var(--accent);
+  }
+</style>
+</head>
+<body>
+
+  <div class="phone-frame">
+    <div class="screen">
+      <div class="notch"></div>
+
+      <div class="status-row">
+        <span>20:03</span>
+        <span class="glyphs">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+          <svg viewBox="0 0 24 14" width="20" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="19" height="12" rx="2.5"/><rect x="21.5" y="4.5" width="1.6" height="5" rx="0.8" fill="currentColor" stroke="none"/><rect x="3" y="3" width="13" height="8" rx="1" fill="currentColor" stroke="none"/></svg>
+        </span>
+      </div>
+
+      <header class="app-header">
+        <h1>首页</h1>
+        <div class="header-actions">
+          <button class="icon-btn" aria-label="活跃度">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+          </button>
+          <button class="icon-btn" aria-label="搜索">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="content">
+
+        <!-- 媒体概览：提到首屏顶部，作为整个媒体库的入口摘要 -->
+        <section style="padding-top:18px;">
+          <div class="hero-overview">
+            <div class="hero-stats">
+              <div class="stat">
+                <span class="stat-value">7995</span>
+                <span class="stat-label">视频数量</span>
+              </div>
+              <div class="stat-divider"></div>
+              <div class="stat">
+                <span class="stat-value">5.3<small>h</small></span>
+                <span class="stat-label">总时长</span>
+              </div>
+              <div class="stat-divider"></div>
+              <div class="stat">
+                <span class="stat-value">0<small>%</small></span>
+                <span class="stat-label">已看比例</span>
+                <div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>
+              </div>
+            </div>
+            <div class="hero-actions">
+              <button class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                添加目录
+              </button>
+              <button class="btn btn-ghost">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 1 2.6 6.3"/><path d="M3 21v-5h5"/></svg>
+                重新扫描
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 继续观看：个性化入口，当前无记录时给出明确的引导 -->
+        <section>
+          <div class="section-head"><h2>继续观看</h2></div>
+          <div class="empty-row">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+            <div class="empty-copy">
+              <p class="empty-title">还没有正在观看的视频</p>
+              <p class="empty-sub">打开一部视频，就会出现在这里</p>
+            </div>
+            <button class="empty-cta">
+              去看看
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <!-- 最近添加 -->
+        <section>
+          <div class="section-head">
+            <h2>最近添加 <span class="count">· 10</span></h2>
+            <button class="link-more">全部
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+          </div>
+          <div class="thumb-row">
+            <article class="thumb-card">
+              <div class="thumb-art grad-a">
+                <span class="thumb-badge">12:04</span>
+                <span class="thumb-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+              </div>
+              <div class="thumb-meta">
+                <p class="thumb-title">3月31日 (3)</p>
+                <p class="thumb-sub">设备存储</p>
+              </div>
+            </article>
+            <article class="thumb-card">
+              <div class="thumb-art grad-b">
+                <span class="thumb-badge">03:47</span>
+                <span class="thumb-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+              </div>
+              <div class="thumb-meta">
+                <p class="thumb-title">3月30日 (5)</p>
+                <p class="thumb-sub">设备存储</p>
+              </div>
+            </article>
+            <article class="thumb-card">
+              <div class="thumb-art grad-c">
+                <span class="thumb-badge">08:21</span>
+                <span class="thumb-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+              </div>
+              <div class="thumb-meta">
+                <p class="thumb-title">3月28日 (2)</p>
+                <p class="thumb-sub">设备存储</p>
+              </div>
+            </article>
+            <article class="thumb-card">
+              <div class="thumb-art grad-d">
+                <span class="thumb-badge">01:52</span>
+                <span class="thumb-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+              </div>
+              <div class="thumb-meta">
+                <p class="thumb-title">3月27日 (1)</p>
+                <p class="thumb-sub">设备存储</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- 常用文件夹 -->
+        <section style="margin-bottom:8px;">
+          <div class="section-head"><h2>常用文件夹 <span class="count">· 1</span></h2></div>
+          <div class="folder-row">
+            <div class="folder-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            </div>
+            <div class="folder-info">
+              <p class="folder-name">设备存储</p>
+            </div>
+            <span class="folder-count">200 项</span>
+            <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>
+          </div>
+        </section>
+
+      </div>
+
+      <nav class="bottom-nav">
+        <button class="nav-item active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-7 9 7"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>
+          首页
+        </button>
+        <button class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 5v14M15 5v14"/></svg>
+          视频
+        </button>
+        <button class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          整理
+        </button>
+        <button class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.12.7.32 1 .58"/></svg>
+          设置
+        </button>
+      </nav>
+
+    </div>
+  </div>
+
+</body>
+</html>

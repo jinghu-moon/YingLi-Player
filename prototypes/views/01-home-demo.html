@@ -1,255 +1,643 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="light">
   <title>影里 · 首页 Demo</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
   <style>
     :root {
       color-scheme: light;
-      --page: #f5f5f5; --surface: #fff; --surface-subtle: #fafafa; --surface-muted: #eee;
-      --surface-component: #eee; --surface-hover: #e0e0e0; --text: #1f1f1f; --muted: #626262;
-      --line: #e0e0e0; --line-strong: #a3a3a3; --primary: #1f1f1f; --on-primary: #fff;
-      --steel: #477b94; --steel-soft: #e5f1f7; --green: #40805c; --green-soft: #e0f2e7;
-      --amber: #b37622; --amber-soft: #fff4d3; --favorite: #bd3255;
-      --shadow-1: 0 1px 2px rgb(0 0 0 / .07), 0 8px 24px rgb(0 0 0 / .06);
-      --shadow-2: 0 18px 48px rgb(0 0 0 / .16);
+      --page: #f5f5f5;
+      --surface: #ffffff;
+      --surface-subtle: #fafafa;
+      --surface-muted: #eeeeee;
+      --surface-component: #eeeeee;
+      --surface-hover: #e0e0e0;
+      --text-primary: #1f1f1f;
+      --text-secondary: #525252;
+      --text-placeholder: #737373;
+      --border-divider: #eeeeee;
+      --border-default: #e0e0e0;
+      --border-strong: #737373;
+      --selection: #1f1f1f;
+      --on-selection: #ffffff;
+      --shadow-phone: 0 28px 70px rgb(0 0 0 / .34), 0 6px 20px rgb(0 0 0 / .24);
+      --shadow-menu: 0 18px 42px rgb(0 0 0 / .48);
     }
-    [data-theme="dark"] { color-scheme: dark; --page:#101110; --surface:#171817; --surface-subtle:#1f211f; --surface-muted:#292b29; --surface-component:#292b29; --surface-hover:#353835; --text:#f1f2ef; --muted:#aeb4ac; --line:#303430; --line-strong:#686e67; --primary:#f1f2ef; --on-primary:#141514; --steel:#8fc4d8; --steel-soft:#20343b; --green:#8fc9a5; --green-soft:#20382b; --amber:#e8b25e; --amber-soft:#49391e; --favorite:#ef7997; --shadow-1:0 1px 2px rgb(0 0 0 / .3),0 8px 24px rgb(0 0 0 / .2); --shadow-2:0 18px 48px rgb(0 0 0 / .45); }
     * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body { margin:0; min-width:320px; background:var(--page); color:var(--text); font-family:Inter,"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif; letter-spacing:0; }
-    button,input { font:inherit; letter-spacing:0; color:inherit; }
-    button { border:0; cursor:pointer; }
-    .app { min-height:100vh; display:grid; grid-template-columns:236px minmax(0,1fr); }
-    .sidebar { position:sticky; top:0; height:100vh; display:flex; flex-direction:column; padding:24px 14px 18px; border-right:1px solid var(--line); background:var(--surface); }
-    .brand { display:flex; align-items:center; gap:11px; padding:0 12px 30px; }
-    .brand-mark { width:34px; height:34px; display:grid; place-items:center; border-radius:9px; background:var(--primary); color:var(--on-primary); font-size:17px; font-weight:700; }
-    .brand-name { font-size:18px; font-weight:680; line-height:1; }
-    .brand-sub { margin-top:4px; color:var(--muted); font-size:11px; }
-    .nav { display:grid; gap:5px; }
-    .nav-item { min-height:48px; display:flex; align-items:center; gap:12px; padding:0 13px; border-radius:7px; background:transparent; color:var(--muted); font-size:14px; text-align:left; }
-    .nav-item i { width:20px; font-size:20px; }
-    .nav-item:hover { background:var(--surface-component); color:var(--text); }
-    .nav-item[aria-current="page"] { background:var(--primary); color:var(--on-primary); font-weight:620; }
-    .sidebar-spacer { flex:1; }
-    .source-status { margin:10px 8px 18px; padding:13px; border:1px solid var(--line); border-radius:8px; background:var(--surface-subtle); }
-    .source-status .status-head { display:flex; justify-content:space-between; align-items:center; font-size:12px; font-weight:620; }
-    .status-dot { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 3px var(--green-soft); }
-    .source-status p { margin:8px 0 0; color:var(--muted); font-size:11px; line-height:1.5; }
-    .sidebar-footer { display:flex; align-items:center; justify-content:space-between; padding:0 9px; color:var(--muted); font-size:11px; }
-    .sidebar-footer button { width:40px; height:40px; border-radius:7px; background:transparent; color:var(--muted); font-size:20px; }
-    .sidebar-footer button:hover { background:var(--surface-component); color:var(--text); }
-    main { min-width:0; }
-    .topbar { height:76px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 clamp(20px,4vw,56px); border-bottom:1px solid var(--line); background:color-mix(in srgb,var(--surface) 90%,transparent); backdrop-filter:blur(14px); position:sticky; top:0; z-index:10; }
-    .crumb { color:var(--muted); font-size:13px; }
-    .top-search { flex:1; max-width:520px; min-height:44px; display:none; align-items:center; gap:9px; padding:0 13px; border:1px solid var(--line-strong); border-radius:7px; background:var(--surface); }
-    .topbar.search-open .top-search { display:flex; }
-    .top-search i { color:var(--muted); font-size:19px; }
-    .top-search input { width:100%; border:0; outline:0; background:transparent; color:var(--text); font-size:13px; }
-    .top-search input::placeholder { color:var(--muted); }
-    .top-filter { min-height:44px; display:flex; align-items:center; gap:6px; padding:0 11px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-size:12px; }
-    .top-filter:hover { background:var(--surface-component); color:var(--text); }
-    .top-actions { display:flex; align-items:center; gap:6px; }
-    .icon-btn { width:42px; height:42px; display:grid; place-items:center; border-radius:7px; background:transparent; color:var(--muted); font-size:20px; }
-    .icon-btn:hover { background:var(--surface-component); color:var(--text); }
-    .task-btn { position:relative; }
-    .badge { position:absolute; top:3px; right:2px; min-width:16px; height:16px; display:grid; place-items:center; padding:0 4px; border:2px solid var(--surface); border-radius:9px; background:var(--steel); color:#fff; font-size:9px; font-weight:700; }
-    .content { width:min(1440px,100%); margin:0 auto; padding:36px clamp(20px,4vw,56px) 72px; }
-    .section { margin-top:34px; }
-    .section-head { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:15px; }
-    .section-title { display:flex; align-items:baseline; gap:9px; margin:0; font-size:18px; font-weight:650; }
-    .section-count { color:var(--muted); font-size:12px; font-weight:450; }
-    .text-btn { display:inline-flex; align-items:center; gap:5px; padding:7px 8px; border-radius:5px; background:transparent; color:var(--steel); font-size:12px; }
-    .text-btn:hover { background:var(--steel-soft); }
-    .continue-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
-    .continue-card { position:relative; overflow:hidden; min-height:190px; display:flex; flex-direction:column; justify-content:flex-end; border-radius:8px; background:var(--surface-inverse,#121212); color:#fff; box-shadow:var(--shadow-1); isolation:isolate; }
-    .continue-card::before { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg,transparent 20%,rgb(0 0 0 / .83) 100%),var(--image) center/cover; transform:scale(1.01); }
-    .continue-card:hover::before { transform:scale(1.05); transition:transform .35s ease; }
-    .continue-body { padding:18px; }
-    .continue-kicker { display:flex; align-items:center; gap:7px; margin-bottom:6px; color:#dbe7ea; font-size:11px; }
-    .play-dot { width:22px; height:22px; display:grid; place-items:center; border-radius:50%; background:#fff; color:#111; font-size:12px; }
-    .continue-title { margin:0; font-size:16px; font-weight:620; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .continue-meta { margin:6px 0 11px; color:#d0d5d4; font-size:11px; }
-    .progress { height:4px; overflow:hidden; border-radius:3px; background:rgb(255 255 255 / .35); }
-    .progress span { display:block; height:100%; border-radius:inherit; background:#fff; }
-    .progress-label { display:flex; justify-content:space-between; margin-top:7px; color:#e6e9e7; font-size:10px; }
-    .media-toolbar { display:flex; align-items:center; gap:8px; }
-    .view-toggle { display:flex; padding:3px; border:1px solid var(--line); border-radius:7px; background:var(--surface-component); }
-    .view-toggle button { width:34px; height:32px; display:grid; place-items:center; border-radius:5px; background:transparent; color:var(--muted); font-size:17px; }
-    .view-toggle button[aria-pressed="true"] { background:var(--surface); color:var(--text); box-shadow:var(--shadow-1); }
-    .recent-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
-    .media-card { min-width:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--surface); transition:transform .18s ease,box-shadow .18s ease; }
-    .media-card:hover { transform:translateY(-2px); box-shadow:var(--shadow-1); }
-    .thumb { position:relative; aspect-ratio:16/9; overflow:hidden; background:#d5d8d4; }
-    .thumb img { width:100%; height:100%; display:block; object-fit:cover; }
-    .duration { position:absolute; right:7px; bottom:7px; padding:3px 6px; border-radius:4px; background:rgb(0 0 0 / .72); color:#fff; font-size:10px; }
-    .card-progress { position:absolute; right:0; bottom:0; left:0; height:4px; background:rgb(255 255 255 / .35); }
-    .card-progress span { display:block; height:100%; background:#fff; }
-    .card-body { padding:11px 12px 12px; }
-    .card-title { margin:0; font-size:13px; font-weight:620; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .card-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; color:var(--muted); font-size:11px; }
-    .card-actions { display:flex; justify-content:flex-end; gap:2px; margin-top:8px; }
-    .mini-btn { width:30px; height:30px; display:grid; place-items:center; border-radius:5px; background:transparent; color:var(--muted); font-size:17px; }
-    .mini-btn:hover { background:var(--surface-component); color:var(--text); }
-    .mini-btn.favorite { color:var(--favorite); }
-    .recent-grid.list { grid-template-columns:1fr; gap:8px; }
-    .recent-grid.list .media-card { display:grid; grid-template-columns:168px 1fr; }
-    .recent-grid.list .thumb { aspect-ratio:auto; min-height:100px; }
-    .recent-grid.list .card-body { display:grid; grid-template-columns:1fr auto; align-items:center; gap:4px 18px; padding:15px 16px; }
-    .recent-grid.list .card-title { font-size:14px; }
-    .recent-grid.list .card-meta { justify-content:flex-start; gap:14px; }
-    .recent-grid.list .card-actions { grid-column:2; grid-row:1/3; margin:0; }
-    .lower-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr); gap:16px; }
-    .panel { border:1px solid var(--line); border-radius:8px; background:var(--surface); }
-    .panel-head { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); }
-    .panel-head h3 { margin:0; font-size:15px; font-weight:650; }
-    .folder-list { display:grid; }
-    .folder { min-height:65px; display:flex; align-items:center; gap:12px; padding:11px 18px; border-bottom:1px solid var(--line); }
-    .folder:last-child { border-bottom:0; }
-    .folder-icon { width:38px; height:38px; display:grid; place-items:center; border-radius:7px; background:var(--steel-soft); color:var(--steel); font-size:19px; }
-    .folder-main { min-width:0; flex:1; }
-    .folder-name { display:block; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .folder-meta { display:block; margin-top:4px; color:var(--muted); font-size:11px; }
-    .folder-arrow { color:var(--muted); font-size:18px; }
-    .stats { display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:var(--line); }
-    .stat { min-height:112px; padding:18px; background:var(--surface); }
-    .stat-label { color:var(--muted); font-size:11px; }
-    .stat-value { margin-top:10px; font-size:25px; font-weight:670; letter-spacing:-.02em; }
-    .stat-note { margin-top:5px; color:var(--muted); font-size:11px; }
-    .bottom-nav { display:none; }
-    .toast { position:fixed; left:50%; bottom:24px; z-index:30; transform:translate(-50%,20px); display:flex; align-items:center; gap:8px; padding:11px 15px; border-radius:7px; background:var(--primary); color:var(--on-primary); box-shadow:var(--shadow-2); font-size:13px; opacity:0; pointer-events:none; transition:opacity .22s ease,transform .22s ease; }
-    .toast.show { opacity:1; transform:translate(-50%,0); }
-    .scrim { position:fixed; inset:0; z-index:20; display:none; background:rgb(0 0 0 / .45); }
-    .filter-sheet { position:fixed; right:0; top:0; bottom:0; z-index:21; width:min(380px,100%); display:none; padding:24px; background:var(--surface); box-shadow:var(--shadow-2); }
-    .filter-sheet.open,.scrim.open { display:block; }
-    .sheet-head { display:flex; justify-content:space-between; align-items:center; padding-bottom:20px; border-bottom:1px solid var(--line); }
-    .sheet-head h2 { margin:0; font-size:18px; }
-    .filter-group { padding:20px 0; border-bottom:1px solid var(--line); }
-    .filter-group h3 { margin:0 0 12px; font-size:13px; }
-    .chips { display:flex; flex-wrap:wrap; gap:8px; }
-    .chip { min-height:32px; padding:0 11px; border:1px solid var(--line-strong); border-radius:999px; background:transparent; color:var(--muted); font-size:12px; }
-    .chip.active { border-color:var(--primary); background:var(--primary); color:var(--on-primary); }
-    .sheet-actions { position:absolute; right:24px; bottom:24px; left:24px; display:flex; gap:8px; }
-    .sheet-actions button { flex:1; min-height:46px; border-radius:6px; font-size:13px; }
-    .sheet-actions .secondary { border:1px solid var(--line-strong); background:var(--surface); }
-    .sheet-actions .primary { background:var(--primary); color:var(--on-primary); }
+    html, body { min-width: 320px; min-height: 100%; }
+    body {
+      margin: 0;
+      background: #e1e3e4;
+      color: var(--text-primary);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+    button, input { font: inherit; letter-spacing: 0; }
+    button { border: 0; color: inherit; cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+    [hidden] { display: none !important; }
 
-    /* 手机展示台：内部视口保持真实手机比例，内容可独立滚动。 */
-    body { background:#e2e5e2; }
-    .showcase { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:28px 16px; }
-    .showcase-label { color:#68706a; font-size:12px; letter-spacing:.02em; }
-    .phone-shell { position:relative; width:min(390px,calc(100vw - 32px)); height:min(844px,calc(100vh - 64px)); min-height:620px; padding:10px; border:1px solid #080908; border-radius:43px; background:#0b0c0b; box-shadow:0 26px 68px rgb(20 25 21 / .28),0 4px 12px rgb(20 25 21 / .12); }
-    .phone-screen { position:relative; width:100%; height:100%; overflow:hidden; border-radius:33px; background:var(--surface); }
-    .phone-speaker { position:absolute; top:17px; left:50%; z-index:24; width:76px; height:21px; transform:translateX(-50%); border-radius:16px; background:#090a09; }
-    .phone-camera { position:absolute; top:24px; left:calc(50% + 36px); z-index:25; width:6px; height:6px; border:1px solid #242624; border-radius:50%; background:#101310; }
-    .phone-side-button { position:absolute; right:-3px; width:3px; border-radius:0 3px 3px 0; background:#171917; }
-    .phone-side-button.top { top:144px; height:67px; }
-    .phone-side-button.bottom { top:228px; height:37px; }
-    .status-bar { position:absolute; top:0; right:0; left:0; z-index:23; height:30px; display:flex; align-items:center; justify-content:space-between; padding:0 18px; color:var(--text); font-size:10px; font-weight:650; pointer-events:none; }
-    .status-icons { display:flex; align-items:center; gap:5px; }
-    .status-icons i { font-size:12px; }
-    .phone-viewport { position:absolute; inset:30px 0 0; overflow-y:auto; overflow-x:hidden; scrollbar-color:var(--line-strong) transparent; scrollbar-width:thin; }
-    .phone-viewport .app { min-height:100%; display:block; }
-    .phone-viewport .sidebar { display:none; }
-    .phone-viewport .topbar { height:58px; padding:0 14px; }
-    .phone-viewport .content { padding:22px 16px 86px; }
-    .phone-viewport .continue-grid { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; margin:0 -16px; padding:0 16px 3px; }
-    .phone-viewport .continue-card { flex:0 0 84%; min-height:190px; scroll-snap-align:start; }
-    .phone-viewport .recent-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-    .phone-viewport .lower-grid { grid-template-columns:1fr; }
-    .phone-viewport .bottom-nav { position:absolute; right:0; bottom:0; left:0; z-index:12; height:68px; display:grid; grid-template-columns:repeat(4,1fr); padding:7px 8px; border-top:1px solid var(--line); background:color-mix(in srgb,var(--surface) 94%,transparent); backdrop-filter:blur(14px); }
-    .phone-viewport .bottom-nav button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; border-radius:7px; background:transparent; color:var(--muted); font-size:10px; }
-    .phone-viewport .bottom-nav i { font-size:21px; }
-    .phone-viewport .bottom-nav button[aria-current="page"] { background:var(--primary); color:var(--on-primary); font-weight:600; }
-    .phone-viewport .recent-grid.list .media-card { grid-template-columns:120px 1fr; }
-    .phone-viewport .recent-grid.list .thumb { min-height:86px; }
-    .phone-viewport .recent-grid.list .card-body { display:block; padding:11px 12px; }
-    .phone-viewport .recent-grid.list .card-actions { justify-content:flex-start; margin-top:7px; }
-    @media (max-height:760px) and (min-width:761px) { .showcase { justify-content:flex-start; padding-top:18px; } .phone-shell { height:calc(100vh - 76px); } }
-    @media (max-width:760px) {
-      .phone-viewport .bottom-nav { position:absolute; right:0; bottom:0; left:0; }
-      .phone-viewport .topbar { gap:5px; }
-      .phone-viewport .top-search { min-width:0; max-width:none; min-height:42px; padding:0 10px; }
-      .phone-viewport .top-search input { font-size:12px; }
-      .phone-viewport .top-filter { padding:0 7px; }
-      .phone-viewport .top-filter span { display:none; }
-      .phone-viewport .top-actions { gap:0; }
-      .phone-viewport .top-actions .icon-btn { width:34px; height:38px; font-size:18px; }
+    .showcase { min-height: 100vh; display: grid; place-items: center; padding: 28px 16px; }
+    .phone-shell {
+      position: relative;
+      width: min(390px, calc(100vw - 32px));
+      height: min(844px, calc(100vh - 56px));
+      min-height: 640px;
+      padding: 9px;
+      border: 1px solid #080808;
+      border-radius: 45px;
+      background: #0a0a0a;
+      box-shadow: var(--shadow-phone);
     }
-    @media (max-width:430px) { .showcase { padding:16px 0; } .showcase-label { display:none; } .phone-shell { width:100vw; height:100vh; min-height:0; padding:0; border:0; border-radius:0; box-shadow:none; } .phone-screen { border-radius:0; } .phone-speaker,.phone-camera,.phone-side-button { display:none; } }
-    @media (max-width:1100px) { .continue-grid{grid-template-columns:repeat(2,1fr)} .recent-grid{grid-template-columns:repeat(3,1fr)} }
-    @media (max-width:760px) {
-      .app{display:block}.sidebar{display:none}.topbar{height:64px;padding:0 16px}.crumb{font-size:12px}.content{padding:26px 16px 92px}.continue-grid{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -16px;padding:0 16px 3px}.continue-card{flex:0 0 84%;min-height:198px;scroll-snap-align:start}.recent-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.lower-grid{grid-template-columns:1fr}.section{margin-top:28px}.section-head{margin-bottom:12px}.section-title{font-size:16px}.bottom-nav{position:fixed;right:0;bottom:0;left:0;z-index:12;height:72px;display:grid;grid-template-columns:repeat(4,1fr);padding:7px 8px calc(7px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:color-mix(in srgb,var(--surface) 94%,transparent)}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-radius:7px;background:transparent;color:var(--muted);font-size:10px}.bottom-nav i{font-size:21px}.bottom-nav button[aria-current="page"]{background:var(--primary);color:var(--on-primary);font-weight:600}.recent-grid.list .media-card{grid-template-columns:120px 1fr}.recent-grid.list .thumb{min-height:86px}.recent-grid.list .card-body{display:block;padding:11px 12px}.recent-grid.list .card-actions{justify-content:flex-start;margin-top:7px}.recent-grid.list .card-meta{font-size:10px}.stat{min-height:102px;padding:15px}.stat-value{font-size:22px}
+    .phone-screen { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: 36px; background: var(--page); }
+    .camera-hole {
+      position: absolute;
+      top: 17px;
+      left: 50%;
+      z-index: 50;
+      width: 10px;
+      height: 10px;
+      transform: translateX(-50%);
+      border: 2px solid #1d1d1d;
+      border-radius: 50%;
+      background: #050505;
+      box-shadow: 0 0 0 2px #0b0b0b;
     }
-    @media (max-width:430px) { .recent-grid{grid-template-columns:1fr}.recent-grid.list{grid-template-columns:1fr}.recent-grid.list .media-card{display:grid;grid-template-columns:108px 1fr}.top-actions{gap:0}.icon-btn{width:38px;height:38px} }
+    .side-key { position: absolute; right: -3px; top: 155px; width: 3px; height: 72px; border-radius: 0 3px 3px 0; background: #202020; }
+    .status-bar {
+      position: absolute;
+      inset: 0 0 auto;
+      z-index: 30;
+      height: 31px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      font-size: 10px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+    .status-icons { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+    .app { position: absolute; inset: 31px 0 0; }
+
+    .app-header {
+      position: absolute;
+      inset: 0 0 auto;
+      z-index: 20;
+      height: 68px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 8px 12px 8px 16px;
+      border-bottom: 1px solid var(--border-divider);
+      background: rgb(255 255 255 / .94);
+      backdrop-filter: blur(18px);
+    }
+    .brand-mark { width: 34px; height: 34px; flex: 0 0 auto; }
+    .raster { position: relative; width: 100%; height: 100%; transform: rotate(-45deg); }
+    .raster span { position: absolute; left: 50%; height: 3px; border-radius: 3px; background: var(--text-primary); transform: translateX(-50%); }
+    .raster span:nth-child(1) { top: 5px; width: 13px; opacity: .4; }
+    .raster span:nth-child(2) { top: 11px; width: 22px; opacity: .7; }
+    .raster span:nth-child(3) { top: 17px; width: 29px; }
+    .raster span:nth-child(4) { top: 23px; width: 22px; opacity: .7; }
+    .raster span:nth-child(5) { top: 29px; width: 13px; opacity: .4; }
+    .brand-copy { min-width: 0; flex: 1; }
+    .brand-name { font-size: 17px; font-weight: 700; line-height: 21px; }
+    .sync-state { margin-top: 1px; overflow: hidden; color: var(--text-secondary); font-size: 10px; line-height: 15px; white-space: nowrap; text-overflow: ellipsis; }
+    .sync-state.scanning { color: var(--text-primary); }
+    .header-actions { display: flex; gap: 2px; }
+    .icon-button {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 21px;
+      transition: background .16s ease, color .16s ease;
+    }
+    .icon-button:hover, .icon-button[aria-expanded="true"] { background: var(--surface-component); color: var(--text-primary); }
+    .scan-line { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; overflow: hidden; background: var(--surface-component); opacity: 0; }
+    .scan-line::after { content: ""; display: block; width: 38%; height: 100%; background: var(--text-primary); transform: translateX(-110%); }
+    .app-header.is-scanning .scan-line { opacity: 1; }
+    .app-header.is-scanning .scan-line::after { animation: scan 1.05s ease-in-out infinite; }
+    @keyframes scan { to { transform: translateX(285%); } }
+
+    .search-panel {
+      position: absolute;
+      top: 68px;
+      right: 0;
+      left: 0;
+      z-index: 19;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-divider);
+      background: var(--surface);
+      transform: translateY(-10px);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform .18s ease, opacity .18s ease;
+    }
+    .search-panel.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+    .search-field { height: 44px; display: flex; align-items: center; gap: 9px; padding: 0 11px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-subtle); color: var(--text-secondary); }
+    .search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 13px; }
+    .search-field input::placeholder { color: var(--text-placeholder); }
+    .search-clear { width: 32px; height: 32px; border-radius: 6px; background: transparent; color: var(--text-placeholder); }
+
+    .more-menu {
+      position: absolute;
+      top: 62px;
+      right: 10px;
+      z-index: 25;
+      width: 188px;
+      padding: 6px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: var(--surface-muted);
+      box-shadow: var(--shadow-menu);
+      transform: translateY(-5px) scale(.98);
+      transform-origin: top right;
+      opacity: 0;
+      pointer-events: none;
+      transition: transform .14s ease, opacity .14s ease;
+    }
+    .more-menu.open { transform: translateY(0) scale(1); opacity: 1; pointer-events: auto; }
+    .menu-item { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 11px; padding: 0 10px; border-radius: 6px; background: transparent; color: var(--text-primary); font-size: 13px; text-align: left; }
+    .menu-item:hover { background: var(--surface-hover); }
+    .menu-item i { width: 19px; color: var(--text-secondary); font-size: 19px; }
+    .menu-separator { height: 1px; margin: 5px 4px; background: var(--border-default); }
+
+    .content-scroll { position: absolute; inset: 68px 0 66px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+    .content-scroll::-webkit-scrollbar { display: none; }
+    .content { padding: 18px 16px 28px; }
+    .section { margin-top: 26px; }
+    .section:first-child { margin-top: 0; }
+    .section-header { min-height: 26px; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
+    .section-title { margin: 0; font-size: 15px; font-weight: 680; line-height: 20px; }
+    .section-meta { color: var(--text-placeholder); font-size: 10px; font-weight: 500; }
+    .text-button { min-height: 36px; display: inline-flex; align-items: center; gap: 3px; padding: 0 3px 0 9px; border-radius: 6px; background: transparent; color: var(--text-secondary); font-size: 11px; }
+    .text-button:hover { background: var(--surface-subtle); color: var(--text-primary); }
+    .text-button i { font-size: 17px; }
+
+    .overview { display: grid; grid-template-columns: repeat(2, 1fr); border-top: 1px solid var(--border-divider); border-bottom: 1px solid var(--border-divider); }
+    .overview-item { position: relative; padding: 13px 9px 12px; text-align: center; }
+    .overview-item + .overview-item::before { content: ""; position: absolute; top: 14px; bottom: 14px; left: 0; width: 1px; background: var(--border-divider); }
+    .overview-value { font-size: 20px; font-weight: 720; line-height: 25px; }
+    .overview-label { margin-top: 2px; color: var(--text-placeholder); font-size: 10px; }
+    .stats-card { overflow: hidden; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); }
+    .stats-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px 10px; }
+    .stats-heading h2 { margin: 0; font-size: 14px; font-weight: 680; }
+    .stats-heading span { color: var(--text-placeholder); font-size: 10px; }
+    .stats-link { width: 36px; height: 36px; display: grid; place-items: center; margin: -6px -6px -6px 0; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: 18px; }
+    .stats-link:hover { background: var(--surface-component); color: var(--text-primary); }
+    .stats-divider { height: 1px; margin: 0 14px; background: var(--border-divider); }
+    .stats-storage { padding: 12px 14px 14px; }
+    .action-button { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-subtle); color: var(--text-primary); font-size: 12px; font-weight: 620; }
+    .action-button:hover { background: var(--surface-component); }
+    .action-button.primary { border-color: var(--selection); background: var(--selection); color: var(--on-selection); }
+    .action-button i { font-size: 18px; }
+
+    .continue-list, .recent-list { display: flex; gap: 10px; margin: 0 -16px; padding: 0 16px 4px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+    .continue-list::-webkit-scrollbar, .recent-list::-webkit-scrollbar { display: none; }
+    .continue-card { position: relative; flex: 0 0 78%; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-subtle); color: #ffffff; scroll-snap-align: start; text-align: left; }
+    .continue-card img, .recent-thumb img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .continue-card::after { content: ""; position: absolute; inset: 32% 0 0; background: linear-gradient(transparent, rgb(0 0 0 / .9)); pointer-events: none; }
+    .continue-copy { position: absolute; right: 12px; bottom: 12px; left: 12px; z-index: 2; }
+    .continue-title { display: block; overflow: hidden; font-size: 13px; font-weight: 650; white-space: nowrap; text-overflow: ellipsis; }
+    .continue-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: #dedede; font-size: 9px; }
+    .progress-track { display: block; height: 3px; margin-top: 7px; overflow: hidden; border-radius: 2px; background: rgb(255 255 255 / .28); }
+    .progress-value { display: block; height: 100%; border-radius: inherit; background: #f5f5f5; }
+    .play-indicator { position: absolute; top: 11px; left: 11px; z-index: 2; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: rgb(15 15 15 / .78); color: white; font-size: 17px; backdrop-filter: blur(8px); }
+
+    .recent-card { flex: 0 0 138px; min-width: 0; padding: 0; background: transparent; scroll-snap-align: start; text-align: left; }
+    .recent-thumb { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 7px; background: var(--surface-muted); }
+    .duration { position: absolute; right: 5px; bottom: 5px; padding: 2px 4px; border-radius: 3px; background: rgb(0 0 0 / .76); color: #fff; font-size: 8px; }
+    .recent-title { display: block; margin-top: 7px; overflow: hidden; color: var(--text-primary); font-size: 11px; font-weight: 620; line-height: 15px; white-space: nowrap; text-overflow: ellipsis; }
+    .recent-meta { display: block; margin-top: 2px; color: var(--text-placeholder); font-size: 9px; }
+
+    .home-card { overflow: hidden; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); }
+    .home-card-head { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 12px 5px 14px; }
+    .home-card-head h2 { margin: 0; font-size: 14px; font-weight: 680; }
+    .home-card-head .section-meta { margin-left: 5px; }
+    .collection-list { display: flex; gap: 12px; margin: 0; padding: 0 12px 14px; overflow-x: auto; scrollbar-width: none; }
+    .collection-list::-webkit-scrollbar { display: none; }
+    .collection-item { flex: 0 0 150px; min-width: 0; padding: 0; background: transparent; color: var(--text-primary); text-align: left; }
+    .collection-cover { display: grid; grid-template-columns: repeat(2, 1fr); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 7px; background: var(--surface-muted); }
+    .collection-cover img { width: 100%; height: 100%; min-height: 0; display: block; object-fit: cover; }
+    .collection-name { display: block; margin-top: 7px; overflow: hidden; font-size: 11px; font-weight: 640; line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
+    .collection-meta { display: block; margin-top: 2px; color: var(--text-placeholder); font-size: 9px; }
+
+    .maintenance-list { padding: 0 14px 4px; }
+    .maintenance-row { width: 100%; min-height: 58px; display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border-divider); background: transparent; color: var(--text-primary); text-align: left; }
+    .maintenance-row:hover { background: var(--surface-subtle); }
+    .maintenance-icon { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; background: var(--surface-component); color: var(--text-secondary); font-size: 17px; }
+    .maintenance-copy { min-width: 0; flex: 1; }
+    .maintenance-title { display: block; overflow: hidden; font-size: 11px; font-weight: 640; line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
+    .maintenance-meta { display: block; margin-top: 2px; overflow: hidden; color: var(--text-secondary); font-size: 9px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .maintenance-row > i { color: var(--text-placeholder); font-size: 16px; }
+
+    .folder-list { border-top: 1px solid var(--border-divider); }
+    .folder-row { width: 100%; min-height: 58px; display: flex; align-items: center; gap: 11px; padding: 8px 2px; border-bottom: 1px solid var(--border-divider); background: transparent; text-align: left; }
+    .folder-row:hover { background: var(--surface-subtle); }
+    .folder-icon { width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; background: var(--surface-component); color: var(--text-secondary); font-size: 19px; }
+    .folder-copy { min-width: 0; flex: 1; }
+    .folder-name { display: block; overflow: hidden; font-size: 12px; font-weight: 630; white-space: nowrap; text-overflow: ellipsis; }
+    .folder-meta { display: block; margin-top: 3px; color: var(--text-placeholder); font-size: 9px; }
+    .folder-row > i { color: var(--text-placeholder); font-size: 17px; }
+
+    .storage { padding: 0; }
+    .storage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .storage-label { font-size: 12px; font-weight: 630; }
+    .storage-value { color: var(--text-secondary); font-size: 10px; }
+    .storage-bar { height: 7px; display: flex; gap: 2px; margin-top: 12px; overflow: hidden; border-radius: 4px; background: var(--surface-component); }
+    .storage-video { width: 60%; background: var(--text-primary); }
+    .storage-other { width: 16%; background: var(--border-strong); }
+    .storage-available { flex: 1; background: var(--surface-component); }
+    .storage-legend { display: flex; gap: 14px; margin-top: 10px; color: var(--text-placeholder); font-size: 9px; }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .legend-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-primary); }
+    .legend-dot.other { background: var(--border-strong); }
+    .legend-dot.available { border: 1px solid var(--border-default); background: var(--surface-component); }
+
+    .bottom-nav { position: absolute; right: 0; bottom: 0; left: 0; z-index: 20; height: 66px; display: grid; grid-template-columns: repeat(3, 1fr); padding: 5px 12px 7px; border-top: 1px solid var(--border-divider); background: rgb(255 255 255 / .96); backdrop-filter: blur(18px); }
+    .nav-button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 7px; background: transparent; color: var(--text-placeholder); font-size: 9px; }
+    .nav-button i { font-size: 21px; }
+    .nav-button[aria-current="page"] { color: var(--text-primary); }
+    .nav-button[aria-current="page"]::before { content: ""; position: absolute; top: 0; width: 22px; height: 2px; border-radius: 2px; background: var(--text-primary); }
+    .nav-badge { position: absolute; top: 6px; left: calc(50% + 8px); min-width: 17px; height: 17px; display: grid; place-items: center; padding: 0 4px; border: 2px solid var(--surface); border-radius: 9px; background: var(--text-primary); color: var(--page); font-size: 8px; font-weight: 750; }
+
+    .scrim { position: absolute; inset: 0; z-index: 34; background: rgb(0 0 0 / .58); opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+    .scrim.open { opacity: 1; pointer-events: auto; }
+    .sheet { position: absolute; right: 0; bottom: 0; left: 0; z-index: 35; padding: 9px 16px 22px; border-top: 1px solid var(--border-default); border-radius: 14px 14px 0 0; background: var(--surface); transform: translateY(102%); transition: transform .24s cubic-bezier(.2,.8,.2,1); }
+    .sheet.open { transform: translateY(0); }
+    .sheet-handle { width: 34px; height: 4px; margin: 0 auto 14px; border-radius: 2px; background: var(--border-strong); }
+    .sheet-header { display: flex; align-items: center; justify-content: space-between; min-height: 42px; }
+    .sheet-title { margin: 0; font-size: 16px; }
+    .sheet p { margin: 7px 0 17px; color: var(--text-secondary); font-size: 11px; line-height: 17px; }
+    .sheet-actions { display: grid; gap: 8px; }
+    .sheet-actions .action-button { width: 100%; }
+    .editor-sheet { max-height: 88%; display: flex; flex-direction: column; }
+    .editor-sheet .sheet-header { flex: 0 0 auto; }
+    .card-order-list { min-height: 0; display: grid; gap: 6px; overflow-y: auto; padding: 5px 0 12px; scrollbar-width: thin; }
+    .card-order-row { min-height: 56px; display: grid; grid-template-columns: 32px minmax(0, 1fr) 38px 36px; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-subtle); transition: opacity .16s ease, transform .16s ease, box-shadow .16s ease; }
+    .card-order-row.is-hidden { opacity: .52; }
+    .card-order-row.is-dragging { position: relative; z-index: 2; opacity: .9; box-shadow: 0 8px 18px rgb(0 0 0 / .16); transform: scale(1.015); }
+    .order-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; background: var(--surface-component); color: var(--text-secondary); font-size: 17px; }
+    .order-label { min-width: 0; overflow: hidden; font-size: 12px; font-weight: 630; text-overflow: ellipsis; white-space: nowrap; }
+    .visibility-toggle, .drag-handle { width: 36px; height: 42px; display: grid; place-items: center; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: 18px; }
+    .visibility-toggle:hover, .drag-handle:hover { background: var(--surface-component); color: var(--text-primary); }
+    .visibility-toggle[aria-pressed="false"] { color: var(--text-placeholder); }
+    .drag-handle { touch-action: none; cursor: grab; }
+    .drag-handle:active { cursor: grabbing; }
+    .editor-actions { grid-template-columns: 1fr 1fr; flex: 0 0 auto; padding-top: 4px; }
+    .toast { position: absolute; right: 16px; bottom: 78px; left: 16px; z-index: 45; min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 0 13px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--text-primary); color: var(--on-selection); box-shadow: var(--shadow-menu); font-size: 11px; transform: translateY(12px); opacity: 0; pointer-events: none; transition: transform .18s ease, opacity .18s ease; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .empty-search { padding: 30px 10px; color: var(--text-secondary); font-size: 12px; text-align: center; }
+
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+    @media (max-width: 430px) {
+      .showcase { padding: 0; }
+      .phone-shell { width: 100vw; height: 100vh; min-height: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+      .phone-screen { border-radius: 0; }
+      .camera-hole, .side-key { display: none; }
+    }
   </style>
 </head>
 <body>
-  <div class="showcase">
-    <div class="showcase-label">影里 · 首页手机预览</div>
-    <div class="phone-shell" aria-label="影里首页手机外壳">
-      <div class="phone-speaker" aria-hidden="true"></div><div class="phone-camera" aria-hidden="true"></div><div class="phone-side-button top" aria-hidden="true"></div><div class="phone-side-button bottom" aria-hidden="true"></div>
+  <main class="showcase">
+    <div class="phone-shell" aria-label="影里首页手机预览">
+      <span class="camera-hole" aria-hidden="true"></span>
+      <span class="side-key" aria-hidden="true"></span>
       <div class="phone-screen">
-        <div class="status-bar"><span>09:41</span><span class="status-icons"><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
-        <div class="phone-viewport">
-  <div class="app">
-    <aside class="sidebar" aria-label="主导航">
-      <div class="brand"><div class="brand-mark">影</div><div><div class="brand-name">影里</div><div class="brand-sub">本地媒体中心</div></div></div>
-      <nav class="nav">
-        <button class="nav-item" aria-current="page" data-nav="home"><i class="ti ti-home-2"></i><span>首页</span></button>
-        <button class="nav-item" data-nav="video"><i class="ti ti-video"></i><span>视频</span></button>
-        <button class="nav-item" data-nav="organize"><i class="ti ti-folders"></i><span>整理</span></button>
-      </nav>
-      <div class="sidebar-spacer"></div>
-      <div class="source-status"><div class="status-head"><span>媒体源</span><span class="status-dot" title="已同步"></span></div><p>3 个文件夹 · 上次扫描 12 分钟前</p></div>
-      <div class="sidebar-footer"><span>离线优先 · 无广告</span><button title="设置" aria-label="设置"><i class="ti ti-settings"></i></button></div>
-    </aside>
-    <main>
-      <header class="topbar"><label class="top-search"><i class="ti ti-search"></i><input id="searchInput" type="search" placeholder="搜索本地视频、文件夹或标签" autocomplete="off"></label><button class="top-filter" id="filterOpen" title="筛选" aria-label="筛选"><i class="ti ti-adjustments-horizontal"></i><span>筛选</span><span id="filterCount" class="section-count">0</span></button><div class="top-actions"><button class="icon-btn task-btn" title="处理任务" aria-label="处理任务"><i class="ti ti-stack-2"></i><span class="badge">2</span></button><button class="icon-btn" id="searchToggle" title="搜索" aria-label="打开搜索" aria-expanded="false"><i class="ti ti-search"></i></button><button class="icon-btn" id="moreToggle" title="更多" aria-label="更多"><i class="ti ti-dots"></i></button></div></header>
-      <div class="content">
-        <section class="section" aria-labelledby="continueHeading"><div class="section-head"><h2 class="section-title" id="continueHeading">继续观看 <span class="section-count">3</span></h2><button class="text-btn" data-action="all">查看全部 <i class="ti ti-arrow-up-right"></i></button></div><div class="continue-grid">
-          <article class="continue-card" style="--image:url('https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=900&q=80')"><div class="continue-body"><div class="continue-kicker"><span class="play-dot"><i class="ti ti-player-play-filled"></i></span>继续播放 · 还剩 24 分钟</div><h3 class="continue-title">夜航西飞 · 第 04 集</h3><p class="continue-meta">昨天播放 · 1080p · 01:12:40</p><div class="progress"><span style="width:66%"></span></div><div class="progress-label"><span>47:38</span><span>66%</span></div></div></article>
-          <article class="continue-card" style="--image:url('https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=900&q=80')"><div class="continue-body"><div class="continue-kicker"><span class="play-dot"><i class="ti ti-player-play-filled"></i></span>继续播放 · 还剩 8 分钟</div><h3 class="continue-title">城市切片：凌晨四点</h3><p class="continue-meta">周一播放 · 4K · 00:32:18</p><div class="progress"><span style="width:74%"></span></div><div class="progress-label"><span>23:54</span><span>74%</span></div></div></article>
-          <article class="continue-card" style="--image:url('https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80')"><div class="continue-body"><div class="continue-kicker"><span class="play-dot"><i class="ti ti-player-play-filled"></i></span>继续播放 · 还剩 51 分钟</div><h3 class="continue-title">山与海之间 · 纪录片</h3><p class="continue-meta">上周播放 · 1080p · 01:48:05</p><div class="progress"><span style="width:38%"></span></div><div class="progress-label"><span>41:06</span><span>38%</span></div></div></article>
-        </div></section>
+        <div class="status-bar" aria-hidden="true"><span>09:41</span><span class="status-icons"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+        <div class="app">
+          <header class="app-header" id="appHeader">
+            <div class="brand-mark" aria-hidden="true"><div class="raster"><span></span><span></span><span></span><span></span><span></span></div></div>
+            <div class="brand-copy"><div class="brand-name">影里</div><div class="sync-state" id="syncState">3 个目录 · 12 分钟前扫描</div></div>
+            <div class="header-actions">
+              <button class="icon-button" id="searchToggle" aria-label="搜索" aria-expanded="false" title="搜索"><i class="ti ti-search"></i></button>
+              <button class="icon-button" id="moreToggle" aria-label="更多" aria-expanded="false" title="更多"><i class="ti ti-dots-vertical"></i></button>
+            </div>
+            <div class="scan-line" aria-hidden="true"></div>
+          </header>
 
-        <section class="section" aria-labelledby="recentHeading"><div class="section-head"><h2 class="section-title" id="recentHeading">最近添加 <span class="section-count" id="resultCount">12</span></h2><div class="media-toolbar"><button class="text-btn" data-action="all">视频库 <i class="ti ti-arrow-up-right"></i></button><div class="view-toggle" role="group" aria-label="视图模式"><button id="gridView" aria-label="网格视图" aria-pressed="true"><i class="ti ti-layout-grid"></i></button><button id="listView" aria-label="列表视图" aria-pressed="false"><i class="ti ti-list"></i></button></div></div></div><div class="recent-grid" id="recentGrid">
-          <article class="media-card" data-title="雾中车站·短片"><div class="thumb"><img src="https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=600&q=80" alt="雾中车站画面"><span class="duration">18:42</span></div><div class="card-body"><h3 class="card-title">雾中车站 · 短片</h3><div class="card-meta"><span>今天 · 2.1 GB</span><span>1080p</span></div><div class="card-actions"><button class="mini-btn favorite" aria-label="收藏"><i class="ti ti-heart-filled"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
-          <article class="media-card" data-title="厨房实验室·第12集"><div class="thumb"><img src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=600&q=80" alt="厨房实验室画面"><span class="duration">42:08</span></div><div class="card-body"><h3 class="card-title">厨房实验室 · 第 12 集</h3><div class="card-meta"><span>昨天 · 1.4 GB</span><span>1080p</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
-          <article class="media-card" data-title="纸上建筑·东京篇"><div class="thumb"><img src="https://images.unsplash.com/photo-1493780474015-ba834fd0ce2f?auto=format&fit=crop&w=600&q=80" alt="纸上建筑画面"><span class="duration">26:17</span></div><div class="card-body"><h3 class="card-title">纸上建筑 · 东京篇</h3><div class="card-meta"><span>昨天 · 986 MB</span><span>4K</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
-          <article class="media-card" data-title="一条河的来信"><div class="thumb"><img src="https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=600&q=80" alt="河流风景画面"><span class="duration">12:33</span></div><div class="card-body"><h3 class="card-title">一条河的来信</h3><div class="card-meta"><span>8 月 31 日 · 742 MB</span><span>1080p</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
-          <article class="media-card" data-title="声音地图·南方"><div class="thumb"><img src="https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80" alt="声音地图画面"><span class="duration">33:09</span></div><div class="card-body"><h3 class="card-title">声音地图 · 南方</h3><div class="card-meta"><span>8 月 30 日 · 1.2 GB</span><span>1080p</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
-          <article class="media-card" data-title="蓝色时刻·海边"><div class="thumb"><img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80" alt="海边蓝色时刻画面"><span class="duration">08:56</span></div><div class="card-body"><h3 class="card-title">蓝色时刻 · 海边</h3><div class="card-meta"><span>8 月 29 日 · 412 MB</span><span>720p</span></div><div class="card-actions"><button class="mini-btn" aria-label="收藏"><i class="ti ti-heart"></i></button><button class="mini-btn play" aria-label="播放"><i class="ti ti-player-play"></i></button></div></div></article>
-        </div></section>
+          <div class="search-panel" id="searchPanel">
+            <div class="search-field"><i class="ti ti-search"></i><input id="searchInput" type="search" aria-label="搜索视频或文件夹" placeholder="搜索视频或文件夹" autocomplete="off"><button class="search-clear" id="searchClear" type="button" aria-label="清空搜索"><i class="ti ti-x"></i></button></div>
+          </div>
+          <div class="more-menu" id="moreMenu" role="menu">
+            <button class="menu-item" data-open-sheet="directory" role="menuitem"><i class="ti ti-folder-plus"></i>添加媒体目录</button>
+            <button class="menu-item" id="scanMenu" role="menuitem"><i class="ti ti-refresh"></i>重新扫描</button>
+            <button class="menu-item" data-open-sheet="home-editor" role="menuitem"><i class="ti ti-layout-list"></i>自定义首页</button>
+            <div class="menu-separator"></div>
+            <button class="menu-item" data-message="设置页面即将打开" role="menuitem"><i class="ti ti-settings"></i>设置</button>
+          </div>
 
-        <section class="section lower-grid"><div class="panel"><div class="panel-head"><h3>常用文件夹</h3><button class="text-btn" data-action="all">管理 <i class="ti ti-arrow-up-right"></i></button></div><div class="folder-list"><button class="folder"><span class="folder-icon"><i class="ti ti-folder"></i></span><span class="folder-main"><span class="folder-name">Movies / 2026</span><span class="folder-meta">128 个视频 · 最近添加 12 分钟前</span></span><i class="folder-arrow ti ti-chevron-right"></i></button><button class="folder"><span class="folder-icon"><i class="ti ti-folder"></i></span><span class="folder-main"><span class="folder-name">纪录片收藏</span><span class="folder-meta">64 个视频 · 总时长 38 小时</span></span><i class="folder-arrow ti ti-chevron-right"></i></button><button class="folder"><span class="folder-icon"><i class="ti ti-folder"></i></span><span class="folder-main"><span class="folder-name">Downloads</span><span class="folder-meta">42 个视频 · 最近添加昨天</span></span><i class="folder-arrow ti ti-chevron-right"></i></button></div></div><div class="panel"><div class="panel-head"><h3>媒体概览</h3><button class="text-btn" data-action="all">详情 <i class="ti ti-arrow-up-right"></i></button></div><div class="stats"><div class="stat"><div class="stat-label">视频数量</div><div class="stat-value">248</div><div class="stat-note">+12 本周</div></div><div class="stat"><div class="stat-label">总时长</div><div class="stat-value">86h</div><div class="stat-note">平均 21 分钟 / 部</div></div><div class="stat"><div class="stat-label">占用空间</div><div class="stat-value">1.4 TB</div><div class="stat-note">可用 620 GB</div></div><div class="stat"><div class="stat-label">已看比例</div><div class="stat-value">62%</div><div class="stat-note">较上周 +4%</div></div></div></div></section>
-      </div>
-    </main>
-  </div>
-  <nav class="bottom-nav" aria-label="底部导航"><button aria-current="page" data-nav="home"><i class="ti ti-home-2"></i><span>首页</span></button><button data-nav="video"><i class="ti ti-video"></i><span>视频</span></button><button data-nav="organize"><i class="ti ti-folders"></i><span>整理</span></button><button data-nav="settings"><i class="ti ti-settings"></i><span>设置</span></button></nav>
+          <div class="content-scroll">
+            <div class="content" id="homeContent">
+              <section class="section searchable-section" data-card-id="stats" data-search="媒体概览 媒体存储 视频 占用空间 总时长 存储" aria-label="媒体概览和媒体存储">
+                <div class="stats-card">
+                  <div class="stats-heading"><h2>媒体概览</h2><button class="stats-link" type="button" data-message="统计页面即将打开" aria-label="打开统计" title="打开统计"><i class="ti ti-chevron-right"></i></button></div>
+                  <div class="overview">
+                    <div class="overview-item"><div class="overview-value">8,247</div><div class="overview-label">视频</div></div>
+                    <div class="overview-item"><div class="overview-value">1.8TB</div><div class="overview-label">占用空间</div></div>
+                  </div>
+                  <div class="stats-divider"></div>
+                  <div class="stats-storage">
+                    <div class="storage">
+                      <div class="storage-head"><span class="storage-label">设备存储</span><span class="storage-value">2.3/3.0TB</span></div>
+                      <div class="storage-bar" aria-label="视频占用 60%，其他文件占用 16%，可用空间 24%"><span class="storage-video"></span><span class="storage-other"></span><span class="storage-available"></span></div>
+                      <div class="storage-legend"><span class="legend-item"><span class="legend-dot"></span>视频 60%</span><span class="legend-item"><span class="legend-dot other"></span>其他 16%</span><span class="legend-item"><span class="legend-dot available"></span>可用 24%</span></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="section searchable-section" data-card-id="continue" data-search="继续观看 夜航西飞 城市切片 山与海">
+                <div class="section-header"><h2 class="section-title">继续观看 <span class="section-meta">3</span></h2><button class="text-button" data-message="已打开观看记录">全部<i class="ti ti-chevron-right"></i></button></div>
+                <div class="continue-list">
+                  <button class="continue-card" data-message="继续播放：夜航西飞">
+                    <img src="https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=700&q=82" alt="雪山与星空视频缩略图">
+                    <span class="play-indicator"><i class="ti ti-player-play-filled"></i></span>
+                    <span class="continue-copy"><span class="continue-title">夜航西飞 · 第 04 集</span><span class="continue-meta"><span>47:38 / 1:12:40</span><span>66%</span></span><span class="progress-track"><span class="progress-value" style="width:66%"></span></span></span>
+                  </button>
+                  <button class="continue-card" data-message="继续播放：城市切片">
+                    <img src="https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=700&q=82" alt="城市夜景视频缩略图">
+                    <span class="play-indicator"><i class="ti ti-player-play-filled"></i></span>
+                    <span class="continue-copy"><span class="continue-title">城市切片：凌晨四点</span><span class="continue-meta"><span>23:54 / 32:18</span><span>74%</span></span><span class="progress-track"><span class="progress-value" style="width:74%"></span></span></span>
+                  </button>
+                </div>
+              </section>
+
+              <section class="section searchable-section" data-card-id="recent" data-search="最近添加 雾中车站 厨房实验室 纸上建筑">
+                <div class="section-header"><h2 class="section-title">最近添加 <span class="section-meta">24 小时内</span></h2><button class="text-button" data-message="视频库即将打开">视频库<i class="ti ti-chevron-right"></i></button></div>
+                <div class="recent-list">
+                  <button class="recent-card" data-message="播放：雾中车站"><span class="recent-thumb"><img src="https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=420&q=80" alt="雾中车站缩略图"><span class="duration">18:42</span></span><span class="recent-title">雾中车站 · 短片</span><span class="recent-meta">2.1 GB · 1080P</span></button>
+                  <button class="recent-card" data-message="播放：厨房实验室"><span class="recent-thumb"><img src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=420&q=80" alt="厨房实验室缩略图"><span class="duration">42:08</span></span><span class="recent-title">厨房实验室 · 12</span><span class="recent-meta">1.4 GB · 1080P</span></button>
+                  <button class="recent-card" data-message="播放：纸上建筑"><span class="recent-thumb"><img src="https://images.unsplash.com/photo-1493780474015-ba834fd0ce2f?auto=format&fit=crop&w=420&q=80" alt="东京街道缩略图"><span class="duration">26:17</span></span><span class="recent-title">纸上建筑 · 东京篇</span><span class="recent-meta">986 MB · 2160P</span></button>
+                </div>
+              </section>
+
+              <section class="section searchable-section home-card" data-card-id="collections" data-search="我的合集 周末电影 旅行记录 夜间观看">
+                <div class="home-card-head"><h2>我的合集 <span class="section-meta">3 个</span></h2><button class="text-button" data-message="合集页面即将打开">全部<i class="ti ti-chevron-right"></i></button></div>
+                <div class="collection-list">
+                  <button class="collection-item" data-message="已打开合集：周末电影"><span class="collection-cover"><img src="https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=360&q=80" alt="周末电影合集封面"><img src="https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=360&q=80" alt="周末电影合集封面"></span><span class="collection-name">周末电影</span><span class="collection-meta">24 个视频</span></button>
+                  <button class="collection-item" data-message="已打开合集：旅行记录"><span class="collection-cover"><img src="https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=360&q=80" alt="旅行记录合集封面"><img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=360&q=80" alt="旅行记录合集封面"></span><span class="collection-name">旅行记录</span><span class="collection-meta">18 个视频</span></button>
+                  <button class="collection-item" data-message="已打开合集：夜间观看"><span class="collection-cover"><img src="https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=360&q=80" alt="夜间观看合集封面"><img src="https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=360&q=80" alt="夜间观看合集封面"></span><span class="collection-name">夜间观看</span><span class="collection-meta">12 个视频</span></button>
+                </div>
+              </section>
+
+              <section class="section searchable-section" data-card-id="folders" data-search="常用文件夹 Movies 2026 纪录片收藏 Downloads">
+                <div class="section-header"><h2 class="section-title">常用文件夹</h2><button class="text-button" data-message="目录管理即将打开">管理<i class="ti ti-chevron-right"></i></button></div>
+                <div class="folder-list">
+                  <button class="folder-row" data-message="已打开 Movies / 2026"><span class="folder-icon"><i class="ti ti-folder"></i></span><span class="folder-copy"><span class="folder-name">Movies / 2026</span><span class="folder-meta">3,862 个视频 · 820 GB</span></span><i class="ti ti-chevron-right"></i></button>
+                  <button class="folder-row" data-message="已打开纪录片收藏"><span class="folder-icon"><i class="ti ti-folder"></i></span><span class="folder-copy"><span class="folder-name">纪录片收藏</span><span class="folder-meta">2,148 个视频 · 612 GB</span></span><i class="ti ti-chevron-right"></i></button>
+                  <button class="folder-row" data-message="已打开 Downloads"><span class="folder-icon"><i class="ti ti-folder"></i></span><span class="folder-copy"><span class="folder-name">Downloads</span><span class="folder-meta">2,237 个视频 · 390 GB</span></span><i class="ti ti-chevron-right"></i></button>
+                </div>
+              </section>
+
+              <section class="section searchable-section home-card" data-card-id="maintenance" data-search="需要处理 重复视频 回收站 旧编码 转码 压缩">
+                <div class="home-card-head"><h2>需要处理 <span class="section-meta">3 项</span></h2><button class="text-button" data-message="整理页面即将打开">去整理<i class="ti ti-chevron-right"></i></button></div>
+                <div class="maintenance-list">
+                  <button class="maintenance-row" data-message="重复视频页面即将打开"><span class="maintenance-icon"><i class="ti ti-copy"></i></span><span class="maintenance-copy"><span class="maintenance-title">发现重复视频</span><span class="maintenance-meta">12 组 · 可释放约 2.1GB</span></span><i class="ti ti-chevron-right"></i></button>
+                  <button class="maintenance-row" data-message="回收站页面即将打开"><span class="maintenance-icon"><i class="ti ti-trash"></i></span><span class="maintenance-copy"><span class="maintenance-title">回收站即将清空</span><span class="maintenance-meta">6 个视频 · 3 天后自动清空</span></span><i class="ti ti-chevron-right"></i></button>
+                  <button class="maintenance-row" data-message="转码页面即将打开"><span class="maintenance-icon"><i class="ti ti-video-plus"></i></span><span class="maintenance-copy"><span class="maintenance-title">旧编码视频</span><span class="maintenance-meta">23 个 · 转码可能节省空间</span></span><i class="ti ti-chevron-right"></i></button>
+                </div>
+              </section>
+
+              <div class="empty-search" id="emptySearch" hidden>没有匹配的视频或文件夹</div>
+            </div>
+          </div>
+
+          <nav class="bottom-nav" aria-label="底部导航">
+            <button class="nav-button" aria-current="page" data-nav="首页"><i class="ti ti-home-filled"></i><span>首页</span></button>
+            <button class="nav-button" data-nav="视频"><i class="ti ti-video"></i><span>视频</span><span class="nav-badge">8K</span></button>
+            <button class="nav-button" data-nav="整理"><i class="ti ti-folders"></i><span>整理</span></button>
+          </nav>
+
+          <div class="scrim" id="scrim"></div>
+          <section class="sheet" id="directorySheet" aria-label="添加媒体目录">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header"><h2 class="sheet-title">添加媒体目录</h2><button class="icon-button" id="sheetClose" aria-label="关闭"><i class="ti ti-x"></i></button></div>
+            <p>系统目录选择器每次选择一个目录。添加后可以继续选择，影里会合并管理所有已授权目录。</p>
+            <div class="sheet-actions"><button class="action-button primary" id="chooseDirectory"><i class="ti ti-folder-plus"></i>选择一个目录</button><button class="action-button" id="finishDirectory">完成</button></div>
+          </section>
+          <section class="sheet editor-sheet" id="homeEditorSheet" aria-label="自定义首页">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header"><h2 class="sheet-title">自定义首页</h2><button class="icon-button" id="editorClose" aria-label="关闭"><i class="ti ti-x"></i></button></div>
+            <div class="card-order-list" id="cardOrderList" aria-label="首页卡片排序"></div>
+            <div class="sheet-actions editor-actions"><button class="action-button" id="editorReset">恢复默认</button><button class="action-button primary" id="editorDone">完成</button></div>
+          </section>
+          <div class="toast" id="toast"><i class="ti ti-check"></i><span></span></div>
         </div>
       </div>
     </div>
-  </div>
-  <div class="scrim" id="scrim"></div><aside class="filter-sheet" id="filterSheet" aria-label="筛选面板"><div class="sheet-head"><h2>筛选视频</h2><button class="icon-btn" id="filterClose" aria-label="关闭"><i class="ti ti-x"></i></button></div><div class="filter-group"><h3>快速条件</h3><div class="chips"><button class="chip active">最近添加</button><button class="chip">未看</button><button class="chip">收藏</button></div></div><div class="filter-group"><h3>画质</h3><div class="chips"><button class="chip">4K</button><button class="chip">1080p</button><button class="chip">720p</button></div></div><div class="filter-group"><h3>排序</h3><div class="chips"><button class="chip active">添加时间 ↓</button><button class="chip">名称 A-Z</button><button class="chip">播放次数</button></div></div><div class="sheet-actions"><button class="secondary" id="filterReset">重置</button><button class="primary" id="filterApply">应用筛选</button></div></aside>
-  <div class="toast" id="toast"><i class="ti ti-check"></i><span>已开始播放</span></div>
+  </main>
+
   <script>
-    const toast=document.getElementById('toast');
-    function notify(message){toast.querySelector('span').textContent=message;toast.classList.add('show');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>toast.classList.remove('show'),2200)}
-    document.querySelectorAll('[data-nav]').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('[data-nav]').forEach(item=>item.setAttribute('aria-current',item===btn?'page':'false'));notify(btn.dataset.nav==='home'?'已回到首页':btn.dataset.nav==='video'?'视频库即将打开':btn.dataset.nav==='organize'?'整理空间即将打开':'设置页面即将打开')}));
-    const search=document.getElementById('searchInput'), cards=[...document.querySelectorAll('.media-card')], count=document.getElementById('resultCount');
-    search.addEventListener('input',()=>{const q=search.value.trim().toLowerCase();let visible=0;cards.forEach(card=>{const show=!q||card.dataset.title.toLowerCase().includes(q);card.hidden=!show;if(show)visible++});count.textContent=visible});
-    const grid=document.getElementById('recentGrid'); document.getElementById('gridView').addEventListener('click',()=>{grid.classList.remove('list');document.getElementById('gridView').setAttribute('aria-pressed','true');document.getElementById('listView').setAttribute('aria-pressed','false')}); document.getElementById('listView').addEventListener('click',()=>{grid.classList.add('list');document.getElementById('gridView').setAttribute('aria-pressed','false');document.getElementById('listView').setAttribute('aria-pressed','true')});
-    document.querySelectorAll('.play,.continue-card').forEach(el=>el.addEventListener('click',()=>notify('已开始播放')));
-    document.querySelectorAll('.mini-btn.favorite').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();btn.classList.toggle('favorite');btn.querySelector('i').classList.toggle('ti-heart-filled');btn.querySelector('i').classList.toggle('ti-heart');notify(btn.classList.contains('favorite')?'已加入收藏':'已取消收藏')}));
-    const sheet=document.getElementById('filterSheet'),scrim=document.getElementById('scrim');function closeSheet(){sheet.classList.remove('open');scrim.classList.remove('open')}document.getElementById('filterOpen').addEventListener('click',()=>{sheet.classList.add('open');scrim.classList.add('open')});document.getElementById('filterClose').addEventListener('click',closeSheet);scrim.addEventListener('click',closeSheet);document.getElementById('filterApply').addEventListener('click',()=>{document.getElementById('filterCount').textContent='1';closeSheet();notify('筛选条件已应用')});document.getElementById('filterReset').addEventListener('click',()=>{document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));document.getElementById('filterCount').textContent='0'});document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('active')));
-    const topbar=document.querySelector('.phone-viewport .topbar'), searchToggle=document.getElementById('searchToggle');searchToggle.addEventListener('click',()=>{const open=topbar.classList.toggle('search-open');searchToggle.setAttribute('aria-expanded',String(open));searchToggle.setAttribute('aria-label',open?'关闭搜索':'打开搜索');if(open)document.getElementById('searchInput').focus();});
-    document.querySelectorAll('[data-action="all"]').forEach(btn=>btn.addEventListener('click',()=>notify('视频库页面即将打开')));
-    document.getElementById('moreToggle').addEventListener('click',()=>notify('更多操作已打开'));
+    const $ = selector => document.querySelector(selector);
+    const $$ = selector => [...document.querySelectorAll(selector)];
+    const toast = $('#toast');
+    let toastTimer;
+    function notify(message) {
+      toast.querySelector('span').textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 1900);
+    }
+
+    const homeContent = $('#homeContent');
+    const emptySearch = $('#emptySearch');
+    const defaultCardOrder = ['stats', 'continue', 'recent', 'collections', 'folders', 'maintenance'];
+    const cardMeta = {
+      stats: { label: '统计卡片', icon: 'ti-chart-dots' },
+      continue: { label: '继续观看', icon: 'ti-player-play' },
+      recent: { label: '最近添加', icon: 'ti-clock' },
+      collections: { label: '我的合集', icon: 'ti-album' },
+      folders: { label: '常用文件夹', icon: 'ti-folder' },
+      maintenance: { label: '需要处理', icon: 'ti-tool' }
+    };
+    const cardSections = new Map($$('#homeContent > [data-card-id]').map(section => [section.dataset.cardId, section]));
+    function readStoredArray(key) {
+      try { const value = JSON.parse(localStorage.getItem(key) || 'null'); return Array.isArray(value) ? value : null; } catch { return null; }
+    }
+    function normalizeOrder(value) {
+      const known = new Set(defaultCardOrder);
+      return [...new Set([...(value || []), ...defaultCardOrder])].filter(id => known.has(id));
+    }
+    let cardOrder = normalizeOrder(readStoredArray('yingli-home-card-order'));
+    let hiddenCardIds = new Set((readStoredArray('yingli-home-card-hidden') || []).filter(id => defaultCardOrder.includes(id)));
+    function persistCardConfig() {
+      try {
+        localStorage.setItem('yingli-home-card-order', JSON.stringify(cardOrder));
+        localStorage.setItem('yingli-home-card-hidden', JSON.stringify([...hiddenCardIds]));
+      } catch { /* file:// 环境可能禁用本地存储，Demo 仍可在当前会话工作。 */ }
+    }
+    function applyHomeCardState() {
+      cardOrder.forEach(id => { const section = cardSections.get(id); if (section) homeContent.insertBefore(section, emptySearch); });
+      const query = searchInput.value.trim().toLowerCase();
+      let visible = 0;
+      cardSections.forEach(section => {
+        const matches = !query || section.dataset.search.toLowerCase().includes(query);
+        const show = !hiddenCardIds.has(section.dataset.cardId) && matches;
+        section.hidden = !show;
+        if (show) visible += 1;
+      });
+      emptySearch.hidden = !query || visible > 0;
+    }
+
+    const searchPanel = $('#searchPanel');
+    const searchToggle = $('#searchToggle');
+    const searchInput = $('#searchInput');
+    function setSearch(open) {
+      searchPanel.classList.toggle('open', open);
+      searchToggle.setAttribute('aria-expanded', String(open));
+      searchToggle.setAttribute('aria-label', open ? '关闭搜索' : '搜索');
+      if (open) setTimeout(() => searchInput.focus(), 80);
+    }
+    searchToggle.addEventListener('click', () => { closeMenu(); setSearch(!searchPanel.classList.contains('open')); });
+    $('#searchClear').addEventListener('click', () => { searchInput.value = ''; searchInput.dispatchEvent(new Event('input')); searchInput.focus(); });
+    searchInput.addEventListener('input', () => {
+      applyHomeCardState();
+    });
+
+    const moreMenu = $('#moreMenu');
+    const moreToggle = $('#moreToggle');
+    function closeMenu() { moreMenu.classList.remove('open'); moreToggle.setAttribute('aria-expanded', 'false'); }
+    moreToggle.addEventListener('click', event => {
+      event.stopPropagation();
+      setSearch(false);
+      const open = moreMenu.classList.toggle('open');
+      moreToggle.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', event => { if (!moreMenu.contains(event.target) && !moreToggle.contains(event.target)) closeMenu(); });
+
+    let scanTimer;
+    function startScan() {
+      closeMenu();
+      const header = $('#appHeader');
+      const state = $('#syncState');
+      clearTimeout(scanTimer);
+      header.classList.add('is-scanning');
+      state.classList.add('scanning');
+      state.textContent = '正在扫描新增视频…';
+      scanTimer = setTimeout(() => {
+        header.classList.remove('is-scanning');
+        state.classList.remove('scanning');
+        state.textContent = '3 个目录 · 刚刚扫描';
+        notify('扫描完成，新增 12 个视频');
+      }, 2600);
+    }
+    $('#scanMenu').addEventListener('click', startScan);
+
+    const sheet = $('#directorySheet');
+    const editorSheet = $('#homeEditorSheet');
+    const scrim = $('#scrim');
+    function closeSheets() {
+      sheet.classList.remove('open');
+      editorSheet.classList.remove('open');
+      scrim.classList.remove('open');
+    }
+    function openSheet(target) {
+      closeSheets();
+      $(target).classList.add('open');
+      scrim.classList.add('open');
+    }
+    $$('[data-open-sheet="directory"]').forEach(button => button.addEventListener('click', () => { closeMenu(); openSheet('#directorySheet'); }));
+    $('#sheetClose').addEventListener('click', closeSheets);
+    $('#finishDirectory').addEventListener('click', closeSheets);
+    scrim.addEventListener('click', closeSheets);
+    $('#chooseDirectory').addEventListener('click', () => notify('已添加目录，可继续选择'));
+
+    const cardOrderList = $('#cardOrderList');
+    function renderEditorRows() {
+      cardOrderList.replaceChildren();
+      cardOrder.forEach(id => {
+        const meta = cardMeta[id];
+        const hidden = hiddenCardIds.has(id);
+        const row = document.createElement('div');
+        row.className = `card-order-row${hidden ? ' is-hidden' : ''}`;
+        row.dataset.cardId = id;
+        row.innerHTML = `<span class="order-icon"><i class="ti ${meta.icon}"></i></span><span class="order-label">${meta.label}</span><button class="visibility-toggle" type="button" aria-label="${hidden ? '显示' : '隐藏'}${meta.label}" aria-pressed="${!hidden}"><i class="ti ${hidden ? 'ti-eye-off' : 'ti-eye'}"></i></button><button class="drag-handle" type="button" aria-label="拖动${meta.label}" title="拖动排序"><i class="ti ti-grip-vertical"></i></button>`;
+        cardOrderList.append(row);
+      });
+    }
+    function syncEditorOrder() {
+      cardOrder = $$('#cardOrderList .card-order-row').map(row => row.dataset.cardId);
+      persistCardConfig();
+      applyHomeCardState();
+    }
+    function finishDrag() {
+      if (!draggedRow) return;
+      draggedRow.classList.remove('is-dragging');
+      draggedRow = null;
+      syncEditorOrder();
+      renderEditorRows();
+    }
+    let draggedRow = null;
+    cardOrderList.addEventListener('pointerdown', event => {
+      const handle = event.target.closest('.drag-handle');
+      if (!handle) return;
+      draggedRow = handle.closest('.card-order-row');
+      draggedRow.classList.add('is-dragging');
+      handle.setPointerCapture(event.pointerId);
+    });
+    cardOrderList.addEventListener('pointermove', event => {
+      if (!draggedRow) return;
+      const rows = $$('#cardOrderList .card-order-row').filter(row => row !== draggedRow);
+      const target = rows.find(row => event.clientY < row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2);
+      if (target) cardOrderList.insertBefore(draggedRow, target); else cardOrderList.append(draggedRow);
+    });
+    cardOrderList.addEventListener('pointerup', finishDrag);
+    cardOrderList.addEventListener('pointercancel', finishDrag);
+    cardOrderList.addEventListener('click', event => {
+      const toggle = event.target.closest('.visibility-toggle');
+      if (!toggle) return;
+      const row = toggle.closest('.card-order-row');
+      const id = row.dataset.cardId;
+      if (hiddenCardIds.has(id)) hiddenCardIds.delete(id); else hiddenCardIds.add(id);
+      persistCardConfig();
+      renderEditorRows();
+      applyHomeCardState();
+    });
+    cardOrderList.addEventListener('keydown', event => {
+      const handle = event.target.closest('.drag-handle');
+      if (!handle || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      event.preventDefault();
+      const row = handle.closest('.card-order-row');
+      const sibling = event.key === 'ArrowUp' ? row.previousElementSibling : row.nextElementSibling;
+      if (!sibling) return;
+      if (event.key === 'ArrowUp') cardOrderList.insertBefore(row, sibling); else cardOrderList.insertBefore(sibling, row);
+      syncEditorOrder();
+      renderEditorRows();
+    });
+    $$('[data-open-sheet="home-editor"]').forEach(button => button.addEventListener('click', () => {
+      closeMenu();
+      setSearch(false);
+      renderEditorRows();
+      openSheet('#homeEditorSheet');
+    }));
+    $('#editorClose').addEventListener('click', closeSheets);
+    $('#editorDone').addEventListener('click', () => { closeSheets(); notify('首页布局已保存'); });
+    $('#editorReset').addEventListener('click', () => {
+      cardOrder = [...defaultCardOrder];
+      hiddenCardIds.clear();
+      persistCardConfig();
+      renderEditorRows();
+      applyHomeCardState();
+      notify('已恢复默认布局');
+    });
+
+    $$('[data-message]').forEach(button => button.addEventListener('click', () => { closeMenu(); notify(button.dataset.message); }));
+    $$('[data-nav]').forEach(button => button.addEventListener('click', () => {
+      $$('[data-nav]').forEach(item => item.removeAttribute('aria-current'));
+      button.setAttribute('aria-current', 'page');
+      notify(button.dataset.nav === '首页' ? '已回到首页' : `${button.dataset.nav}页面即将打开`);
+    }));
+    applyHomeCardState();
   </script>
 </body>
 </html>

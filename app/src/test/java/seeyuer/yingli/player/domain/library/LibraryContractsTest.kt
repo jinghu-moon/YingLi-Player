@@ -42,6 +42,17 @@ class LibraryContractsTest {
         )
     }
 
+    @Test
+    fun `folder browse query carries path independently from flat video mode`() {
+        val folder = LibraryQuery(browseMode = LibraryBrowseMode.FOLDER, currentPath = "设备存储")
+        val flat = LibraryQuery(browseMode = LibraryBrowseMode.ALL_VIDEOS)
+
+        assertEquals(LibraryBrowseMode.FOLDER, folder.browseMode)
+        assertEquals("设备存储", folder.currentPath)
+        assertEquals(LibraryBrowseMode.ALL_VIDEOS, flat.browseMode)
+        assertTrue(flat.currentPath.isEmpty())
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `invalid duration range is rejected`() {
         DurationFilter(5_000, 1_000)

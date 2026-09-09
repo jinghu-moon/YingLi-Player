@@ -19,6 +19,11 @@ enum class LibraryLayoutPreference {
     LIST,
 }
 
+enum class BreadcrumbPreference {
+    COLLAPSED,
+    SCROLL,
+}
+
 enum class LibrarySortPreference {
     NAME,
     RECENTLY_ADDED,
@@ -39,9 +44,12 @@ enum class ExportDirectoryPreference {
 data class UserPreferences(
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
     val libraryLayout: LibraryLayoutPreference = LibraryLayoutPreference.GRID,
+    val libraryBreadcrumb: BreadcrumbPreference = BreadcrumbPreference.SCROLL,
     val thumbnailScale: Float = 1f,
     val librarySort: LibrarySortPreference = LibrarySortPreference.RECENTLY_ADDED,
     val librarySortDirection: SortDirectionPreference = SortDirectionPreference.DESCENDING,
+    val libraryFolderColumns: Int = 2,
+    val libraryVideoColumns: Int = 3,
     val trashRetentionDays: Int = 30,
     val miniPlayerEnabled: Boolean = true,
     val autoPictureInPicture: Boolean = false,
@@ -51,6 +59,8 @@ data class UserPreferences(
     init {
         require(schemaVersion in 1..CURRENT_SCHEMA_VERSION)
         require(thumbnailScale in MIN_THUMBNAIL_SCALE..MAX_THUMBNAIL_SCALE)
+        require(libraryFolderColumns in MIN_LIBRARY_COLUMNS..MAX_LIBRARY_COLUMNS)
+        require(libraryVideoColumns in MIN_LIBRARY_COLUMNS..MAX_LIBRARY_COLUMNS)
         require(trashRetentionDays in MIN_TRASH_RETENTION_DAYS..MAX_TRASH_RETENTION_DAYS)
         require(exportDirectory != ExportDirectoryPreference.USER_SELECTED || !customExportTreeUri.isNullOrBlank())
     }
@@ -59,15 +69,20 @@ data class UserPreferences(
         const val CURRENT_SCHEMA_VERSION = 1
         const val MIN_THUMBNAIL_SCALE = 0.75f
         const val MAX_THUMBNAIL_SCALE = 1.50f
+        const val MIN_LIBRARY_COLUMNS = 1
+        const val MAX_LIBRARY_COLUMNS = 6
         const val MIN_TRASH_RETENTION_DAYS = 1
         const val MAX_TRASH_RETENTION_DAYS = 365
 
         fun sanitize(
             schemaVersion: Int?,
             libraryLayout: String?,
+            libraryBreadcrumb: String? = null,
             thumbnailScale: Float?,
             librarySort: String?,
             librarySortDirection: String?,
+            libraryFolderColumns: Int? = null,
+            libraryVideoColumns: Int? = null,
             trashRetentionDays: Int?,
             miniPlayerEnabled: Boolean?,
             autoPictureInPicture: Boolean?,
@@ -79,9 +94,12 @@ data class UserPreferences(
             return UserPreferences(
                 schemaVersion = schemaVersion?.takeIf { it in 1..CURRENT_SCHEMA_VERSION } ?: CURRENT_SCHEMA_VERSION,
                 libraryLayout = libraryLayout.enumOrDefault(LibraryLayoutPreference.GRID),
+                libraryBreadcrumb = libraryBreadcrumb.enumOrDefault(BreadcrumbPreference.SCROLL),
                 thumbnailScale = (thumbnailScale ?: 1f).coerceIn(MIN_THUMBNAIL_SCALE, MAX_THUMBNAIL_SCALE),
                 librarySort = librarySort.enumOrDefault(LibrarySortPreference.RECENTLY_ADDED),
                 librarySortDirection = librarySortDirection.enumOrDefault(SortDirectionPreference.DESCENDING),
+                libraryFolderColumns = (libraryFolderColumns ?: 2).coerceIn(MIN_LIBRARY_COLUMNS, MAX_LIBRARY_COLUMNS),
+                libraryVideoColumns = (libraryVideoColumns ?: 3).coerceIn(MIN_LIBRARY_COLUMNS, MAX_LIBRARY_COLUMNS),
                 trashRetentionDays = (trashRetentionDays ?: 30)
                     .coerceIn(MIN_TRASH_RETENTION_DAYS, MAX_TRASH_RETENTION_DAYS),
                 miniPlayerEnabled = miniPlayerEnabled ?: true,
@@ -125,9 +143,12 @@ class DataStoreThemeRepository(context: Context) : ThemeRepository {
     private fun readPreferences(preferences: Preferences): UserPreferences = UserPreferences.sanitize(
         schemaVersion = preferences[SCHEMA_VERSION],
         libraryLayout = preferences[LIBRARY_LAYOUT],
+        libraryBreadcrumb = preferences[LIBRARY_BREADCRUMB],
         thumbnailScale = preferences[THUMBNAIL_SCALE],
         librarySort = preferences[LIBRARY_SORT],
         librarySortDirection = preferences[LIBRARY_SORT_DIRECTION],
+        libraryFolderColumns = preferences[LIBRARY_FOLDER_COLUMNS],
+        libraryVideoColumns = preferences[LIBRARY_VIDEO_COLUMNS],
         trashRetentionDays = preferences[TRASH_RETENTION_DAYS],
         miniPlayerEnabled = preferences[MINI_PLAYER],
         autoPictureInPicture = preferences[AUTO_PIP],
@@ -138,9 +159,12 @@ class DataStoreThemeRepository(context: Context) : ThemeRepository {
     private fun writePreferences(preferences: androidx.datastore.preferences.core.MutablePreferences, value: UserPreferences) {
         preferences[SCHEMA_VERSION] = UserPreferences.CURRENT_SCHEMA_VERSION
         preferences[LIBRARY_LAYOUT] = value.libraryLayout.name
+        preferences[LIBRARY_BREADCRUMB] = value.libraryBreadcrumb.name
         preferences[THUMBNAIL_SCALE] = value.thumbnailScale
         preferences[LIBRARY_SORT] = value.librarySort.name
         preferences[LIBRARY_SORT_DIRECTION] = value.librarySortDirection.name
+        preferences[LIBRARY_FOLDER_COLUMNS] = value.libraryFolderColumns
+        preferences[LIBRARY_VIDEO_COLUMNS] = value.libraryVideoColumns
         preferences[TRASH_RETENTION_DAYS] = value.trashRetentionDays
         preferences[MINI_PLAYER] = value.miniPlayerEnabled
         preferences[AUTO_PIP] = value.autoPictureInPicture
@@ -152,9 +176,12 @@ class DataStoreThemeRepository(context: Context) : ThemeRepository {
     private companion object {
         val SCHEMA_VERSION = intPreferencesKey("schema_version")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
+        val LIBRARY_BREADCRUMB = stringPreferencesKey("library_breadcrumb")
         val THUMBNAIL_SCALE = floatPreferencesKey("thumbnail_scale")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val LIBRARY_SORT_DIRECTION = stringPreferencesKey("library_sort_direction")
+        val LIBRARY_FOLDER_COLUMNS = intPreferencesKey("library_folder_columns")
+        val LIBRARY_VIDEO_COLUMNS = intPreferencesKey("library_video_columns")
         val TRASH_RETENTION_DAYS = intPreferencesKey("trash_retention_days")
         val MINI_PLAYER = booleanPreferencesKey("mini_player_enabled")
         val AUTO_PIP = booleanPreferencesKey("auto_picture_in_picture")

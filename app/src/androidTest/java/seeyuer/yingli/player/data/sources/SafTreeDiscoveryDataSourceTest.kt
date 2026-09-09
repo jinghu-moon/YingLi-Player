@@ -59,6 +59,30 @@ class SafTreeDiscoveryDataSourceTest {
     }
 
     @Test
+    fun nestedVideoCarriesItsRelativeParentPath() = runTest {
+        val video = MutableNode(
+            uri = "content://documents/tree/root/document/video",
+            name = "movie.mp4",
+            mimeType = "video/mp4",
+        )
+        val camera = MutableNode("content://documents/tree/root/document/camera", "Camera", isDirectory = true).apply {
+            children = { listOf(video) }
+        }
+        val dcim = MutableNode("content://documents/tree/root/document/dcim", "DCIM", isDirectory = true).apply {
+            children = { listOf(camera) }
+        }
+        val root = MutableNode("content://documents/tree/root", "root", isDirectory = true).apply {
+            children = { listOf(dcim) }
+        }
+
+        val candidate = dataSource(root).discover(SOURCE).toList()
+            .filterIsInstance<MediaDiscoveryEvent.Candidate>()
+            .single()
+
+        assertEquals("DCIM/Camera", candidate.value.evidence.relativePath)
+    }
+
+    @Test
     fun metadataFailureDoesNotSkipVideo() = runTest {
         val video = MutableNode(
             uri = "content://documents/tree/root/document/video",

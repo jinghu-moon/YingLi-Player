@@ -13,6 +13,10 @@ YINGLI_KEY_PASSWORD
 
 变量不完整时 `assembleRelease` 只生成 `*-release-unsigned.apk`，该产物不得发布或标记为可安装 Release。
 
+本地开发可以运行 `setup-signing.ps1` 生成 `keystore/release.jks` 和 `keystore.properties`。Gradle 会优先读取完整的 `YINGLI_*` 环境变量；环境变量未设置时回退读取根目录的 `keystore.properties`。CI 或发布构建应继续使用环境变量，不要把密钥文件提交到仓库。
+
+脚本中的“立即构建 Release”会临时注入刚生成的签名环境变量，并在构建完成后恢复调用方环境；脚本还会检查输出目录，发现 unsigned APK 时直接失败。
+
 ## 构建与校验和
 
 ```powershell
@@ -29,4 +33,3 @@ YINGLI_KEY_PASSWORD
 ## 安装验证
 
 至少覆盖 Android 12/API 31 与当前真机：全新安装、同签名覆盖升级、设置/数据库迁移、权限拒绝、空间不足和损坏 APK。签名不匹配时停止安装，不卸载已有数据作为自动回退。
-

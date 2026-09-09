@@ -50,9 +50,7 @@
     <string name="library_search">搜索本地视频、文件夹或标签</string>
     <string name="library_grid">网格</string>
     <string name="library_list">列表</string>
-    <string name="library_thumbnail_size">缩略图大小</string>
     <string name="library_view_settings">视频视图设置</string>
-    <string name="library_layout">布局</string>
     <string name="library_result_summary">%1$d 个视频 · %2$s</string>
     <string name="library_all">全部</string>
     <string name="library_folder">文件夹</string>
@@ -62,12 +60,9 @@
     <string name="library_sort_name">名称</string>
     <string name="library_sort_recent">最近添加</string>
     <string name="library_sort_duration">时长</string>
+    <string name="library_sort_resolution">分辨率</string>
     <string name="library_sort_play_count">播放次数</string>
-    <string name="library_resolution">分辨率</string>
-    <string name="library_duration">时长范围</string>
-    <string name="library_reset">重置</string>
     <string name="library_result_count">共 %1$d 个视频</string>
-    <string name="library_view_results">查看 %1$d 个视频</string>
     <string name="library_selected_count">已选择 %1$d 项</string>
     <string name="library_cancel">取消</string>
     <string name="library_delete">删除</string>

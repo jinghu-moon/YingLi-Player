@@ -220,6 +220,7 @@ class DefaultMediaScanner(
         lastSeenEpochMillis = seenAt,
         fastFingerprint = resolvedEvidence.fastFingerprint,
         contentHash = resolvedEvidence.contentHash,
+        relativePath = resolvedEvidence.relativePath,
     )
 
     private fun String.stableId(): String = replace(Regex("[^A-Za-z0-9_-]"), "_").take(128).ifBlank { "generated" }

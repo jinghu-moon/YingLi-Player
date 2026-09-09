@@ -210,7 +210,9 @@ class MediaLibraryViewModel(
 
     private suspend fun MediaSource?.requiresInitialScan(expected: MediaSource): Boolean =
         this == null || mode != expected.mode || rootUri != expected.rootUri ||
-            catalogRepository.snapshot(expected.id).items.isEmpty()
+            catalogRepository.snapshot(expected.id).let { snapshot ->
+                snapshot.items.isEmpty() || snapshot.locations.any { it.relativePath == null }
+            }
 
     companion object {
         private const val STOP_TIMEOUT = 5_000L

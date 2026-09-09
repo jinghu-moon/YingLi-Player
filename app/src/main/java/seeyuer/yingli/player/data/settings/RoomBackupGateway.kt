@@ -175,6 +175,7 @@ class RoomBackupGateway(
 
     private fun UserPreferences.toBackupMap(): Map<String, String> = mapOf(
         "libraryLayout" to libraryLayout.name,
+        "libraryBreadcrumb" to libraryBreadcrumb.name,
         "thumbnailScale" to thumbnailScale.toString(),
         "librarySort" to librarySort.name,
         "librarySortDirection" to librarySortDirection.name,
@@ -187,6 +188,7 @@ class RoomBackupGateway(
     private fun Map<String, String>.toUserPreferences(fallback: UserPreferences): UserPreferences = UserPreferences.sanitize(
         schemaVersion = UserPreferences.CURRENT_SCHEMA_VERSION,
         libraryLayout = get("libraryLayout") ?: fallback.libraryLayout.name,
+        libraryBreadcrumb = get("libraryBreadcrumb") ?: fallback.libraryBreadcrumb.name,
         thumbnailScale = get("thumbnailScale")?.toFloatOrNull() ?: fallback.thumbnailScale,
         librarySort = get("librarySort") ?: fallback.librarySort.name,
         librarySortDirection = get("librarySortDirection") ?: fallback.librarySortDirection.name,

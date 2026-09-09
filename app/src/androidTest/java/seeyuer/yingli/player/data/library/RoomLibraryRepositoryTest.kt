@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -23,6 +24,7 @@ import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.core.model.media.MediaSourceId
 import seeyuer.yingli.player.domain.library.LibraryQuery
 import seeyuer.yingli.player.domain.library.LibraryPageDirection
+import seeyuer.yingli.player.domain.library.LibraryBrowseMode
 import seeyuer.yingli.player.domain.library.LibraryResult
 import seeyuer.yingli.player.domain.library.LibrarySortField
 import seeyuer.yingli.player.domain.library.SortDirection
@@ -128,6 +130,101 @@ class RoomLibraryRepositoryTest {
         }
     }
 
+    @Test
+    fun folderBrowseBuildsRealDirectoryHierarchyFromRelativePaths() = runTest {
+        seedSource()
+        val entries = listOf(
+            Triple("camera", "DCIM/Camera", 2_048L),
+            Triple("root_dcim", "DCIM", 1_024L),
+            Triple("movie", "Movies", 4_096L),
+        )
+        database.mediaCatalogDao().upsertItems(entries.map { (id) -> MediaItemEntity(id, id, 0, false) })
+        database.mediaCatalogDao().insertLocations(entries.map { (id, path, size) ->
+            location(id, "content://media/$id", lastSeen = 1, missing = 0, relativePath = path, sizeBytes = size)
+        })
+        database.mediaCatalogDao().upsertLinks(entries.map { (id) -> MediaItemLocationEntity(id, id) })
+
+        val roots = repository.folders(LibraryQuery(browseMode = LibraryBrowseMode.FOLDER))
+        val dcimChildren = repository.folders(LibraryQuery(browseMode = LibraryBrowseMode.FOLDER, currentPath = "DCIM"))
+        val directVideos = repository.page(
+            LibraryQuery(browseMode = LibraryBrowseMode.FOLDER, currentPath = "DCIM"),
+            LibraryPageDirection.REFRESH,
+        )
+
+        assertEquals(listOf("DCIM", "Movies"), roots.map { it.path })
+        assertEquals(3_072L, roots.first { it.path == "DCIM" }.sizeBytes)
+        assertEquals(listOf("DCIM/Camera"), dcimChildren.map { it.path })
+        assertEquals(listOf(MediaItemId("root_dcim")), directVideos.items.map { it.id })
+    }
+
+    @Test
+    fun folderTreeCountIncludesEveryDescendantButNotSimilarPrefix() = runTest {
+        seedSource()
+        val entries = listOf(
+            "direct" to "DCIM",
+            "nested" to "DCIM/Camera",
+            "deep" to "DCIM/Camera/Trips",
+            "similar_prefix" to "DCIM2/Camera",
+            "outside" to "Movies",
+            "wildcard_path" to "DCIM_2026/Camera",
+            "wildcard_false_match" to "DCIMX2026/Camera",
+        )
+        database.mediaCatalogDao().upsertItems(entries.map { (id) -> MediaItemEntity(id, id, 0, false) })
+        database.mediaCatalogDao().insertLocations(entries.map { (id, path) ->
+            location(id, "content://media/$id", lastSeen = 1, missing = 0, relativePath = path)
+        })
+        database.mediaCatalogDao().upsertLinks(entries.map { (id) -> MediaItemLocationEntity(id, id) })
+
+        val count = repository.observeFolderTreeVideoCount("DCIM").first()
+        val wildcardCount = repository.observeFolderTreeVideoCount("DCIM_2026").first()
+
+        assertEquals(3, count)
+        assertEquals(1, wildcardCount)
+    }
+
+    @Test
+    fun folderBrowsePrefersMediaLocationInsideSelectedDirectoryTree() = runTest {
+        seedSource()
+        database.mediaCatalogDao().upsertItems(listOf(MediaItemEntity("shared", "共享视频", 0, false)))
+        database.mediaCatalogDao().insertLocations(
+            listOf(
+                location(
+                    id = "z_outside",
+                    uri = "content://media/outside",
+                    lastSeen = 10,
+                    missing = 0,
+                    relativePath = "Download/Other",
+                ),
+                location(
+                    id = "a_inside",
+                    uri = "content://media/inside",
+                    lastSeen = 10,
+                    missing = 0,
+                    relativePath = "A-测试面包屑/长目录/视频所在地",
+                ),
+            ),
+        )
+        database.mediaCatalogDao().upsertLinks(
+            listOf(
+                MediaItemLocationEntity("shared", "z_outside"),
+                MediaItemLocationEntity("shared", "a_inside"),
+            ),
+        )
+
+        val page = repository.page(
+            LibraryQuery(
+                browseMode = LibraryBrowseMode.FOLDER,
+                currentPath = "A-测试面包屑/长目录/视频所在地",
+            ),
+            LibraryPageDirection.REFRESH,
+        )
+        val count = repository.observeFolderTreeVideoCount("A-测试面包屑/长目录/视频所在地").first()
+
+        assertEquals(listOf(MediaItemId("shared")), page.items.map { it.id })
+        assertEquals("content://media/inside", page.items.single().uri.value)
+        assertEquals(1, count)
+    }
+
     private suspend fun seedSource() {
         database.mediaSourceDao().upsert(
             MediaSourceEntity(
@@ -144,7 +241,14 @@ class RoomLibraryRepositoryTest {
         )
     }
 
-    private fun location(id: String, uri: String, lastSeen: Long, missing: Int) = MediaLocationEntity(
+    private fun location(
+        id: String,
+        uri: String,
+        lastSeen: Long,
+        missing: Int,
+        relativePath: String? = null,
+        sizeBytes: Long = 1_024,
+    ) = MediaLocationEntity(
         id = id,
         sourceId = SOURCE_ID.value,
         uri = uri,
@@ -152,7 +256,7 @@ class RoomLibraryRepositoryTest {
         documentId = id,
         fileName = "$id.mp4",
         mimeType = "video/mp4",
-        sizeBytes = 1_024,
+        sizeBytes = sizeBytes,
         modifiedEpochMillis = lastSeen,
         durationMillis = 5_000,
         width = 1_920,
@@ -161,6 +265,7 @@ class RoomLibraryRepositoryTest {
         lastSeenEpochMillis = lastSeen,
         fastFingerprint = null,
         contentHash = null,
+        relativePath = relativePath,
     )
 
     private companion object {

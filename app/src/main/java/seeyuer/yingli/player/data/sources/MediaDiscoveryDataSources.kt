@@ -47,6 +47,7 @@ class MediaStoreDiscoveryDataSource(
                 val duration = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
                 val width = cursor.getColumnIndex(MediaStore.Video.Media.WIDTH)
                 val height = cursor.getColumnIndex(MediaStore.Video.Media.HEIGHT)
+                val relativePath = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
                 if (listOf(id, name, mime, size, modified).any { it < 0 }) {
                     emit(MediaDiscoveryEvent.Failure(ScanFailure(source.id, ScanFailureKind.MALFORMED_ENTRY, true)))
                     return@use
@@ -66,6 +67,7 @@ class MediaStoreDiscoveryDataSource(
                                 MediaUri(uri), source.volumeId, mediaId.toString(), fileName,
                                 cursor.getLong(size).coerceAtLeast(0), cursor.getLong(modified).coerceAtLeast(0) * 1000,
                                 cursor.longOrNull(duration), cursor.intOrNull(width), cursor.intOrNull(height),
+                                relativePath = cursor.stringOrNull(relativePath)?.normalizeRelativePath(),
                             ),
                             mimeType,
                         )))
@@ -81,13 +83,14 @@ class MediaStoreDiscoveryDataSource(
 
     private fun android.database.Cursor.longOrNull(index: Int): Long? = if (index < 0 || isNull(index)) null else getLong(index)
     private fun android.database.Cursor.intOrNull(index: Int): Int? = if (index < 0 || isNull(index) || getInt(index) <= 0) null else getInt(index)
+    private fun android.database.Cursor.stringOrNull(index: Int): String? = if (index < 0 || isNull(index)) null else getString(index)
 
     private companion object {
         val COLLECTION: Uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         val PROJECTION = arrayOf(
             MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.MIME_TYPE,
             MediaStore.Video.Media.SIZE, MediaStore.Video.Media.DATE_MODIFIED, MediaStore.Video.Media.DURATION,
-            MediaStore.Video.Media.WIDTH, MediaStore.Video.Media.HEIGHT,
+            MediaStore.Video.Media.WIDTH, MediaStore.Video.Media.HEIGHT, MediaStore.MediaColumns.RELATIVE_PATH,
         )
     }
 }
@@ -117,12 +120,12 @@ class SafTreeDiscoveryDataSource(
             emit(MediaDiscoveryEvent.Failure(ScanFailure(source.id, ScanFailureKind.PERMISSION, true)))
             return@flow
         }
-        val pending = ArrayDeque<Pair<SafDocumentNode, Int>>()
+        val pending = ArrayDeque<Triple<SafDocumentNode, Int, String>>()
         val visited = mutableSetOf<String>()
-        pending.add(root to 0)
+        pending.add(Triple(root, 0, ""))
         while (pending.isNotEmpty()) {
             coroutineContext.ensureActive()
-            val (document, depth) = pending.removeFirst()
+            val (document, depth, relativePath) = pending.removeFirst()
             if (!visited.add(document.uri) || depth > MAX_DEPTH) continue
             val children = try {
                 document.children()
@@ -137,7 +140,7 @@ class SafTreeDiscoveryDataSource(
                 val name = child.name.orEmpty()
                 if (!source.includeHidden && name.startsWith('.')) return@forEach
                 if (child.isDirectory) {
-                    pending.add(child to depth + 1)
+                    pending.add(Triple(child, depth + 1, relativePath.appendPath(name)))
                 } else if (child.mimeType?.startsWith("video/") == true && name.isNotBlank()) {
                     val uri = child.uri
                     if (visited.add(uri)) {
@@ -148,6 +151,7 @@ class SafTreeDiscoveryDataSource(
                                 mediaUri, source.volumeId, uri.substringAfterLast('/'), name,
                                 child.length.coerceAtLeast(0), child.lastModified.coerceAtLeast(0),
                                 null, null, null,
+                                relativePath = relativePath.ifBlank { null },
                             ),
                             child.mimeType ?: "video/*",
                         )))
@@ -159,6 +163,9 @@ class SafTreeDiscoveryDataSource(
 
     private companion object { const val MAX_DEPTH = 64 }
 }
+
+private fun String.normalizeRelativePath(): String = trim().trim('/').replace('\\', '/')
+private fun String.appendPath(child: String): String = listOf(this, child).filter(String::isNotBlank).joinToString("/")
 
 interface SafDocumentNode {
     val uri: String

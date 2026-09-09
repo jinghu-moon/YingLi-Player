@@ -134,6 +134,7 @@ object ProductionMediaContainerFactory {
                 YingLiDatabase.MIGRATION_4_5,
                 YingLiDatabase.MIGRATION_5_6,
                 YingLiDatabase.MIGRATION_6_7,
+                YingLiDatabase.MIGRATION_7_8,
             )
             .build()
         val sourceRepository = RoomMediaSourceRepository(database.mediaSourceDao())

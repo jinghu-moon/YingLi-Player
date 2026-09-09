@@ -251,6 +251,9 @@ private fun HomeCard(
 
 @Composable
 private fun HomeStatsCard(stats: HomeStats, onOpenStats: () -> Unit) {
+    val videoColor = YingLiTheme.colors.storageVideo
+    val otherColor = YingLiTheme.colors.storageOther
+    val availableColor = YingLiTheme.colors.storageAvailable
     val deviceTotal = stats.deviceTotalBytes
     val deviceAvailable = stats.deviceAvailableBytes.coerceIn(0, deviceTotal)
     val used = (deviceTotal - deviceAvailable).coerceAtLeast(0)
@@ -266,15 +269,18 @@ private fun HomeStatsCard(stats: HomeStats, onOpenStats: () -> Unit) {
             Text(stringResource(R.string.home_device_storage), color = YingLiTheme.colors.textSecondary, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
             Text("${formatFileSize(used)}/${formatFileSize(deviceTotal)}", style = MaterialTheme.typography.labelLarge)
         }
-        Row(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).padding(top = 0.dp)) {
-            if (video > 0) Box(Modifier.weight((video.toDouble() / barTotal).toFloat()).fillMaxHeight().background(YingLiTheme.colors.actionPrimary))
-            if (other > 0) Box(Modifier.weight((other.toDouble() / barTotal).toFloat()).fillMaxHeight().background(YingLiTheme.colors.textSecondary))
-            if (deviceAvailable > 0) Box(Modifier.weight((deviceAvailable.toDouble() / barTotal).toFloat()).fillMaxHeight().background(YingLiTheme.colors.surfaceMuted))
+        Row(
+            Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            if (video > 0) Box(Modifier.weight((video.toDouble() / barTotal).toFloat()).fillMaxHeight().background(videoColor))
+            if (other > 0) Box(Modifier.weight((other.toDouble() / barTotal).toFloat()).fillMaxHeight().background(otherColor))
+            if (deviceAvailable > 0) Box(Modifier.weight((deviceAvailable.toDouble() / barTotal).toFloat()).fillMaxHeight().background(availableColor))
         }
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StorageLegend(YingLiTheme.colors.actionPrimary, stringResource(R.string.home_storage_video), video, barTotal)
-            StorageLegend(YingLiTheme.colors.textSecondary, stringResource(R.string.home_storage_other), other, barTotal)
-            StorageLegend(YingLiTheme.colors.surfaceMuted, stringResource(R.string.home_storage_available), deviceAvailable, barTotal)
+            StorageLegend(videoColor, stringResource(R.string.home_storage_video), video, barTotal)
+            StorageLegend(otherColor, stringResource(R.string.home_storage_other), other, barTotal)
+            StorageLegend(availableColor, stringResource(R.string.home_storage_available), deviceAvailable, barTotal)
         }
     }
 }

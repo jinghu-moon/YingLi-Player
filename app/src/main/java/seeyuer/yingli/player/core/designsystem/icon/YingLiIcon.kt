@@ -8,6 +8,7 @@ import compose.icons.tablericons.ArrowLeft
 import compose.icons.tablericons.ArrowRight
 import compose.icons.tablericons.Check
 import compose.icons.tablericons.DotsVertical
+import compose.icons.tablericons.Dots
 import compose.icons.tablericons.Folder
 import compose.icons.tablericons.Home
 import compose.icons.tablericons.GripVertical
@@ -48,6 +49,7 @@ enum class YingLiIcon(
     SETTINGS(IconProvider.TABLER),
     SEARCH(IconProvider.TABLER),
     OVERFLOW(IconProvider.TABLER),
+    BREADCRUMB_OVERFLOW(IconProvider.TABLER),
     GRID(IconProvider.TABLER),
     LIST(IconProvider.TABLER),
     DRAG_HANDLE(IconProvider.TABLER),
@@ -82,6 +84,7 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.SETTINGS -> TablerIcons.Settings
         YingLiIcon.SEARCH -> TablerIcons.Search
         YingLiIcon.OVERFLOW -> TablerIcons.DotsVertical
+        YingLiIcon.BREADCRUMB_OVERFLOW -> TablerIcons.Dots
         YingLiIcon.GRID -> TablerIcons.LayoutGrid
         YingLiIcon.LIST -> TablerIcons.List
         YingLiIcon.DRAG_HANDLE -> TablerIcons.GripVertical

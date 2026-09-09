@@ -34,3 +34,10 @@ data class LibraryMediaRow(
     val modifiedEpochMillis: Long,
     val playCount: Int,
 )
+
+data class LibraryFolderRow(
+    val path: String,
+    val name: String,
+    val videoCount: Int,
+    val sizeBytes: Long,
+)

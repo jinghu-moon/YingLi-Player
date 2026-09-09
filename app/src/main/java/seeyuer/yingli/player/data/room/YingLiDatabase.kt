@@ -34,7 +34,7 @@ import androidx.sqlite.execSQL
         DuplicateGroupMemberEntity::class,
         VaultItemEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class YingLiDatabase : RoomDatabase() {
@@ -91,6 +91,12 @@ abstract class YingLiDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS `index_media_locations_width` ON `media_locations` (`width`)",
                     "CREATE INDEX IF NOT EXISTS `index_media_locations_missingScanCount` ON `media_locations` (`missingScanCount`)",
                 ).forEach(connection::execSQL)
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `media_locations` ADD COLUMN `relativePath` TEXT")
             }
         }
 

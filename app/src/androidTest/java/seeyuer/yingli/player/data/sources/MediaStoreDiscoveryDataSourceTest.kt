@@ -36,6 +36,7 @@ class MediaStoreDiscoveryDataSourceTest {
         val candidates = events.filterIsInstance<MediaDiscoveryEvent.Candidate>()
         assertEquals(1, candidates.size)
         assertEquals("content://media/external/video/media/7", candidates.single().value.evidence.uri.value)
+        assertEquals("Movies/Camera", candidates.single().value.evidence.relativePath)
         assertEquals(REQUIRED_COLUMNS, provider.requestedProjection?.toSet())
     }
 
@@ -121,6 +122,7 @@ class MediaStoreDiscoveryDataSourceTest {
                 "duration" -> 5_000L
                 "width" -> 1_920
                 "height" -> 1_080
+                "relative_path" -> "Movies/Camera/"
                 else -> null
             }
         }.toTypedArray()
@@ -134,6 +136,7 @@ class MediaStoreDiscoveryDataSourceTest {
     private companion object {
         val REQUIRED_COLUMNS = setOf(
             "_id", "_display_name", "mime_type", "_size", "date_modified", "duration", "width", "height",
+            "relative_path",
         )
         val SOURCE = MediaSource(
             id = MediaSourceId("source_media_store"),

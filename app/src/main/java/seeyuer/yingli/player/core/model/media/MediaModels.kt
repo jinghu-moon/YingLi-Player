@@ -96,6 +96,7 @@ data class MediaLocation(
     val lastSeenEpochMillis: Long,
     val fastFingerprint: String? = null,
     val contentHash: String? = null,
+    val relativePath: String? = null,
 ) {
     init {
         require(fileName.isNotBlank())
@@ -123,6 +124,7 @@ data class MediaIdentityEvidence(
     val height: Int?,
     val fastFingerprint: String? = null,
     val contentHash: String? = null,
+    val relativePath: String? = null,
 )
 
 data class MediaCandidate(

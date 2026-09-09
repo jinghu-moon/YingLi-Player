@@ -88,12 +88,24 @@ class YingLiDatabaseMigrationTest {
     }
 
     @Test
-    fun migrateFromOneToSevenValidatesCompleteUpgradeChain() {
-        helper.createDatabase("migration-1-7", 1).close()
+    fun migrateFromSevenToEightAddsMediaRelativePath() {
+        helper.createDatabase("migration-7-8", 7).close()
 
         helper.runMigrationsAndValidate(
-            "migration-1-7",
-            7,
+            "migration-7-8",
+            8,
+            true,
+            YingLiDatabase.MIGRATION_7_8,
+        ).close()
+    }
+
+    @Test
+    fun migrateFromOneToEightValidatesCompleteUpgradeChain() {
+        helper.createDatabase("migration-1-8", 1).close()
+
+        helper.runMigrationsAndValidate(
+            "migration-1-8",
+            8,
             true,
             YingLiDatabase.MIGRATION_1_2,
             YingLiDatabase.MIGRATION_2_3,
@@ -101,6 +113,7 @@ class YingLiDatabaseMigrationTest {
             YingLiDatabase.MIGRATION_4_5,
             YingLiDatabase.MIGRATION_5_6,
             YingLiDatabase.MIGRATION_6_7,
+            YingLiDatabase.MIGRATION_7_8,
         ).close()
     }
 

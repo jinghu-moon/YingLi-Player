@@ -65,6 +65,7 @@ data class MediaLocationEntity(
     val lastSeenEpochMillis: Long,
     val fastFingerprint: String?,
     val contentHash: String?,
+    val relativePath: String? = null,
 )
 
 @Entity(

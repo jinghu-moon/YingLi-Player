@@ -23,6 +23,9 @@ interface LibraryDao {
     @RawQuery
     suspend fun count(query: SupportSQLiteQuery): Int
 
+    @RawQuery
+    suspend fun folders(query: SupportSQLiteQuery): List<LibraryFolderRow>
+
     @Query("SELECT * FROM trash_entries ORDER BY deletedAtEpochMillis DESC")
     fun observeTrash(): Flow<List<TrashEntryEntity>>
 

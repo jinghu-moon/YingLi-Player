@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -40,6 +43,7 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
@@ -226,15 +230,16 @@ fun YingLiSegmentedControl(
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    fillMaxWidth: Boolean = true,
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = YingLiTheme.components.componentCorner,
+        modifier = (if (fillMaxWidth) modifier.fillMaxWidth() else modifier).height(48.dp),
+        shape = RoundedCornerShape(8.dp),
         color = YingLiTheme.colors.surfaceComponent,
     ) {
         Row(
-            modifier = Modifier.padding(YingLiTheme.components.itemSpacing),
-            horizontalArrangement = Arrangement.spacedBy(YingLiTheme.components.itemSpacing),
+            modifier = Modifier.padding(4.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             options.forEachIndexed { index, option ->
                 SegmentOption(option, index == selectedIndex, enabled) { onSelected(index) }
@@ -250,18 +255,30 @@ private fun RowScope.SegmentOption(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
+    Box(
         modifier = Modifier
             .weight(1f)
-            .height(YingLiTheme.components.minimumTouchTarget),
-        enabled = enabled,
-        selected = selected,
-        shape = YingLiTheme.components.compactCorner,
-        color = if (selected) YingLiTheme.colors.selectionStructural else YingLiTheme.colors.surfaceComponent,
-        contentColor = if (selected) YingLiTheme.colors.selectionOnStructural else YingLiTheme.colors.textPrimary,
+            .height(48.dp)
+            .clickable(
+                enabled = enabled,
+                role = Role.Tab,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) { Text(text, maxLines = 2) }
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(40.dp),
+            shape = RoundedCornerShape(6.dp),
+            color = if (selected) YingLiTheme.colors.selectionStructural else YingLiTheme.colors.surfaceComponent,
+            contentColor = if (selected) YingLiTheme.colors.selectionOnStructural else YingLiTheme.colors.textPrimary,
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize().alpha(if (enabled) 1f else 0.38f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+            }
+        }
     }
 }
 

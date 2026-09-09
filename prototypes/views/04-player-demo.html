@@ -1,0 +1,1498 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>影里 · 播放页 Demo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #0f0f0f;
+      --surface: #171717;
+      --surface-subtle: #1f1f1f;
+      --surface-muted: #242424;
+      --surface-2: #1f1f1f;
+      --surface-3: #292929;
+      --surface-level-1: #171717;
+      --surface-level-2: #1f1f1f;
+      --surface-level-3: #292929;
+      --text: #f5f5f5;
+      --text-inverse: #121212;
+      --muted: #b8b8b8;
+      --dim: #858585;
+      --line: #292929;
+      --line-strong: #5d5d5d;
+      --accent: #98c3d5;
+      --accent-strong: #6fa8c0;
+      --info: #98c3d5;
+      --warning: #f7c44d;
+      --error: #f5aaa3;
+      --error-container: #391512;
+      --success: #64ae82;
+      --success-container: #284b38;
+      --player-canvas: #000000;
+      --player-control-100: #ffffff;
+      --player-control-70: rgb(255 255 255 / .72);
+      --player-control-40: rgb(255 255 255 / .40);
+      --player-track: rgb(255 255 255 / .24);
+      --scrim-default: rgb(0 0 0 / .64);
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; }
+    html, body { min-width: 320px; min-height: 100%; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+    button, input { font: inherit; letter-spacing: 0; }
+    button { appearance: none; border: 0; background: none; color: inherit; cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    [hidden] { display: none !important; }
+
+    .demo-shell { min-height: 100vh; display: grid; grid-template-rows: 64px 1fr; }
+    .demo-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 28px; border-bottom: 1px solid var(--line); background: var(--surface); }
+    .brand { display: flex; align-items: center; gap: 11px; }
+    .brand-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--accent); color: #172832; font-size: 18px; }
+    .brand-name { font-size: 16px; font-weight: 700; }
+    .brand-meta { margin-left: 3px; color: var(--dim); font-size: 11px; }
+    .orientation-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-subtle); }
+    .orientation-switch button { min-width: 88px; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; }
+    .orientation-switch button.active { background: var(--surface-3); color: var(--text); font-weight: 650; }
+    .header-action { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 7px; background: transparent; color: var(--muted); font-size: 20px; }
+    .header-action:hover { background: var(--surface-2); color: var(--text); }
+
+    .stage { min-height: calc(100vh - 64px); display: grid; place-items: center; padding: 32px; background: var(--surface-muted); }
+    .device-shell { position: relative; width: min(1180px, calc(100vw - 64px), calc((100vh - 128px) * 16 / 9)); aspect-ratio: 16 / 9; padding: 10px; border: 1px solid #050605; border-radius: 34px; background: #090b0a; box-shadow: 0 28px 72px rgb(12 17 14 / .36), 0 7px 22px rgb(12 17 14 / .25); transition: width .28s ease, border-radius .28s ease; }
+    .device-shell.portrait { width: min(430px, calc(100vw - 40px), calc((100vh - 128px) * 9 / 16)); aspect-ratio: 9 / 16; border-radius: 45px; }
+    .device-shell.shorts { width: min(430px, calc(100vw - 40px), calc((100vh - 128px) * 9 / 16)); aspect-ratio: 9 / 16; border-radius: 45px; }
+    .camera-hole { position: absolute; top: 50%; left: 18px; z-index: 20; width: 12px; height: 12px; border: 2px solid #262b28; border-radius: 50%; background: #030403; box-shadow: 0 0 0 3px #090b0a; transform: translate(-50%, -50%); pointer-events: none; }
+    .side-key { position: absolute; top: -4px; right: 18%; width: 72px; height: 4px; border-radius: 4px 4px 0 0; background: #202421; pointer-events: none; }
+    .device-shell.portrait .camera-hole { top: 21px; left: 50%; transform: translate(-50%, -50%); }
+    .device-shell.shorts .camera-hole { top: 21px; left: 50%; transform: translate(-50%, -50%); }
+    .device-shell.portrait .side-key { top: 154px; right: -4px; width: 4px; height: 72px; border-radius: 0 4px 4px 0; }
+    .device-shell.shorts .side-key { top: 154px; right: -4px; width: 4px; height: 72px; border-radius: 0 4px 4px 0; }
+    .device-status { position: absolute; top: 11px; right: 21px; left: 21px; z-index: 21; display: none; align-items: center; justify-content: space-between; color: rgb(255 255 255 / .82); font-size: 10px; font-weight: 700; pointer-events: none; }
+    .device-status-icons { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+    .device-shell.portrait .device-status, .device-shell.shorts .device-status { display: flex; }
+    .player-frame { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: 25px; background: var(--player-canvas); isolation: isolate; }
+    .player-video { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; object-fit: contain; background: var(--player-canvas); }
+    .player-frame::after { content: ""; position: absolute; inset: 0; z-index: 1; background: rgb(0 0 0 / .22); pointer-events: none; }
+    .player-frame.portrait { border-radius: 35px; }
+    .player-frame.shorts { border-radius: 35px; background: #000; }
+    .player-frame.shorts .player-video, .player-frame.shorts .shorts-peek-video { object-fit: cover; }
+    .player-frame.shorts[data-shorts-fit="contain"] .player-video, .player-frame.shorts[data-shorts-fit="contain"] .shorts-peek-video { object-fit: contain; }
+    .player-frame.shorts[data-shorts-fit="fill"] .player-video, .player-frame.shorts[data-shorts-fit="fill"] .shorts-peek-video { object-fit: fill; }
+    .player-frame:fullscreen { border-radius: 0; }
+    .shorts-peek-video { position: absolute; inset: 0; z-index: 0; display: none; width: 100%; height: 100%; object-fit: cover; background: #000; pointer-events: none; }
+    .player-frame.shorts .player-video, .player-frame.shorts .shorts-peek-video { will-change: transform; }
+    .player-video.shorts-transition, .shorts-peek-video.shorts-transition { transition: transform .32s cubic-bezier(.22, .61, .36, 1); }
+
+    .topbar { position: absolute; inset: 0 0 auto; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px; background: linear-gradient(rgb(0 0 0 / .58), transparent); }
+    .top-left, .top-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .round-button { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / .23); border-radius: 50%; background: rgb(16 20 18 / .62); color: var(--text); font-size: 21px; backdrop-filter: blur(10px); }
+    .round-button:hover { background: rgb(57 69 64 / .85); }
+    .title-pill { min-width: 0; max-width: min(430px, 48vw); padding: 11px 15px; border: 1px solid rgb(255 255 255 / .14); border-radius: 999px; background: rgb(16 20 18 / .64); backdrop-filter: blur(12px); }
+    .title-pill strong, .title-pill span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .title-pill strong { font-size: 14px; line-height: 18px; }
+    .title-pill span { margin-top: 2px; color: var(--muted); font-size: 10px; }
+    .top-right .round-button { width: 42px; height: 42px; font-size: 19px; }
+    .top-right .round-button.accent { color: var(--accent); }
+
+    .center-controls { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; gap: 22px; pointer-events: none; }
+    .center-controls button { pointer-events: auto; }
+    .center-button { width: 70px; height: 70px; display: grid; place-items: center; border: 1px solid var(--player-control-40); border-radius: 50%; background: var(--player-control-70); color: var(--text-inverse); font-size: 31px; box-shadow: 0 8px 22px rgb(0 0 0 / .2); }
+    .center-button:hover { background: var(--player-control-100); transform: scale(1.04); }
+    .center-button.small { width: 58px; height: 58px; font-size: 24px; background: var(--player-control-40); }
+
+    .bottombar { position: absolute; right: 0; bottom: 0; left: 0; z-index: 4; padding: 0 22px 18px; background: linear-gradient(transparent, var(--scrim-strong, rgb(0 0 0 / .80))); }
+    .seek-row { display: flex; align-items: center; gap: 12px; }
+    .time { color: var(--player-control-100); font-variant-numeric: tabular-nums; font-size: 12px; }
+    .seek { position: relative; flex: 1; height: 22px; display: flex; align-items: center; cursor: pointer; }
+    .seek input { position: relative; z-index: 1; width: 100%; height: 4px; appearance: none; border-radius: 3px; background: linear-gradient(to right, var(--player-track) 0 var(--progress-start, 0%), var(--accent) var(--progress-start, 0%) var(--progress), var(--player-track) var(--progress) 100%); cursor: pointer; }
+    .seek input::-webkit-slider-thumb { width: 14px; height: 14px; appearance: none; border: 3px solid var(--player-control-100); border-radius: 50%; background: var(--accent-strong); box-shadow: 0 1px 6px rgb(0 0 0 / .35); }
+    .seek input::-moz-range-thumb { width: 10px; height: 10px; border: 3px solid var(--player-control-100); border-radius: 50%; background: var(--accent-strong); }
+    .ab-marker { position: absolute; top: 0; left: 0; z-index: 3; width: 24px; height: 22px; padding: 0; background: transparent; cursor: ew-resize; touch-action: none; transform: translateX(-50%); filter: drop-shadow(0 1px 2px rgb(0 0 0 / .7)); }
+    .ab-marker::before { content: ""; position: absolute; top: 2px; bottom: 2px; left: 50%; width: 2px; border-radius: 2px; background: var(--player-control-100); transform: translateX(-50%); }
+    .ab-marker::after { content: ""; position: absolute; top: 3px; width: 0; height: 0; }
+    .ab-marker-a::after { left: calc(50% + 1px); border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid var(--player-control-100); }
+    .ab-marker-b::after { right: calc(50% + 1px); border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid var(--player-control-100); }
+    .ab-marker:hover::before, .ab-marker[data-dragging="true"]::before { background: var(--accent); }
+    .ab-marker-a:hover::after, .ab-marker-a[data-dragging="true"]::after { border-left-color: var(--accent); }
+    .ab-marker-b:hover::after, .ab-marker-b[data-dragging="true"]::after { border-right-color: var(--accent); }
+    .control-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 10px; }
+    .control-group { display: flex; align-items: center; gap: 7px; }
+    .control-button { min-width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 7px; background: transparent; color: var(--player-control-100); font-size: 20px; }
+    .control-button:hover { background: rgb(255 255 255 / .14); }
+    .control-button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+    .control-button.label { padding: 0 8px; font-size: 12px; }
+    .control-button.label i { font-size: 18px; }
+    .portrait-controls { display: none; }
+
+    .panel-scrim { position: absolute; inset: 0; z-index: 8; background: var(--scrim-default); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+    .panel-scrim.open { opacity: 1; pointer-events: auto; }
+    .screenshot-capsule, .ab-capsule { position: absolute; left: 50%; bottom: 104px; z-index: 11; display: flex; align-items: center; gap: 4px; padding: 5px; border: 1px solid var(--line-strong); border-radius: 999px; background: color-mix(in srgb, var(--surface-level-3, var(--surface-3)) 92%, transparent); box-shadow: 0 12px 30px rgb(0 0 0 / .32); opacity: 0; pointer-events: none; transform: translate(-50%, 10px) scale(.96); transition: opacity .18s ease, transform .18s ease; }
+    .screenshot-capsule.open, .ab-capsule.open { opacity: 1; pointer-events: auto; transform: translate(-50%, 0) scale(1); }
+    .screenshot-capsule button, .ab-capsule button { width: 42px; height: 34px; display: grid; place-items: center; border-radius: 999px; background: transparent; color: var(--text); font-size: 18px; }
+    .screenshot-capsule button:hover, .ab-capsule button:hover { background: rgb(255 255 255 / .14); }
+    .screenshot-capsule .capture-action { width: 52px; background: var(--accent); color: #172832; font-size: 19px; }
+    .screenshot-capsule .capture-action:hover { background: #c1dce8; }
+    .screenshot-capsule .capture-action[data-busy="true"] { background: var(--surface-3); color: var(--accent); cursor: wait; }
+    .ab-capsule { gap: 5px; }
+    .ab-capsule .ab-point { width: 56px; height: 38px; grid-template-rows: 15px 13px; gap: 1px; font-size: 13px; line-height: 1; }
+    .ab-capsule .ab-point strong { color: var(--accent); font-size: 13px; }
+    .ab-capsule .ab-point small { color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+    .ab-capsule .ab-point[data-set="true"] { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+    .ab-capsule .ab-clear { color: var(--muted); font-size: 17px; }
+    .shorts-ui { display: none; }
+    .player-frame.shorts > .topbar, .player-frame.shorts > .center-controls, .player-frame.shorts > .bottombar, .player-frame.shorts > .portrait-controls, .player-frame.shorts > .ab-capsule { display: none !important; }
+    .player-frame.shorts .shorts-ui { position: absolute; inset: 0; z-index: 5; display: block; pointer-events: none; }
+    .shorts-top { position: absolute; top: 18px; right: 16px; left: 16px; display: flex; align-items: center; justify-content: space-between; color: rgb(255 255 255 / .88); font-size: 12px; text-shadow: 0 1px 4px #000; }
+    .shorts-top button, .shorts-rail button { pointer-events: auto; }
+    .shorts-top button { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: rgb(0 0 0 / .28); color: #fff; font-size: 19px; }
+    .shorts-top .shorts-counter { padding: 5px 9px; border-radius: 999px; background: rgb(0 0 0 / .28); font-size: 10px; }
+    .shorts-rail { position: absolute; right: 13px; bottom: 132px; display: flex; flex-direction: column; align-items: center; gap: 13px; }
+    .shorts-action { width: 51px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: #fff; text-shadow: 0 1px 4px #000; }
+    .shorts-action .shorts-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: rgb(0 0 0 / .24); font-size: 27px; transition: transform .18s ease, background .18s ease, color .18s ease; }
+    .shorts-action span { font-size: 10px; }
+    .shorts-action:hover .shorts-icon, .shorts-action.active .shorts-icon { background: rgb(255 255 255 / .18); transform: scale(1.06); }
+    .shorts-action.active .shorts-icon { color: #ff9eb1; }
+    .shorts-bottom { position: absolute; right: 78px; bottom: 17px; left: 16px; display: flex; flex-direction: column; gap: 7px; text-shadow: 0 1px 5px #000; }
+    .shorts-title { overflow: hidden; font-size: 15px; font-weight: 700; white-space: nowrap; text-overflow: ellipsis; }
+    .shorts-caption { overflow: hidden; color: rgb(255 255 255 / .86); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+    .shorts-tags { display: flex; gap: 6px; }
+    .shorts-tags span { padding: 4px 8px; border-radius: 5px; background: rgb(0 0 0 / .48); color: rgb(255 255 255 / .92); font-size: 10px; }
+    .shorts-seek { position: absolute; right: 16px; bottom: 16px; left: 16px; height: 12px; pointer-events: auto; }
+    .shorts-seek input { width: 100%; height: 3px; appearance: none; border-radius: 4px; background: linear-gradient(to right, var(--accent) 0 var(--progress), rgb(255 255 255 / .32) var(--progress) 100%); cursor: pointer; }
+    .shorts-seek input::-webkit-slider-thumb { width: 9px; height: 9px; appearance: none; border: 0; border-radius: 50%; background: var(--accent); }
+    .shorts-seek input::-moz-range-thumb { width: 9px; height: 9px; border: 0; border-radius: 50%; background: var(--accent); }
+    .shorts-time { color: rgb(255 255 255 / .8); font-size: 10px; font-variant-numeric: tabular-nums; }
+    .shorts-gesture-hint { position: absolute; top: 50%; left: 50%; z-index: 6; width: min(220px, calc(100% - 48px)); padding: 11px 14px; border: 1px solid rgb(255 255 255 / .18); border-radius: 8px; background: rgb(16 20 18 / .76); color: var(--text); font-size: 11px; line-height: 18px; text-align: center; opacity: 0; pointer-events: none; transform: translate(-50%, -42%); transition: opacity .2s ease, transform .2s ease; }
+    .shorts-gesture-hint.show { opacity: 1; transform: translate(-50%, -50%); }
+    .player-frame.shorts .screenshot-capsule { bottom: 104px; z-index: 16; }
+    .player-frame.shorts .screenshot-preview-card { top: 56px; z-index: 16; }
+    .shorts-sheet-scrim { position: absolute; inset: 0; z-index: 13; background: var(--scrim-default); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+    .shorts-sheet-scrim.open { opacity: 1; pointer-events: auto; }
+    .shorts-more-sheet { position: absolute; right: 0; bottom: 0; left: 0; z-index: 14; padding: 8px 18px max(20px, env(safe-area-inset-bottom)); border: 1px solid var(--line-strong); border-bottom: 0; border-radius: 26px 26px 0 0; background: var(--surface-level-2); color: var(--text); box-shadow: 0 -12px 36px rgb(0 0 0 / .42); transform: translateY(105%); transition: transform .24s cubic-bezier(.2,.8,.2,1); pointer-events: auto; }
+    .shorts-more-sheet.open { transform: translateY(0); }
+    .shorts-blacklist-sheet, .shorts-favorites-sheet { position: absolute; right: 0; bottom: 0; left: 0; z-index: 15; min-height: 260px; padding: 8px 18px max(20px, env(safe-area-inset-bottom)); border: 1px solid var(--line-strong); border-bottom: 0; border-radius: 26px 26px 0 0; background: var(--surface-level-2); color: var(--text); box-shadow: 0 -12px 36px rgb(0 0 0 / .42); transform: translateY(105%); transition: transform .24s cubic-bezier(.2,.8,.2,1); pointer-events: auto; }
+    .shorts-blacklist-sheet.open, .shorts-favorites-sheet.open { transform: translateY(0); }
+    .shorts-blacklist-head, .shorts-favorites-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 2px 12px; border-bottom: 1px solid var(--line); }
+    .shorts-blacklist-head h2, .shorts-favorites-head h2 { margin: 0; font-size: 17px; }
+    .shorts-blacklist-count, .shorts-favorites-count { color: var(--dim); font-size: 12px; font-weight: 500; }
+    .shorts-blacklist-close, .shorts-favorites-close { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 7px; background: transparent; color: var(--muted); font-size: 20px; }
+    .shorts-blacklist-close:hover, .shorts-favorites-close:hover { background: var(--surface-level-3); color: var(--text); }
+    .shorts-blacklist-list, .shorts-favorites-list { min-height: 120px; }
+    .shorts-blacklist-row, .shorts-favorites-row { min-height: 58px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+    .shorts-blacklist-row > i, .shorts-favorites-row > i { color: var(--muted); font-size: 20px; }
+    .shorts-blacklist-name, .shorts-favorites-name { min-width: 0; flex: 1; overflow: hidden; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+    .shorts-blacklist-remove, .shorts-favorites-remove { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 7px; background: transparent; color: var(--muted); font-size: 18px; }
+    .shorts-blacklist-remove:hover { background: color-mix(in srgb, var(--error) 14%, var(--surface-level-3)); color: var(--error); }
+    .shorts-favorites-remove:hover { background: color-mix(in srgb, var(--accent) 14%, var(--surface-level-3)); color: var(--accent); }
+    .shorts-blacklist-empty, .shorts-favorites-empty { min-height: 120px; display: grid; place-items: center; color: var(--dim); font-size: 12px; }
+    .shorts-sheet-handle { width: 44px; height: 5px; margin: 2px auto 16px; border-radius: 999px; background: var(--line-strong); }
+    .shorts-sheet-list { display: grid; }
+    .shorts-sheet-item { min-height: 62px; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 2px; background: transparent; color: inherit; text-align: left; }
+    .shorts-sheet-item:hover { background: var(--surface-level-3); }
+    .shorts-sheet-item > i { justify-self: center; font-size: 25px; color: var(--muted); }
+    .shorts-sheet-copy { min-width: 0; display: grid; gap: 3px; }
+    .shorts-sheet-copy strong { font-size: 16px; font-weight: 500; }
+    .shorts-sheet-copy span { color: var(--muted); font-size: 12px; line-height: 17px; }
+    .shorts-sheet-item.danger .shorts-sheet-copy strong, .shorts-sheet-item.danger .shorts-sheet-copy span, .shorts-sheet-item.danger > i { color: var(--error); }
+    .shorts-speed-value { min-width: 54px; padding: 7px 9px; border-radius: 7px; background: color-mix(in srgb, var(--accent) 16%, var(--surface-level-3)); color: var(--accent); font-size: 14px; text-align: center; }
+    .shorts-switch { width: 48px; height: 28px; position: relative; border: 2px solid var(--line-strong); border-radius: 999px; background: var(--surface-level-3); transition: background .18s ease, border-color .18s ease; }
+    .shorts-switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform .18s ease, background .18s ease; }
+    .shorts-switch[aria-pressed="true"] { border-color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 22%, var(--surface-level-3)); }
+    .shorts-switch[aria-pressed="true"]::after { background: var(--accent); transform: translateX(20px); }
+    .screenshot-preview-card { position: absolute; top: 16px; left: 16px; z-index: 12; width: 116px; aspect-ratio: 16 / 10; overflow: visible; border: 2px solid rgb(255 255 255 / .86); border-radius: 7px; background: #0c100e; box-shadow: 0 8px 22px rgb(0 0 0 / .35); cursor: pointer; opacity: 1; transform: none; }
+    .screenshot-preview-card.is-flying { animation: screenshot-fly .42s cubic-bezier(.2,.82,.25,1) both; }
+    .screenshot-preview-card img { width: 100%; height: 100%; display: block; border-radius: 5px; object-fit: contain; background: #0c100e; }
+    .screenshot-countdown { position: absolute; right: 0; bottom: 0; left: 0; height: 4px; overflow: hidden; border-radius: 0 0 5px 5px; background: var(--player-track); }
+    .screenshot-countdown-fill { display: block; width: 100%; height: 100%; background: var(--accent); transform-origin: left center; }
+    .screenshot-countdown-fill.running { animation: screenshot-countdown 3s linear forwards; }
+    .screenshot-countdown-fill.running.is-paused { animation-play-state: paused; }
+    .screenshot-delete { position: absolute; top: -11px; right: -11px; width: 27px; height: 27px; display: grid; place-items: center; border: 2px solid var(--surface-2); border-radius: 50%; background: var(--error-container); color: var(--error); font-size: 14px; box-shadow: 0 3px 9px rgb(0 0 0 / .3); opacity: 0; transform: scale(.55) rotate(-18deg); }
+    .screenshot-delete.is-visible { animation: screenshot-delete-in .2s cubic-bezier(.2,.8,.2,1) forwards; }
+    .screenshot-delete:hover { background: #682f2b; color: #fbcfcb; }
+    @keyframes screenshot-fly { from { opacity: .25; transform: translate(128px, 118px) scale(2.4); } to { opacity: 1; transform: translate(0, 0) scale(1); } }
+    @keyframes screenshot-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    @keyframes screenshot-delete-in { from { opacity: 0; transform: scale(.55) rotate(-18deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+    .info-modal { position: absolute; top: 50%; left: 50%; z-index: 10; width: min(440px, calc(100% - 40px)); max-height: calc(100% - 48px); padding: 18px 20px; overflow-y: auto; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-level-2, var(--surface-2)); box-shadow: 0 20px 52px rgb(0 0 0 / .42); opacity: 0; pointer-events: none; transform: translate(-50%, -47%) scale(.98); transition: opacity .18s ease, transform .18s ease; }
+    .info-modal.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+    .info-head { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+    .info-head h2 { margin: 0; font-size: 17px; }
+    .info-list { margin: 0; }
+    .info-row { min-height: 39px; display: grid; grid-template-columns: 90px minmax(0, 1fr); align-items: center; gap: 16px; border-top: 1px solid var(--line); font-size: 12px; }
+    .info-row dt { color: var(--muted); }
+    .info-row dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--text); text-align: right; }
+    .drawer { position: absolute; top: 0; right: 0; bottom: 0; z-index: 9; width: min(340px, 84%); padding: 24px 22px; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface-level-1, var(--surface)); transform: translateX(102%); transition: transform .24s ease; }
+    .drawer.open { transform: translateX(0); }
+    .drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+    .drawer-head h2 { margin: 0; font-size: 17px; }
+    .drawer-close { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 7px; background: transparent; color: var(--muted); font-size: 20px; }
+    .drawer-close:hover { background: var(--surface-3); }
+    .setting { padding: 16px 0; border-top: 1px solid var(--line); }
+    .setting:first-of-type { border-top: 0; }
+    .setting-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 11px; color: var(--muted); font-size: 12px; }
+    .setting-value { color: var(--text); font-weight: 650; }
+    .setting-options { display: flex; flex-wrap: wrap; gap: 7px; }
+    .option { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 11px; }
+    .option.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface-2)); color: var(--accent); font-weight: 650; }
+    .playlist-item { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); }
+    .playlist-item:first-child { border-top: 0; }
+    .playlist-thumb { width: 72px; aspect-ratio: 16 / 9; flex: 0 0 auto; overflow: hidden; border-radius: 5px; background: #121615; }
+    .playlist-thumb img, .playlist-thumb video { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; }
+    .playlist-item { width: 100%; background: transparent; color: var(--text); text-align: left; }
+    .playlist-copy { min-width: 0; flex: 1; }
+    .playlist-copy strong, .playlist-copy span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .playlist-copy strong { font-size: 12px; }
+    .playlist-copy span { margin-top: 3px; color: var(--dim); font-size: 10px; }
+    .playlist-item.current .playlist-copy strong { color: var(--accent); }
+
+    .hint { position: fixed; right: 22px; bottom: 18px; color: var(--dim); font-size: 11px; }
+    .toast { position: fixed; left: 50%; bottom: 24px; z-index: 30; padding: 10px 14px; border: 1px solid var(--line); border-radius: 7px; background: #222724; color: var(--text); font-size: 12px; box-shadow: 0 8px 22px rgb(0 0 0 / .3); transform: translate(-50%, 18px); opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    .player-frame.portrait .topbar { align-items: flex-start; padding: 44px 14px 15px; }
+    .player-frame.portrait .title-pill { max-width: 230px; padding: 9px 12px; }
+    .player-frame.portrait .title-pill strong { font-size: 13px; }
+    .player-frame.portrait .top-right { gap: 5px; }
+    .player-frame.portrait .top-right .round-button { width: 38px; height: 38px; font-size: 17px; }
+    .player-frame.portrait .center-controls { align-items: center; gap: 12px; transform: translateY(20px); }
+    .player-frame.portrait .center-button { width: 58px; height: 58px; font-size: 25px; }
+    .player-frame.portrait .center-button.small { width: 48px; height: 48px; font-size: 20px; }
+    .player-frame.portrait .bottombar { display: none; }
+    .player-frame.portrait .portrait-controls { position: absolute; right: 14px; bottom: 18px; left: 14px; z-index: 4; display: block; padding: 13px 13px 12px; border: 1px solid rgb(255 255 255 / .15); border-radius: 10px; background: rgb(18 22 20 / .78); backdrop-filter: blur(12px); }
+    .player-frame.portrait .portrait-controls .control-row { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; margin-top: 0; }
+    .player-frame.portrait .portrait-controls .control-group { display: contents; }
+    .player-frame.portrait .portrait-controls .control-button { width: 100%; min-width: 0; height: 34px; padding: 0; font-size: 18px; }
+    .player-frame.portrait .portrait-controls .control-button.label { font-size: 11px; }
+    .player-frame.portrait .portrait-controls .control-button.label span { display: none; }
+    .player-frame.portrait .portrait-controls .seek-row { gap: 9px; margin-top: 8px; }
+    .player-frame.portrait .portrait-controls .seek { height: 20px; }
+    .player-frame.portrait .portrait-controls .time { font-size: 11px; }
+    .player-frame.portrait .screenshot-capsule, .player-frame.portrait .ab-capsule { bottom: 128px; }
+    .player-frame.portrait .drawer { top: auto; width: 100%; max-height: 72%; padding: 18px 18px 22px; border-top: 1px solid var(--line); border-left: 0; border-radius: 14px 14px 0 0; transform: translateY(102%); }
+    .player-frame.portrait .drawer.open { transform: translateY(0); }
+    .player-frame.portrait .drawer-head { margin-bottom: 14px; }
+    .player-frame.portrait .info-modal { width: calc(100% - 28px); max-height: calc(100% - 72px); padding: 16px; }
+    .player-frame.portrait .info-row { grid-template-columns: 76px minmax(0, 1fr); gap: 10px; }
+
+    @media (max-width: 720px) {
+      .demo-shell { grid-template-rows: 56px 1fr; }
+      .demo-header { padding: 0 14px; }
+      .brand-meta, .header-action { display: none; }
+      .orientation-switch button { min-width: 74px; height: 31px; }
+      .stage { min-height: calc(100vh - 56px); padding: 20px; }
+      .device-shell:not(.portrait) { width: min(100%, calc(100vw - 32px), calc((100vh - 112px) * 16 / 9)); }
+      .hint { display: none; }
+    }
+    @media (max-width: 480px) {
+      .demo-header .brand-name { font-size: 14px; }
+      .orientation-switch button { min-width: 68px; font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-shell">
+    <header class="demo-header">
+      <div class="brand"><span class="brand-mark"><i class="ti ti-player-play-filled"></i></span><span class="brand-name">影里播放器</span><span class="brand-meta">播放页交互 Demo</span></div>
+      <div class="orientation-switch" role="group" aria-label="切换播放器形态">
+        <button class="active" data-orientation="landscape"><i class="ti ti-device-tv"></i>横屏</button>
+        <button data-orientation="portrait"><i class="ti ti-device-mobile"></i>竖屏</button>
+        <button data-view-mode="shorts"><i class="ti ti-brand-tiktok"></i>短视频</button>
+      </div>
+      <button class="header-action" data-toast="演示模式已开启" aria-label="演示信息"><i class="ti ti-info-circle"></i></button>
+    </header>
+
+    <main class="stage">
+      <div class="device-shell" id="deviceShell" aria-label="手机播放器模型">
+        <span class="camera-hole" aria-hidden="true"></span>
+        <span class="side-key" aria-hidden="true"></span>
+        <div class="device-status" aria-hidden="true"><span>09:41</span><span class="device-status-icons"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+        <section class="player-frame" id="playerFrame" data-state="paused" aria-label="正在播放横屏测试视频">
+        <video class="player-video" id="playerVideo" src="assets/横屏.m4v" poster="assets/横屏首帧.jpg" preload="auto" playsinline></video>
+        <video class="shorts-peek-video" id="shortsPeekVideo" muted playsinline preload="auto" aria-hidden="true" tabindex="-1"></video>
+        <div class="topbar">
+          <div class="top-left">
+            <button class="round-button" data-toast="返回媒体库" aria-label="返回"><i class="ti ti-arrow-left"></i></button>
+            <div class="title-pill"><strong id="mediaTitle">横屏测试视频</strong><span id="mediaMeta">本地视频 · 1 / 2</span></div>
+          </div>
+          <div class="top-right">
+            <button class="round-button accent" data-action="playlist" aria-label="打开播放列表"><i class="ti ti-list"></i></button>
+            <button class="round-button" data-action="settings" aria-label="打开播放设置"><i class="ti ti-adjustments-horizontal"></i></button>
+            <button class="round-button" data-action="media-info" aria-label="视频信息"><i class="ti ti-info-circle"></i></button>
+          </div>
+        </div>
+
+        <div class="center-controls">
+          <button class="center-button small" data-action="previous" aria-label="上一个视频"><i class="ti ti-player-skip-back-filled"></i></button>
+          <button class="center-button" data-action="play" aria-label="播放或暂停"><i class="ti ti-player-play-filled" id="centerPlayIcon"></i></button>
+          <button class="center-button small" data-action="next" aria-label="下一个视频"><i class="ti ti-player-skip-forward-filled"></i></button>
+        </div>
+
+        <div class="bottombar">
+          <div class="seek-row"><span class="time" id="timeCurrent">00:00</span><label class="seek" aria-label="视频进度"><input id="seekLandscape" type="range" min="0" max="95.434" value="0" step="0.01"><span class="ab-marker ab-marker-a" data-ab-marker="a" role="slider" tabindex="0" aria-label="拖动 A 点" hidden></span><span class="ab-marker ab-marker-b" data-ab-marker="b" role="slider" tabindex="0" aria-label="拖动 B 点" hidden></span></label><span class="time time-total">01:35</span></div>
+          <div class="control-row">
+            <div class="control-group"><button class="control-button" data-action="play" aria-label="播放或暂停"><i class="ti ti-player-play-filled" id="bottomPlayIcon"></i></button><button class="control-button label" data-toast="音量 80%"><i class="ti ti-volume-2"></i><span>80%</span></button><button class="control-button label" data-toast="播放速度 1.0x"><i class="ti ti-gauge"></i><span>1.0x</span></button></div>
+            <div class="control-group"><button class="control-button label" data-action="order" aria-label="播放顺序"><i class="ti ti-repeat"></i><span id="orderLabel">顺序</span></button><button class="control-button" data-action="pip" aria-label="画中画"><i class="ti ti-picture-in-picture"></i></button><button class="control-button" data-action="rotate" aria-label="旋转屏幕"><i class="ti ti-rotate-2"></i></button><button class="control-button" data-action="screenshot-mode" aria-label="截图"><i class="ti ti-camera"></i></button><button class="control-button" data-action="ab-mode" aria-label="AB 循环"><i class="ti ti-repeat"></i></button><button class="control-button" data-toast="画面比例：原始"><i class="ti ti-aspect-ratio"></i></button><button class="control-button" data-action="settings" aria-label="播放设置"><i class="ti ti-settings"></i></button><button class="control-button" data-action="fullscreen" aria-label="全屏"><i class="ti ti-maximize"></i></button></div>
+          </div>
+        </div>
+
+        <div class="portrait-controls">
+          <div class="control-row"><div class="control-group"><button class="control-button" data-action="play" aria-label="播放或暂停"><i class="ti ti-player-play-filled" id="portraitPlayIcon"></i></button><button class="control-button label" data-toast="音量 80%"><i class="ti ti-volume-2"></i><span>80%</span></button></div><div class="control-group"><button class="control-button label" data-action="order" aria-label="播放顺序"><i class="ti ti-repeat"></i><span id="orderLabelPortrait">顺序</span></button><button class="control-button" data-action="pip" aria-label="画中画"><i class="ti ti-picture-in-picture"></i></button><button class="control-button" data-action="rotate" aria-label="旋转屏幕"><i class="ti ti-rotate-2"></i></button><button class="control-button" data-action="screenshot-mode" aria-label="截图"><i class="ti ti-camera"></i></button><button class="control-button" data-action="ab-mode" aria-label="AB 循环"><i class="ti ti-repeat"></i></button><button class="control-button" data-action="settings" aria-label="播放设置"><i class="ti ti-adjustments-horizontal"></i></button><button class="control-button" data-action="fullscreen" aria-label="全屏"><i class="ti ti-maximize"></i></button></div></div>
+          <div class="seek-row"><span class="time" id="timePortrait">00:00</span><label class="seek" aria-label="视频进度"><input id="seekPortrait" type="range" min="0" max="95.434" value="0" step="0.01"><span class="ab-marker ab-marker-a" data-ab-marker="a" role="slider" tabindex="0" aria-label="拖动 A 点" hidden></span><span class="ab-marker ab-marker-b" data-ab-marker="b" role="slider" tabindex="0" aria-label="拖动 B 点" hidden></span></label><span class="time time-total">01:35</span></div>
+        </div>
+
+        <div class="screenshot-capsule" id="screenshotCapsule" aria-label="截图控制">
+          <button data-action="screenshot-prev" aria-label="上一帧"><i class="ti ti-player-skip-back"></i></button>
+          <button class="capture-action" data-action="screenshot-capture" aria-label="截图当前帧"><i class="ti ti-camera-filled"></i></button>
+          <button data-action="screenshot-next" aria-label="下一帧"><i class="ti ti-player-skip-forward"></i></button>
+          <button data-action="screenshot-cancel" aria-label="取消截图"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="ab-capsule" id="abCapsule" aria-label="AB 循环控制">
+          <button class="ab-point" data-action="ab-set-a" aria-label="设置 A 点"><strong>A</strong><small id="abStartValue">设置</small></button>
+          <button class="ab-point" data-action="ab-set-b" aria-label="设置 B 点"><strong>B</strong><small id="abEndValue">设置</small></button>
+          <button class="ab-clear" data-action="ab-clear" aria-label="清除 AB 点"><i class="ti ti-eraser"></i></button>
+          <button data-action="ab-cancel" aria-label="关闭 AB 控制"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="shorts-ui" id="shortsUi" aria-label="短视频播放控制">
+          <div class="shorts-top"><button data-action="shorts-back" aria-label="返回竖屏播放器"><i class="ti ti-arrow-left"></i></button><span class="shorts-counter" id="shortsCounter">1 / 3</span></div>
+          <div class="shorts-rail">
+            <button class="shorts-action" data-action="shorts-favorite" aria-label="收藏"><i class="shorts-icon ti ti-star"></i><span id="shortsFavoriteLabel">收藏</span></button>
+            <button class="shorts-action" data-action="shorts-block" aria-label="屏蔽"><i class="shorts-icon ti ti-ban"></i><span id="shortsBlockLabel">屏蔽</span></button>
+            <button class="shorts-action" data-action="shorts-more" aria-label="更多"><i class="shorts-icon ti ti-dots"></i><span>更多</span></button>
+          </div>
+          <div class="shorts-bottom"><strong class="shorts-title" id="shortsTitle">短视频 01</strong><span class="shorts-caption" id="shortsCaption">记录此刻的光影与声音</span><div class="shorts-tags"><span id="shortsResolution">480p@30</span><span id="shortsSize">6.3 MB</span><span class="shorts-time" id="shortsTime">00:00 / 01:02</span></div></div>
+          <label class="shorts-seek" aria-label="短视频进度"><input id="shortsSeek" type="range" min="0" max="62.8" value="0" step="0.01"></label>
+          <div class="shorts-gesture-hint" id="shortsGestureHint">上滑下一条 · 下滑上一条<br>左右滑动快进或快退 · 长按 2.0x</div>
+        </div>
+        <div class="shorts-sheet-scrim" id="shortsSheetScrim"></div>
+        <section class="shorts-more-sheet" id="shortsMoreSheet" aria-label="短视频更多操作">
+          <div class="shorts-sheet-handle" aria-hidden="true"></div>
+          <div class="shorts-sheet-list">
+            <div class="shorts-sheet-item"><i class="ti ti-player-track-next"></i><div class="shorts-sheet-copy"><strong>自动切换下一条短视频</strong><span>视频播放结束后自动滑动切换</span></div><button class="shorts-switch" data-action="shorts-auto-next" aria-label="自动切换下一条短视频" aria-pressed="true"></button></div>
+            <button class="shorts-sheet-item" data-action="shorts-speed" aria-label="长按倍速"><i class="ti ti-gauge"></i><span class="shorts-sheet-copy"><strong>长按倍速</strong><span>长按锁定倍速，单击切换倍速</span></span><span class="shorts-speed-value" id="shortsSpeedValue">2.0x</span></button>
+            <button class="shorts-sheet-item" data-action="shorts-share"><i class="ti ti-share-3"></i><span class="shorts-sheet-copy"><strong>分享</strong></span></button>
+            <button class="shorts-sheet-item" data-action="shorts-favorites"><i class="ti ti-star"></i><span class="shorts-sheet-copy"><strong>收藏列表</strong></span></button>
+            <button class="shorts-sheet-item"><i class="ti ti-repeat-once"></i><span class="shorts-sheet-copy"><strong>循环当前视频</strong><span>播放结束后重新播放当前视频</span></span><span class="shorts-switch" data-action="shorts-repeat-current" role="button" tabindex="0" aria-label="循环当前视频" aria-pressed="false"></span></button>
+            <button class="shorts-sheet-item" data-action="shorts-pip"><i class="ti ti-picture-in-picture"></i><span class="shorts-sheet-copy"><strong>画中画</strong></span></button>
+            <button class="shorts-sheet-item" data-action="shorts-screenshot"><i class="ti ti-camera"></i><span class="shorts-sheet-copy"><strong>截图</strong></span></button>
+            <button class="shorts-sheet-item" data-action="shorts-ratio"><i class="ti ti-aspect-ratio"></i><span class="shorts-sheet-copy"><strong>画面比例</strong><span>裁剪、原始、拉伸</span></span><span class="shorts-speed-value" id="shortsRatioValue">裁剪</span></button>
+            <button class="shorts-sheet-item" data-action="shorts-info"><i class="ti ti-info-circle-filled"></i><span class="shorts-sheet-copy"><strong>视频信息</strong></span></button>
+            <button class="shorts-sheet-item" data-action="shorts-blacklist"><i class="ti ti-ban"></i><span class="shorts-sheet-copy"><strong>黑名单视频管理</strong></span></button>
+            <button class="shorts-sheet-item danger" data-action="shorts-delete"><i class="ti ti-trash"></i><span class="shorts-sheet-copy"><strong>删除短视频</strong><span>从设备永久删除该文件</span></span></button>
+          </div>
+        </section>
+        <section class="shorts-blacklist-sheet" id="shortsBlacklistSheet" aria-label="黑名单视频管理">
+          <div class="shorts-sheet-handle" aria-hidden="true"></div>
+          <div class="shorts-blacklist-head"><h2>黑名单视频 <span class="shorts-blacklist-count" id="shortsBlacklistCount">1 条</span></h2><button class="shorts-blacklist-close" data-action="shorts-blacklist-close" aria-label="关闭黑名单管理"><i class="ti ti-x"></i></button></div>
+          <div class="shorts-blacklist-list" id="shortsBlacklistList"></div>
+        </section>
+        <section class="shorts-favorites-sheet" id="shortsFavoritesSheet" aria-label="收藏视频管理">
+          <div class="shorts-sheet-handle" aria-hidden="true"></div>
+          <div class="shorts-favorites-head"><h2>收藏视频 <span class="shorts-favorites-count" id="shortsFavoritesCount">0 条</span></h2><button class="shorts-favorites-close" data-action="shorts-favorites-close" aria-label="关闭收藏列表"><i class="ti ti-x"></i></button></div>
+          <div class="shorts-favorites-list" id="shortsFavoritesList"></div>
+        </section>
+        <div class="screenshot-preview-card" id="screenshotPreviewCard" hidden>
+          <img id="screenshotPreviewImage" alt="当前视频帧截图">
+          <div class="screenshot-countdown" aria-hidden="true"><span class="screenshot-countdown-fill" id="screenshotCountdownFill"></span></div>
+          <button class="screenshot-delete" id="screenshotDelete" data-action="screenshot-delete" aria-label="删除截图" hidden><i class="ti ti-trash"></i></button>
+        </div>
+
+        <div class="panel-scrim" id="panelScrim"></div>
+        <section class="info-modal" id="mediaInfoModal" role="dialog" aria-modal="true" aria-labelledby="mediaInfoTitle">
+          <div class="info-head"><h2 id="mediaInfoTitle">视频信息</h2><button class="drawer-close" data-action="close" aria-label="关闭视频信息"><i class="ti ti-x"></i></button></div>
+          <dl class="info-list">
+            <div class="info-row"><dt>文件名</dt><dd id="infoFilename">横屏.m4v</dd></div>
+            <div class="info-row"><dt>文件位置</dt><dd id="infoPath">assets/横屏.m4v</dd></div>
+            <div class="info-row"><dt>封装格式</dt><dd id="infoContainer">M4V</dd></div>
+            <div class="info-row"><dt>文件大小</dt><dd id="infoSize">9.47 MB</dd></div>
+            <div class="info-row"><dt>分辨率</dt><dd id="infoResolution">720 × 480</dd></div>
+            <div class="info-row"><dt>画面方向</dt><dd id="infoOrientation">横屏</dd></div>
+            <div class="info-row"><dt>时长</dt><dd id="infoDuration">01:35</dd></div>
+            <div class="info-row"><dt>视频编码</dt><dd id="infoVideoCodec">H.264 / AVC</dd></div>
+            <div class="info-row"><dt>帧率</dt><dd id="infoFrameRate">25 fps</dd></div>
+            <div class="info-row"><dt>平均码率</dt><dd id="infoBitrate">0.79 Mbps</dd></div>
+            <div class="info-row"><dt>音轨</dt><dd id="infoAudio">AAC · 44.1 kHz · 立体声</dd></div>
+          </dl>
+        </section>
+        <aside class="drawer" id="settingsDrawer" aria-label="播放设置">
+          <div class="drawer-head"><h2>播放设置</h2><button class="drawer-close" data-action="close" aria-label="关闭"><i class="ti ti-x"></i></button></div>
+          <div class="setting"><div class="setting-label"><span>解码器</span><span class="setting-value">硬件加速</span></div><div class="setting-options"><button class="option active">HW+</button><button class="option">HW</button><button class="option">SW</button></div></div>
+          <div class="setting"><div class="setting-label"><span>播放顺序</span><span class="setting-value" id="orderSettingValue">顺序播放</span></div><div class="setting-options"><button class="option active" data-order="sequence">顺序</button><button class="option" data-order="shuffle">随机</button><button class="option" data-order="loop">列表循环</button><button class="option" data-order="repeat-one">单曲重复</button></div></div>
+          <div class="setting"><div class="setting-label"><span>播放速度</span><span class="setting-value">1.0x</span></div><div class="setting-options"><button class="option" data-rate="0.75">0.75x</button><button class="option active" data-rate="1">1.0x</button><button class="option" data-rate="1.25">1.25x</button><button class="option" data-rate="1.5">1.5x</button></div></div>
+          <div class="setting"><div class="setting-label"><span>画面比例</span><span class="setting-value">原始</span></div><div class="setting-options"><button class="option active">原始</button><button class="option">裁剪</button><button class="option">拉伸</button></div></div>
+          <div class="setting"><div class="setting-label"><span>字幕</span><span class="setting-value">简体中文</span></div><div class="setting-options"><button class="option active">简体中文</button><button class="option">关闭</button></div></div>
+        </aside>
+        <aside class="drawer" id="playlistDrawer" aria-label="播放列表">
+          <div class="drawer-head"><h2>播放列表 <span id="playlistCount" style="color:var(--dim);font-size:12px;font-weight:500">1 / 2</span></h2><button class="drawer-close" data-action="close" aria-label="关闭"><i class="ti ti-x"></i></button></div>
+          <button class="playlist-item current" data-index="0"><div class="playlist-thumb"><video src="assets/横屏.m4v" muted preload="metadata" aria-hidden="true"></video></div><div class="playlist-copy"><strong>横屏测试视频</strong><span>01:35</span></div><i class="ti ti-player-play-filled playlist-indicator" style="color:var(--accent)"></i></button>
+          <button class="playlist-item" data-index="1"><div class="playlist-thumb"><video src="assets/竖屏.mp4" muted preload="metadata" aria-hidden="true"></video></div><div class="playlist-copy"><strong>竖屏测试视频</strong><span>00:24</span></div><i class="ti ti-player-play-filled playlist-indicator" style="color:var(--accent)" hidden></i></button>
+        </aside>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div class="hint">点击画面中央或进度条体验交互</div>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const tracks = [
+      { title: '横屏测试视频', filename: '横屏.m4v', src: 'assets/横屏.m4v', poster: 'assets/横屏首帧.jpg', container: 'M4V', size: 9473703, width: 720, height: 480, duration: 95.434, frameRate: 25, bitrate: 794157, videoCodec: 'H.264 / AVC', audio: 'AAC · 44.1 kHz · 立体声' },
+      { title: '竖屏测试视频', filename: '竖屏.mp4', src: 'assets/竖屏.mp4', poster: 'assets/竖屏首帧.jpg', container: 'MP4', size: 1390851, width: 426, height: 854, duration: 24.2, frameRate: 30, bitrate: 459785, videoCodec: 'H.264 / AVC', audio: '无音轨' }
+    ];
+    const shortTracks = [
+      { title: '短视频 01', caption: '记录此刻的光影与声音', filename: '1.mp4', src: 'assets/shorts/1.mp4', poster: 'assets/shorts/1.jpg', container: 'MP4', width: 480, height: 852, duration: 62.8, frameRate: 30, size: 6273260, bitrate: 799142, videoCodec: 'H.264 / AVC', audio: 'AAC · 立体声', resolution: '480p@30' },
+      { title: '短视频 02', caption: '竖屏影像 · 日常片段', filename: '2.mp4', src: 'assets/shorts/2.mp4', poster: 'assets/shorts/2.jpg', container: 'MP4', width: 426, height: 854, duration: 24.2, frameRate: 30, size: 1390851, bitrate: 459785, videoCodec: 'H.264 / AVC', audio: '无音轨', resolution: '426p@30' },
+      { title: '短视频 03', caption: '一段适合循环观看的画面', filename: '3.mp4', src: 'assets/shorts/3.mp4', poster: 'assets/shorts/3.jpg', container: 'MP4', width: 480, height: 852, duration: 54.1, frameRate: 30, size: 5694101, bitrate: 842019, videoCodec: 'H.264 / AVC', audio: 'AAC · 立体声', resolution: '480p@30' }
+    ];
+    const playbackModes = [
+      { id: 'sequence', label: '顺序', detail: '顺序播放', icon: 'ti-list-numbers' },
+      { id: 'shuffle', label: '随机', detail: '随机播放', icon: 'ti-arrows-shuffle' },
+      { id: 'loop', label: '循环', detail: '列表循环', icon: 'ti-repeat' },
+      { id: 'repeat-one', label: '单曲', detail: '单曲重复', icon: 'ti-repeat-once' }
+    ];
+    const frame = document.querySelector('#playerFrame');
+    const device = document.querySelector('#deviceShell');
+    const video = document.querySelector('#playerVideo');
+    const shortsPeek = document.querySelector('#shortsPeekVideo');
+    const toast = document.querySelector('#toast');
+    const scrim = document.querySelector('#panelScrim');
+    const mediaInfoModal = document.querySelector('#mediaInfoModal');
+    const screenshotCapsule = document.querySelector('#screenshotCapsule');
+    const abCapsule = document.querySelector('#abCapsule');
+    const abStartValue = document.querySelector('#abStartValue');
+    const abEndValue = document.querySelector('#abEndValue');
+    const screenshotPreviewCard = document.querySelector('#screenshotPreviewCard');
+    const screenshotPreviewImage = document.querySelector('#screenshotPreviewImage');
+    const screenshotCountdownFill = document.querySelector('#screenshotCountdownFill');
+    const screenshotDelete = document.querySelector('#screenshotDelete');
+    const screenshotCaptureButton = document.querySelector('[data-action="screenshot-capture"]');
+    const shortsMoreSheet = document.querySelector('#shortsMoreSheet');
+    const shortsSheetScrim = document.querySelector('#shortsSheetScrim');
+    const shortsBlacklistSheet = document.querySelector('#shortsBlacklistSheet');
+    const shortsBlacklistList = document.querySelector('#shortsBlacklistList');
+    const shortsFavoritesSheet = document.querySelector('#shortsFavoritesSheet');
+    const shortsFavoritesList = document.querySelector('#shortsFavoritesList');
+    const abMarkers = [...document.querySelectorAll('[data-ab-marker]')];
+    const drawers = { settings: document.querySelector('#settingsDrawer'), playlist: document.querySelector('#playlistDrawer') };
+    const playIcons = [...document.querySelectorAll('#centerPlayIcon, #bottomPlayIcon, #portraitPlayIcon')];
+    const rangeInputs = [...document.querySelectorAll('input[type="range"]')];
+    let currentTrackIndex = 0;
+    let shortTrackIndex = 0;
+    let playerMode = 'landscape';
+    let playbackMode = 'sequence';
+    let toastTimer;
+    let screenshotTimer;
+    let abStart = null;
+    let abEnd = null;
+    let markerDrag = null;
+    let shortsSwipeStartY = null;
+    let shortsSwipePointerId = null;
+    let shortsDragActive = false;
+    let shortsDragMoved = false;
+    let shortsDragDirection = null;
+    let shortsTransitioning = false;
+    let shortsAutoNext = true;
+    let shortsSpeedLocked = false;
+    let shortsSpeedHoldTimer;
+    let shortsSpeedHeld = false;
+    let shortsSpeedSuppressClick = false;
+    const shortsBlacklist = new Set(['2.mp4']);
+    const shortsFavorites = new Set();
+    let shortsRepeatCurrent = false;
+    let shortsFitIndex = 0;
+    let shortsHintTimer;
+    let shortsHintShown = false;
+    let shortsSwipeStartX = null;
+    let shortsSwipeAxis = null;
+    let shortsFrameHoldTimer;
+    let shortsFrameHeld = false;
+    const SHORTS_DRAG_COMMIT_PX = 64;
+
+    function notify(message) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 1700);
+    }
+
+    function formatTime(value) {
+      const seconds = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+      const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+      const secs = String(seconds % 60).padStart(2, '0');
+      return `${mins}:${secs}`;
+    }
+
+    function formatFileSize(bytes) {
+      return `${(bytes / 1000000).toFixed(2)} MB`;
+    }
+
+    function updateMediaInfo() {
+      const track = playerMode === 'shorts' ? shortTracks[shortTrackIndex] : tracks[currentTrackIndex];
+      const width = video.videoWidth || track.width;
+      const height = video.videoHeight || track.height;
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : track.duration;
+      const values = {
+        infoFilename: track.filename,
+        infoPath: track.src,
+        infoContainer: track.container,
+        infoSize: formatFileSize(track.size),
+        infoResolution: `${width} × ${height}`,
+        infoOrientation: playerMode === 'shorts' ? '短视频竖屏' : (width >= height ? '横屏' : '竖屏'),
+        infoDuration: formatTime(duration),
+        infoVideoCodec: track.videoCodec,
+        infoFrameRate: `${track.frameRate} fps`,
+        infoBitrate: `${(track.bitrate / 1000000).toFixed(2)} Mbps`,
+        infoAudio: track.audio
+      };
+      Object.entries(values).forEach(([id, value]) => { document.querySelector(`#${id}`).textContent = value; });
+    }
+
+    function updateShortUI() {
+      const track = shortTracks[shortTrackIndex];
+      document.querySelector('#shortsTitle').textContent = track.title;
+      document.querySelector('#shortsCaption').textContent = track.caption;
+      document.querySelector('#shortsCounter').textContent = `${shortTrackIndex + 1} / ${shortTracks.length}`;
+      document.querySelector('#shortsResolution').textContent = track.resolution;
+      document.querySelector('#shortsSize').textContent = `${(track.size / 1000000).toFixed(1)} MB`;
+      document.querySelector('#shortsSeek').max = track.duration;
+      syncShortsBlockUI();
+      syncShortsFavoriteUI();
+      document.querySelector('#shortsTime').textContent = `${formatTime(video.currentTime)} / ${formatTime(track.duration)}`;
+    }
+
+    function syncShortsBlockUI() {
+      const blocked = shortsBlacklist.has(shortTracks[shortTrackIndex].filename);
+      const button = document.querySelector('[data-action="shorts-block"]');
+      button.classList.toggle('active', blocked);
+      button.setAttribute('aria-label', blocked ? '取消屏蔽' : '屏蔽');
+      document.querySelector('#shortsBlockLabel').textContent = blocked ? '已屏蔽' : '屏蔽';
+    }
+
+    function syncShortsFavoriteUI() {
+      const favorited = shortsFavorites.has(shortTracks[shortTrackIndex].filename);
+      const button = document.querySelector('[data-action="shorts-favorite"]');
+      button.classList.toggle('active', favorited);
+      button.setAttribute('aria-label', favorited ? '取消收藏' : '收藏');
+      button.querySelector('.shorts-icon').className = `shorts-icon ti ${favorited ? 'ti-star-filled' : 'ti-star'}`;
+      document.querySelector('#shortsFavoriteLabel').textContent = favorited ? '已收藏' : '收藏';
+    }
+
+    function renderShortsBlacklist() {
+      shortsBlacklistList.replaceChildren();
+      document.querySelector('#shortsBlacklistCount').textContent = `${shortsBlacklist.size} 条`;
+      if (shortsBlacklist.size === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'shorts-blacklist-empty';
+        empty.textContent = '暂无黑名单视频';
+        shortsBlacklistList.append(empty);
+        return;
+      }
+      [...shortsBlacklist].forEach(filename => {
+        const row = document.createElement('div');
+        row.className = 'shorts-blacklist-row';
+        const icon = document.createElement('i');
+        icon.className = 'ti ti-file-video';
+        const name = document.createElement('span');
+        name.className = 'shorts-blacklist-name';
+        name.textContent = filename;
+        const remove = document.createElement('button');
+        remove.className = 'shorts-blacklist-remove';
+        remove.dataset.filename = filename;
+        remove.setAttribute('aria-label', `从黑名单移除 ${filename}`);
+        const removeIcon = document.createElement('i');
+        removeIcon.className = 'ti ti-x';
+        remove.append(removeIcon);
+        row.append(icon, name, remove);
+        shortsBlacklistList.append(row);
+      });
+    }
+
+    function renderShortsFavorites() {
+      shortsFavoritesList.replaceChildren();
+      document.querySelector('#shortsFavoritesCount').textContent = `${shortsFavorites.size} 条`;
+      if (shortsFavorites.size === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'shorts-favorites-empty';
+        empty.textContent = '暂无收藏视频';
+        shortsFavoritesList.append(empty);
+        return;
+      }
+      [...shortsFavorites].forEach(filename => {
+        const row = document.createElement('div');
+        row.className = 'shorts-favorites-row';
+        const icon = document.createElement('i');
+        icon.className = 'ti ti-star-filled';
+        const name = document.createElement('span');
+        name.className = 'shorts-favorites-name';
+        name.textContent = filename;
+        const remove = document.createElement('button');
+        remove.className = 'shorts-favorites-remove';
+        remove.dataset.filename = filename;
+        remove.setAttribute('aria-label', `取消收藏 ${filename}`);
+        const removeIcon = document.createElement('i');
+        removeIcon.className = 'ti ti-x';
+        remove.append(removeIcon);
+        row.append(icon, name, remove);
+        shortsFavoritesList.append(row);
+      });
+    }
+
+    function setPlayingState(playing) {
+      frame.dataset.state = playing ? 'playing' : 'paused';
+      playIcons.forEach(icon => { icon.className = playing ? 'ti ti-player-pause-filled' : 'ti ti-player-play-filled'; });
+      document.querySelectorAll('[data-action="play"]').forEach(button => button.setAttribute('aria-label', playing ? '暂停' : '播放'));
+    }
+
+    function updateTimeline(currentTime = video.currentTime, duration = video.duration) {
+      const activeTrack = playerMode === 'shorts' ? shortTracks[shortTrackIndex] : tracks[currentTrackIndex];
+      const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : activeTrack.duration;
+      const hasRange = abStart !== null && abEnd !== null && abEnd > abStart;
+      const rangeStart = hasRange ? Math.max(0, Math.min(abStart, safeDuration)) : 0;
+      const rangeEnd = hasRange ? Math.max(rangeStart, Math.min(abEnd, safeDuration)) : safeDuration;
+      const rawCurrent = Number.isFinite(currentTime) ? currentTime : 0;
+      const safeCurrent = hasRange ? Math.max(rangeStart, Math.min(rawCurrent, rangeEnd)) : Math.min(Math.max(0, rawCurrent), safeDuration);
+      const progress = `${(safeCurrent / safeDuration) * 100}%`;
+      const progressStart = `${(rangeStart / safeDuration) * 100}%`;
+      rangeInputs.forEach(range => {
+        range.max = safeDuration;
+        range.value = safeCurrent;
+        range.style.setProperty('--progress', progress);
+        range.style.setProperty('--progress-start', hasRange ? progressStart : '0%');
+      });
+      abMarkers.forEach(marker => {
+        const point = marker.dataset.abMarker === 'a' ? abStart : abEnd;
+        const visible = point !== null && Number.isFinite(point);
+        marker.hidden = !visible;
+        if (visible) {
+          marker.style.left = `${(Math.max(0, Math.min(point, safeDuration)) / safeDuration) * 100}%`;
+          marker.setAttribute('aria-valuemin', '0');
+          marker.setAttribute('aria-valuemax', String(safeDuration));
+          marker.setAttribute('aria-valuenow', String(point));
+          marker.setAttribute('aria-valuetext', `${marker.dataset.abMarker === 'a' ? 'A' : 'B'} 点 ${formatTime(point)}`);
+        }
+      });
+      document.querySelector('#timeCurrent').textContent = formatTime(safeCurrent);
+      document.querySelector('#timePortrait').textContent = formatTime(safeCurrent);
+      document.querySelectorAll('.time-total').forEach(element => { element.textContent = formatTime(safeDuration); });
+      if (playerMode === 'shorts') document.querySelector('#shortsTime').textContent = `${formatTime(safeCurrent)} / ${formatTime(safeDuration)}`;
+    }
+
+    function updateAbUI() {
+      abStartValue.textContent = abStart === null ? '设置' : formatTime(abStart);
+      abEndValue.textContent = abEnd === null ? '设置' : formatTime(abEnd);
+      document.querySelector('[data-action="ab-set-a"]').dataset.set = String(abStart !== null);
+      document.querySelector('[data-action="ab-set-b"]').dataset.set = String(abEnd !== null);
+      document.querySelectorAll('[data-action="ab-mode"]').forEach(button => button.setAttribute('aria-pressed', String(abStart !== null && abEnd !== null)));
+      updateTimeline(video.currentTime, video.duration);
+    }
+
+    function clampToAbRange(value) {
+      const activeTrack = playerMode === 'shorts' ? shortTracks[shortTrackIndex] : tracks[currentTrackIndex];
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : activeTrack.duration;
+      const numeric = Number.isFinite(value) ? value : 0;
+      if (abStart === null || abEnd === null || abEnd <= abStart) return Math.max(0, Math.min(numeric, duration));
+      return Math.max(abStart, Math.min(numeric, abEnd));
+    }
+
+    function setMarkerTime(point, value, announce = false) {
+      const activeTrack = playerMode === 'shorts' ? shortTracks[shortTrackIndex] : tracks[currentTrackIndex];
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : activeTrack.duration;
+      const frameStep = 1 / ((playerMode === 'shorts' ? shortTracks[shortTrackIndex] : tracks[currentTrackIndex]).frameRate || 30);
+      const next = Math.max(0, Math.min(Number(value) || 0, duration));
+      if (point === 'a') {
+        const maxA = abEnd === null ? duration - frameStep : abEnd - frameStep;
+        abStart = Math.max(0, Math.min(next, Math.max(0, maxA)));
+      } else {
+        const minB = abStart === null ? frameStep : abStart + frameStep;
+        abEnd = Math.max(Math.min(duration, next), Math.min(duration, minB));
+      }
+      video.currentTime = clampToAbRange(video.currentTime);
+      updateAbUI();
+      if (announce) notify(`${point === 'a' ? 'A' : 'B'} 点：${formatTime(point === 'a' ? abStart : abEnd)}`);
+    }
+
+    function markerTimeFromPointer(marker, event) {
+      const seek = marker.parentElement;
+      const bounds = seek.getBoundingClientRect();
+      const ratio = bounds.width ? Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)) : 0;
+      const activeTrack = playerMode === 'shorts' ? shortTracks[shortTrackIndex] : tracks[currentTrackIndex];
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : activeTrack.duration;
+      return ratio * duration;
+    }
+
+    function handleMarkerKey(event, marker) {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const point = marker.dataset.abMarker;
+      const current = point === 'a' ? abStart : abEnd;
+      if (current === null) return;
+      const step = 1 / ((playerMode === 'shorts' ? shortTracks[shortTrackIndex] : tracks[currentTrackIndex]).frameRate || 30);
+      setMarkerTime(point, current + (event.key === 'ArrowRight' ? step : -step), true);
+    }
+
+    function clearAbLoop(announce = true) {
+      abStart = null;
+      abEnd = null;
+      updateAbUI();
+      if (announce) notify('已清除 AB 循环');
+    }
+
+    function setAbPoint(point) {
+      const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      if (point === 'a') {
+        abStart = current;
+        if (abEnd !== null && abEnd <= abStart) abEnd = null;
+        updateAbUI();
+        notify(`已设置 A 点：${formatTime(abStart)}`);
+        return;
+      }
+      if (abStart === null) {
+        notify('请先设置 A 点');
+        return;
+      }
+      if (current <= abStart) {
+        notify('B 点必须晚于 A 点');
+        return;
+      }
+      abEnd = current;
+      updateAbUI();
+      notify(`AB 循环已启用：${formatTime(abStart)} - ${formatTime(abEnd)}`);
+    }
+
+    function closeDrawers() {
+      Object.values(drawers).forEach(drawer => drawer.classList.remove('open'));
+      mediaInfoModal.classList.remove('open');
+      scrim.classList.remove('open');
+      screenshotCapsule.classList.remove('open');
+      abCapsule.classList.remove('open');
+      closeShortsMore();
+    }
+
+    function openDrawer(name) {
+      mediaInfoModal.classList.remove('open');
+      screenshotCapsule.classList.remove('open');
+      abCapsule.classList.remove('open');
+      Object.entries(drawers).forEach(([key, drawer]) => drawer.classList.toggle('open', key === name));
+      scrim.classList.add('open');
+    }
+
+    function openMediaInfo() {
+      Object.values(drawers).forEach(drawer => drawer.classList.remove('open'));
+      screenshotCapsule.classList.remove('open');
+      abCapsule.classList.remove('open');
+      updateMediaInfo();
+      mediaInfoModal.classList.add('open');
+      scrim.classList.add('open');
+    }
+
+    function openScreenshotMode() {
+      closeDrawers();
+      abCapsule.classList.remove('open');
+      screenshotCapsule.classList.add('open');
+      notify('截图模式：可前后步进或捕获当前帧');
+    }
+
+    function closeScreenshotMode() {
+      screenshotCapsule.classList.remove('open');
+    }
+
+    function openAbMode() {
+      closeDrawers();
+      screenshotCapsule.classList.remove('open');
+      abCapsule.classList.add('open');
+      notify(abStart !== null && abEnd !== null ? 'AB 循环已启用，可重新设置时间点' : 'AB 循环：先设置 A 点，再设置 B 点');
+    }
+
+    function closeAbMode() {
+      abCapsule.classList.remove('open');
+    }
+
+    function stepVideoFrame(direction) {
+      if (video.readyState < HTMLMediaElement.HAVE_METADATA || !Number.isFinite(video.duration)) {
+        notify('视频还未准备好');
+        return;
+      }
+      video.pause();
+      const frameStep = 1 / (tracks[currentTrackIndex].frameRate || 30);
+      video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + (direction * frameStep)));
+      updateTimeline(video.currentTime, video.duration);
+    }
+
+    function removeScreenshot() {
+      clearTimeout(screenshotTimer);
+      screenshotPreviewImage.removeAttribute('src');
+      screenshotPreviewCard.hidden = true;
+      screenshotPreviewCard.classList.remove('is-flying');
+      screenshotPreviewCard.classList.remove('is-selected');
+      screenshotCountdownFill.classList.remove('running');
+      screenshotCountdownFill.classList.remove('is-paused');
+      screenshotCountdownFill.style.transform = 'scaleX(1)';
+      screenshotDelete.classList.remove('is-visible');
+      screenshotDelete.hidden = true;
+    }
+
+    function pauseScreenshotCountdown() {
+      clearTimeout(screenshotTimer);
+      screenshotCountdownFill.classList.add('is-paused');
+      screenshotPreviewCard.classList.add('is-selected');
+      screenshotDelete.hidden = false;
+      requestAnimationFrame(() => screenshotDelete.classList.add('is-visible'));
+    }
+
+    function completeScreenshot(dataUrl) {
+      removeScreenshot();
+      screenshotPreviewImage.src = dataUrl;
+      screenshotPreviewCard.hidden = false;
+      screenshotPreviewCard.classList.remove('is-selected');
+      screenshotDelete.hidden = true;
+      screenshotDelete.classList.remove('is-visible');
+      screenshotCountdownFill.classList.remove('running');
+      screenshotCountdownFill.classList.remove('is-paused');
+      screenshotCountdownFill.style.transform = 'scaleX(1)';
+      requestAnimationFrame(() => {
+        screenshotPreviewCard.classList.add('is-flying');
+        screenshotCountdownFill.classList.add('running');
+      });
+      screenshotTimer = setTimeout(removeScreenshot, 3000);
+      closeScreenshotMode();
+      notify('截图已捕获，3 秒后自动消失');
+    }
+
+    function captureScreenshot() {
+      const track = playerMode === 'shorts' ? shortTracks[shortTrackIndex] : tracks[currentTrackIndex];
+      screenshotCaptureButton.dataset.busy = 'true';
+      screenshotCaptureButton.setAttribute('aria-label', '正在显示截图');
+      completeScreenshot(track.poster || (playerMode === 'shorts' ? 'assets/竖屏首帧.jpg' : track.poster));
+      screenshotCaptureButton.dataset.busy = 'false';
+      screenshotCaptureButton.setAttribute('aria-label', '截图当前帧');
+      notify('截图已显示');
+    }
+
+    async function togglePlayback() {
+      try {
+        if (video.paused) await video.play(); else video.pause();
+      } catch (error) {
+        notify('浏览器阻止了媒体播放');
+      }
+    }
+
+    function updateTrackUI() {
+      const track = tracks[currentTrackIndex];
+      document.querySelector('#mediaTitle').textContent = track.title;
+      document.querySelector('#mediaMeta').textContent = `本地视频 · ${currentTrackIndex + 1} / ${tracks.length}`;
+      document.querySelector('#playlistCount').textContent = `${currentTrackIndex + 1} / ${tracks.length}`;
+      frame.setAttribute('aria-label', `正在播放${track.title}`);
+      video.poster = track.poster;
+      document.querySelectorAll('.playlist-item').forEach((item, index) => {
+        item.classList.toggle('current', index === currentTrackIndex);
+        const indicator = item.querySelector('.playlist-indicator');
+        if (indicator) indicator.hidden = index !== currentTrackIndex;
+      });
+    }
+
+    async function loadTrack(index, autoplay = true) {
+      currentTrackIndex = (index + tracks.length) % tracks.length;
+      const track = tracks[currentTrackIndex];
+      video.src = track.src;
+      video.load();
+      clearAbLoop(false);
+      updateTrackUI();
+      updateMediaInfo();
+      updateTimeline(0, track.duration);
+      closeDrawers();
+      if (!autoplay) return;
+      try { await video.play(); } catch (error) { notify('浏览器阻止了自动播放，请点击播放'); }
+    }
+
+    async function loadShortTrack(index, autoplay = true) {
+      shortTrackIndex = (index + shortTracks.length) % shortTracks.length;
+      const track = shortTracks[shortTrackIndex];
+      video.src = track.src;
+      video.poster = track.poster || 'assets/竖屏首帧.jpg';
+      video.removeAttribute('poster');
+      video.load();
+      clearAbLoop(false);
+      updateShortUI();
+      updateTimeline(0, track.duration);
+      closeDrawers();
+      if (!autoplay) return;
+      try { await video.play(); } catch (error) { notify('浏览器阻止了自动播放，请点击播放'); }
+    }
+
+    function randomTrackIndex() {
+      if (tracks.length < 2) return currentTrackIndex;
+      let index = currentTrackIndex;
+      while (index === currentTrackIndex) index = Math.floor(Math.random() * tracks.length);
+      return index;
+    }
+
+    async function playNext(fromEnded = false) {
+      let nextIndex;
+      if (playbackMode === 'repeat-one' && fromEnded) nextIndex = currentTrackIndex;
+      else if (playbackMode === 'shuffle') nextIndex = randomTrackIndex();
+      else if (currentTrackIndex < tracks.length - 1) nextIndex = currentTrackIndex + 1;
+      else if (playbackMode === 'loop' || playbackMode === 'repeat-one') nextIndex = 0;
+      else {
+        setPlayingState(false);
+        notify('播放队列已结束');
+        return;
+      }
+      await loadTrack(nextIndex);
+    }
+
+    async function playPrevious() {
+      if (video.currentTime > 5) {
+        video.currentTime = 0;
+        updateTimeline();
+        return;
+      }
+      if (playbackMode === 'shuffle') await loadTrack(randomTrackIndex());
+      else if (currentTrackIndex > 0) await loadTrack(currentTrackIndex - 1);
+      else if (playbackMode === 'loop' || playbackMode === 'repeat-one') await loadTrack(tracks.length - 1);
+      else notify('已经是第一条视频');
+    }
+
+    function setPlaybackMode(modeId, announce = true) {
+      const mode = playbackModes.find(item => item.id === modeId) || playbackModes[0];
+      playbackMode = mode.id;
+      document.querySelectorAll('[data-action="order"]').forEach(button => {
+        button.querySelector('i').className = `ti ${mode.icon}`;
+        button.querySelector('span').textContent = mode.label;
+        button.setAttribute('aria-label', `播放顺序：${mode.detail}`);
+      });
+      document.querySelector('#orderSettingValue').textContent = mode.detail;
+      document.querySelectorAll('[data-order]').forEach(button => button.classList.toggle('active', button.dataset.order === mode.id));
+      if (announce) notify(`已切换为${mode.detail}`);
+    }
+
+    function cyclePlaybackMode() {
+      const index = playbackModes.findIndex(item => item.id === playbackMode);
+      setPlaybackMode(playbackModes[(index + 1) % playbackModes.length].id);
+    }
+
+    async function setViewMode(mode, announce = true) {
+      if (mode === 'shorts') {
+        playerMode = 'shorts';
+        device.classList.remove('portrait');
+        device.classList.add('shorts');
+        frame.classList.remove('portrait');
+        frame.classList.add('shorts');
+        document.querySelectorAll('[data-orientation]').forEach(button => button.classList.remove('active'));
+        document.querySelectorAll('[data-view-mode]').forEach(button => button.classList.toggle('active', button.dataset.viewMode === 'shorts'));
+        closeDrawers();
+        closeShortsMore();
+        await loadShortTrack(shortTrackIndex);
+        if (!shortsHintShown) {
+          shortsHintShown = true;
+          showShortsGestureHint();
+        }
+        if (announce) notify('已切换到短视频模式');
+        return;
+      }
+      const wasShorts = playerMode === 'shorts';
+      if (wasShorts) {
+        shortsDragActive = false;
+        shortsTransitioning = false;
+        shortsDragDirection = null;
+        video.classList.remove('shorts-transition');
+        video.style.transform = '';
+        resetShortsPeek();
+      }
+      playerMode = mode;
+      const portrait = mode === 'portrait';
+      device.classList.toggle('shorts', false);
+      device.classList.toggle('portrait', portrait);
+      frame.classList.toggle('shorts', false);
+      frame.classList.toggle('portrait', portrait);
+      document.querySelectorAll('[data-orientation]').forEach(button => button.classList.toggle('active', button.dataset.orientation === mode));
+      document.querySelectorAll('[data-view-mode]').forEach(button => button.classList.remove('active'));
+      if (wasShorts) await loadTrack(currentTrackIndex, false);
+      document.querySelectorAll('[data-action="rotate"]').forEach(button => button.setAttribute('aria-pressed', String(portrait)));
+      closeDrawers();
+      if (document.fullscreenElement && screen.orientation?.lock) {
+        try { await screen.orientation.lock(portrait ? 'portrait' : 'landscape'); } catch (error) { /* 浏览器可能不允许锁定方向，CSS 布局仍然有效。 */ }
+      }
+      if (announce) notify(portrait ? '已旋转为竖屏' : '已旋转为横屏');
+    }
+
+    async function setOrientation(portrait, announce = true) {
+      return setViewMode(portrait ? 'portrait' : 'landscape', announce);
+    }
+
+    async function toggleFullscreen() {
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else if (frame.requestFullscreen) await frame.requestFullscreen();
+        else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+        else notify('当前浏览器不支持全屏 API');
+      } catch (error) {
+        notify('无法进入全屏模式');
+      }
+    }
+
+    async function togglePictureInPicture() {
+      try {
+        if (document.pictureInPictureElement) await document.exitPictureInPicture();
+        else if (document.pictureInPictureEnabled && video.requestPictureInPicture) await video.requestPictureInPicture();
+        else if (video.webkitSupportsPresentationMode?.('picture-in-picture')) video.webkitSetPresentationMode('picture-in-picture');
+        else notify('当前浏览器不支持画中画');
+      } catch (error) {
+        notify('无法进入画中画，请先开始播放');
+      }
+    }
+
+    function closeShortsMore() {
+      shortsMoreSheet.classList.remove('open');
+      shortsBlacklistSheet.classList.remove('open');
+      shortsFavoritesSheet.classList.remove('open');
+      shortsSheetScrim.classList.remove('open');
+    }
+
+    function toggleShortsMore() {
+      const shouldOpen = !shortsMoreSheet.classList.contains('open');
+      shortsBlacklistSheet.classList.remove('open');
+      shortsFavoritesSheet.classList.remove('open');
+      shortsMoreSheet.classList.toggle('open', shouldOpen);
+      shortsSheetScrim.classList.toggle('open', shouldOpen);
+    }
+
+    function setShortsSpeed(rate, locked, announce = true) {
+      shortsSpeedLocked = locked;
+      video.playbackRate = rate;
+      document.querySelector('#shortsSpeedValue').textContent = `${rate.toFixed(1)}x`;
+      if (announce) notify(locked ? `已锁定 ${rate.toFixed(1)}x 倍速` : '已恢复 1.0x 倍速');
+    }
+
+    function startShortsSpeedHold(event) {
+      event.preventDefault();
+      shortsSpeedHeld = false;
+      clearTimeout(shortsSpeedHoldTimer);
+      shortsSpeedHoldTimer = setTimeout(() => {
+        shortsSpeedHeld = true;
+        setShortsSpeed(2, false, false);
+        notify('正在以 2.0x 倍速播放');
+      }, 320);
+    }
+
+    function endShortsSpeedHold() {
+      clearTimeout(shortsSpeedHoldTimer);
+      if (!shortsSpeedHeld) return;
+      shortsSpeedHeld = false;
+      shortsSpeedSuppressClick = true;
+      if (!shortsSpeedLocked) setShortsSpeed(1, false, false);
+    }
+
+    function toggleShortsSpeed() {
+      if (shortsSpeedSuppressClick) {
+        shortsSpeedSuppressClick = false;
+        return;
+      }
+      setShortsSpeed(shortsSpeedLocked ? 1 : 2, !shortsSpeedLocked);
+    }
+
+    function toggleShortsAutoNext() {
+      shortsAutoNext = !shortsAutoNext;
+      const control = document.querySelector('[data-action="shorts-auto-next"]');
+      control.setAttribute('aria-pressed', String(shortsAutoNext));
+      notify(shortsAutoNext ? '已开启自动切换下一条短视频' : '已关闭自动切换下一条短视频');
+    }
+
+    function openShortsMediaInfo() {
+      closeShortsMore();
+      openMediaInfo();
+    }
+
+    function manageShortsBlacklist() {
+      closeShortsMore();
+      renderShortsBlacklist();
+      shortsBlacklistSheet.classList.add('open');
+      shortsSheetScrim.classList.add('open');
+    }
+
+    function manageShortsFavorites() {
+      closeShortsMore();
+      renderShortsFavorites();
+      shortsFavoritesSheet.classList.add('open');
+      shortsSheetScrim.classList.add('open');
+    }
+
+    function toggleShortsFavorite() {
+      const filename = shortTracks[shortTrackIndex].filename;
+      if (shortsFavorites.has(filename)) {
+        shortsFavorites.delete(filename);
+        notify('已取消收藏');
+      } else {
+        shortsFavorites.add(filename);
+        notify('已收藏此短视频');
+      }
+      syncShortsFavoriteUI();
+      if (shortsFavoritesSheet.classList.contains('open')) renderShortsFavorites();
+    }
+
+    function toggleShortsRepeatCurrent(event) {
+      event.stopPropagation();
+      shortsRepeatCurrent = !shortsRepeatCurrent;
+      const control = document.querySelector('[data-action="shorts-repeat-current"]');
+      control.setAttribute('aria-pressed', String(shortsRepeatCurrent));
+      notify(shortsRepeatCurrent ? '已开启当前视频循环' : '已关闭当前视频循环');
+    }
+
+    function cycleShortsFit() {
+      const fits = [
+        { id: 'cover', label: '裁剪' },
+        { id: 'contain', label: '原始' },
+        { id: 'fill', label: '拉伸' }
+      ];
+      shortsFitIndex = (shortsFitIndex + 1) % fits.length;
+      const fit = fits[shortsFitIndex];
+      frame.dataset.shortsFit = fit.id;
+      document.querySelector('#shortsRatioValue').textContent = fit.label;
+      notify(`画面比例：${fit.label}`);
+    }
+
+    function showShortsGestureHint() {
+      const hint = document.querySelector('#shortsGestureHint');
+      hint.classList.add('show');
+      clearTimeout(shortsHintTimer);
+      shortsHintTimer = setTimeout(() => hint.classList.remove('show'), 2800);
+    }
+
+    function deleteShortsDemo() {
+      closeShortsMore();
+      notify('删除短视频为交互演示，未修改本地文件');
+    }
+
+    function toggleShortsBlock() {
+      const filename = shortTracks[shortTrackIndex].filename;
+      if (shortsBlacklist.has(filename)) {
+        shortsBlacklist.delete(filename);
+        notify('已取消屏蔽此短视频');
+      } else {
+        shortsBlacklist.add(filename);
+        notify('已屏蔽此短视频');
+      }
+      syncShortsBlockUI();
+      if (shortsBlacklistSheet.classList.contains('open')) renderShortsBlacklist();
+    }
+
+    function backFromShorts() {
+      setViewMode('portrait');
+    }
+
+    function seekShortsBy(seconds) {
+      if (playerMode !== 'shorts') return;
+      video.currentTime = Math.max(0, Math.min(video.duration || shortTracks[shortTrackIndex].duration, video.currentTime + seconds));
+      updateTimeline();
+      notify(`${seconds > 0 ? '快进' : '快退'} ${Math.abs(seconds)} 秒`);
+    }
+
+    function startShortsFrameHold() {
+      clearTimeout(shortsFrameHoldTimer);
+      shortsFrameHeld = false;
+      shortsFrameHoldTimer = setTimeout(() => {
+        shortsFrameHeld = true;
+        shortsDragMoved = true;
+        if (!shortsSpeedLocked) video.playbackRate = 2;
+        notify('正在以 2.0x 倍速播放');
+      }, 360);
+    }
+
+    function endShortsFrameHold() {
+      clearTimeout(shortsFrameHoldTimer);
+      if (!shortsFrameHeld) return false;
+      shortsFrameHeld = false;
+      if (!shortsSpeedLocked) video.playbackRate = 1;
+      return true;
+    }
+
+    function shortsNeighborIndex(direction) {
+      const step = direction === 'next' ? 1 : -1;
+      return (shortTrackIndex + step + shortTracks.length) % shortTracks.length;
+    }
+
+    function primeShortsPeek(direction) {
+      if (shortTracks.length < 2) return false;
+      const index = shortsNeighborIndex(direction);
+      const track = shortTracks[index];
+      if (shortsPeek.dataset.direction !== direction || shortsPeek.dataset.index !== String(index)) {
+        shortsPeek.dataset.direction = direction;
+        shortsPeek.dataset.index = String(index);
+        shortsPeek.src = track.src;
+        shortsPeek.load();
+      }
+      shortsPeek.classList.remove('shorts-transition');
+      shortsPeek.style.display = 'block';
+      shortsPeek.style.transform = `translateY(${direction === 'next' ? '100%' : '-100%'})`;
+      shortsPeek.currentTime = 0;
+      shortsPeek.play?.().catch(() => {});
+      return true;
+    }
+
+    function setShortsDragTransform(deltaY) {
+      const base = shortsDragDirection === 'next' ? '100%' : '-100%';
+      video.style.transform = `translateY(${deltaY}px)`;
+      shortsPeek.style.transform = `translateY(calc(${base} + ${deltaY}px))`;
+    }
+
+    function resetShortsPeek() {
+      shortsPeek.classList.remove('shorts-transition');
+      shortsPeek.pause();
+      shortsPeek.style.display = 'none';
+      shortsPeek.style.transform = '';
+      shortsPeek.removeAttribute('src');
+      shortsPeek.load();
+      delete shortsPeek.dataset.direction;
+      delete shortsPeek.dataset.index;
+    }
+
+    function settleShortsTransition(commit) {
+      const direction = shortsDragDirection;
+      shortsTransitioning = true;
+      video.classList.add('shorts-transition');
+      shortsPeek.classList.add('shorts-transition');
+      if (commit) {
+        video.style.transform = `translateY(${direction === 'next' ? '-100%' : '100%'})`;
+        shortsPeek.style.transform = 'translateY(0)';
+      } else {
+        video.style.transform = 'translateY(0)';
+        shortsPeek.style.transform = `translateY(${direction === 'next' ? '100%' : '-100%'})`;
+      }
+      video.addEventListener('transitionend', async function handleEnd() {
+        video.removeEventListener('transitionend', handleEnd);
+        video.classList.remove('shorts-transition');
+        if (commit) {
+          await loadShortTrack(shortsNeighborIndex(direction));
+        }
+        video.style.transform = commit ? 'translateY(0)' : '';
+        resetShortsPeek();
+        shortsDragDirection = null;
+        shortsTransitioning = false;
+      }, { once: true });
+    }
+
+    function goToShort(direction) {
+      if (playerMode !== 'shorts' || shortsTransitioning || !primeShortsPeek(direction)) return;
+      shortsDragDirection = direction;
+      requestAnimationFrame(() => requestAnimationFrame(() => settleShortsTransition(true)));
+    }
+
+    function playNextShort() {
+      goToShort('next');
+    }
+
+    function playPreviousShort() {
+      goToShort('prev');
+    }
+
+    function handleShortsSwipe(event) {
+      if (playerMode !== 'shorts') return;
+      if (event.type === 'pointerdown') {
+        if (event.target.closest('button, input') || shortsTransitioning) { shortsSwipeStartY = null; return; }
+        shortsSwipeStartY = event.clientY;
+        shortsSwipeStartX = event.clientX;
+        shortsSwipeAxis = null;
+        shortsSwipePointerId = event.pointerId;
+        shortsDragMoved = false;
+        startShortsFrameHold();
+        return;
+      }
+      if (shortsSwipeStartY === null || event.pointerId !== shortsSwipePointerId) return;
+      const delta = event.clientY - shortsSwipeStartY;
+      const deltaX = event.clientX - (shortsSwipeStartX ?? event.clientX);
+      if (event.type === 'pointermove') {
+        if (Math.max(Math.abs(delta), Math.abs(deltaX)) > 8) clearTimeout(shortsFrameHoldTimer);
+        if (shortsSwipeAxis === null && Math.max(Math.abs(delta), Math.abs(deltaX)) > 10) shortsSwipeAxis = Math.abs(deltaX) > Math.abs(delta) ? 'x' : 'y';
+        if (shortsSwipeAxis === 'x') return;
+        if (!shortsDragActive) {
+          if (Math.abs(delta) < 6 || shortTracks.length < 2) return;
+          shortsDragDirection = delta < 0 ? 'next' : 'prev';
+          if (!primeShortsPeek(shortsDragDirection)) return;
+          shortsDragActive = true;
+          shortsDragMoved = true;
+        }
+        setShortsDragTransform(delta);
+        return;
+      }
+      shortsSwipeStartY = null;
+      shortsSwipeStartX = null;
+      shortsSwipePointerId = null;
+      if (endShortsFrameHold()) return;
+      if (shortsSwipeAxis === 'x') {
+        if (Math.abs(deltaX) >= 42) seekShortsBy(deltaX > 0 ? -5 : 5);
+        return;
+      }
+      if (!shortsDragActive) return;
+      shortsDragActive = false;
+      settleShortsTransition(Math.abs(delta) >= SHORTS_DRAG_COMMIT_PX);
+    }
+
+    document.querySelectorAll('[data-orientation]').forEach(button => button.addEventListener('click', () => setViewMode(button.dataset.orientation)));
+    document.querySelectorAll('[data-view-mode]').forEach(button => button.addEventListener('click', () => setViewMode(button.dataset.viewMode)));
+    document.querySelectorAll('[data-action="play"]').forEach(button => button.addEventListener('click', togglePlayback));
+    document.querySelectorAll('[data-action="previous"]').forEach(button => button.addEventListener('click', playPrevious));
+    document.querySelectorAll('[data-action="next"]').forEach(button => button.addEventListener('click', () => playNext(false)));
+    document.querySelectorAll('[data-action="order"]').forEach(button => button.addEventListener('click', cyclePlaybackMode));
+    document.querySelectorAll('[data-action="pip"]').forEach(button => button.addEventListener('click', togglePictureInPicture));
+    document.querySelectorAll('[data-action="rotate"]').forEach(button => button.addEventListener('click', () => setOrientation(!device.classList.contains('portrait'))));
+    document.querySelectorAll('[data-action="fullscreen"]').forEach(button => button.addEventListener('click', toggleFullscreen));
+    document.querySelectorAll('[data-action="media-info"]').forEach(button => button.addEventListener('click', openMediaInfo));
+    document.querySelectorAll('[data-action="screenshot-mode"]').forEach(button => button.addEventListener('click', openScreenshotMode));
+    document.querySelectorAll('[data-action="ab-mode"]').forEach(button => button.addEventListener('click', openAbMode));
+    document.querySelector('[data-action="screenshot-prev"]').addEventListener('click', () => stepVideoFrame(-1));
+    document.querySelector('[data-action="screenshot-next"]').addEventListener('click', () => stepVideoFrame(1));
+    document.querySelector('[data-action="screenshot-capture"]').addEventListener('click', captureScreenshot);
+    document.querySelector('[data-action="screenshot-cancel"]').addEventListener('click', closeScreenshotMode);
+    document.querySelector('[data-action="ab-set-a"]').addEventListener('click', () => setAbPoint('a'));
+    document.querySelector('[data-action="ab-set-b"]').addEventListener('click', () => setAbPoint('b'));
+    document.querySelector('[data-action="ab-clear"]').addEventListener('click', () => clearAbLoop());
+    document.querySelector('[data-action="ab-cancel"]').addEventListener('click', closeAbMode);
+    document.querySelectorAll('[data-action="shorts-back"]').forEach(button => button.addEventListener('click', backFromShorts));
+    document.querySelectorAll('[data-action="shorts-more"]').forEach(button => button.addEventListener('click', toggleShortsMore));
+    document.querySelector('[data-action="shorts-favorite"]').addEventListener('click', toggleShortsFavorite);
+    document.querySelector('[data-action="shorts-block"]').addEventListener('click', toggleShortsBlock);
+    document.querySelector('[data-action="shorts-auto-next"]').addEventListener('click', toggleShortsAutoNext);
+    const shortsSpeedControl = document.querySelector('[data-action="shorts-speed"]');
+    shortsSpeedControl.addEventListener('pointerdown', startShortsSpeedHold);
+    shortsSpeedControl.addEventListener('pointerup', endShortsSpeedHold);
+    shortsSpeedControl.addEventListener('pointercancel', endShortsSpeedHold);
+    shortsSpeedControl.addEventListener('click', toggleShortsSpeed);
+    document.querySelector('[data-action="shorts-share"]').addEventListener('click', () => { closeShortsMore(); notify('分享面板已准备'); });
+    document.querySelector('[data-action="shorts-favorites"]').addEventListener('click', manageShortsFavorites);
+    document.querySelector('[data-action="shorts-repeat-current"]').addEventListener('click', toggleShortsRepeatCurrent);
+    document.querySelector('[data-action="shorts-pip"]').addEventListener('click', () => { closeShortsMore(); togglePictureInPicture(); });
+    document.querySelector('[data-action="shorts-screenshot"]').addEventListener('click', () => { closeShortsMore(); openScreenshotMode(); });
+    document.querySelector('[data-action="shorts-ratio"]').addEventListener('click', cycleShortsFit);
+    document.querySelector('[data-action="shorts-info"]').addEventListener('click', openShortsMediaInfo);
+    document.querySelector('[data-action="shorts-blacklist"]').addEventListener('click', manageShortsBlacklist);
+    document.querySelector('[data-action="shorts-delete"]').addEventListener('click', deleteShortsDemo);
+    document.querySelector('[data-action="shorts-blacklist-close"]').addEventListener('click', closeShortsMore);
+    document.querySelector('[data-action="shorts-favorites-close"]').addEventListener('click', closeShortsMore);
+    shortsBlacklistList.addEventListener('click', event => {
+      const remove = event.target.closest('.shorts-blacklist-remove');
+      if (!remove) return;
+      shortsBlacklist.delete(remove.dataset.filename);
+      renderShortsBlacklist();
+      syncShortsBlockUI();
+      notify('已从黑名单移除');
+    });
+    shortsFavoritesList.addEventListener('click', event => {
+      const remove = event.target.closest('.shorts-favorites-remove');
+      if (!remove) return;
+      shortsFavorites.delete(remove.dataset.filename);
+      renderShortsFavorites();
+      syncShortsFavoriteUI();
+      notify('已取消收藏');
+    });
+    screenshotPreviewCard.addEventListener('click', event => {
+      if (event.target.closest('[data-action="screenshot-delete"]')) return;
+      if (!screenshotPreviewCard.hidden) pauseScreenshotCountdown();
+    });
+    screenshotDelete.addEventListener('click', event => { event.stopPropagation(); removeScreenshot(); notify('截图已删除'); });
+    document.querySelectorAll('[data-action="settings"]').forEach(button => button.addEventListener('click', () => openDrawer('settings')));
+    document.querySelectorAll('[data-action="playlist"]').forEach(button => button.addEventListener('click', () => openDrawer('playlist')));
+    document.querySelectorAll('[data-action="close"]').forEach(button => button.addEventListener('click', closeDrawers));
+    document.querySelectorAll('.playlist-item').forEach(button => button.addEventListener('click', () => loadTrack(Number(button.dataset.index))));
+    document.querySelectorAll('[data-toast]').forEach(button => button.addEventListener('click', () => notify(button.dataset.toast)));
+    rangeInputs.forEach(input => input.addEventListener('input', () => {
+      video.currentTime = clampToAbRange(Number(input.value));
+      updateTimeline();
+    }));
+    abMarkers.forEach(marker => {
+      marker.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        marker.setPointerCapture?.(event.pointerId);
+        marker.dataset.dragging = 'true';
+        markerDrag = { marker, pointerId: event.pointerId };
+        setMarkerTime(marker.dataset.abMarker, markerTimeFromPointer(marker, event));
+      });
+      marker.addEventListener('pointermove', event => {
+        if (!markerDrag || markerDrag.marker !== marker || markerDrag.pointerId !== event.pointerId) return;
+        setMarkerTime(marker.dataset.abMarker, markerTimeFromPointer(marker, event));
+      });
+      const stopMarkerDrag = event => {
+        if (!markerDrag || markerDrag.marker !== marker) return;
+        marker.dataset.dragging = 'false';
+        marker.releasePointerCapture?.(markerDrag.pointerId);
+        markerDrag = null;
+        notify(`${marker.dataset.abMarker === 'a' ? 'A' : 'B'} 点已调整`);
+      };
+      marker.addEventListener('pointerup', stopMarkerDrag);
+      marker.addEventListener('pointercancel', stopMarkerDrag);
+      marker.addEventListener('keydown', event => handleMarkerKey(event, marker));
+    });
+    document.querySelectorAll('.option').forEach(button => button.addEventListener('click', () => {
+      button.parentElement.querySelectorAll('.option').forEach(item => item.classList.remove('active'));
+      button.classList.add('active');
+      if (button.dataset.order) setPlaybackMode(button.dataset.order);
+      else {
+        if (button.dataset.rate) video.playbackRate = Number(button.dataset.rate);
+        button.closest('.setting').querySelector('.setting-value').textContent = button.textContent;
+        notify(`已选择 ${button.textContent}`);
+      }
+    }));
+    scrim.addEventListener('click', closeDrawers);
+    shortsSheetScrim.addEventListener('click', closeShortsMore);
+    video.addEventListener('play', () => setPlayingState(true));
+    video.addEventListener('pause', () => setPlayingState(false));
+    video.addEventListener('timeupdate', () => {
+      if (abStart !== null && abEnd !== null && !video.seeking && video.currentTime >= abEnd) video.currentTime = abStart;
+      updateTimeline();
+    });
+    video.addEventListener('loadedmetadata', () => { updateTimeline(); updateMediaInfo(); });
+    video.addEventListener('ended', async () => {
+      if (playerMode === 'shorts') {
+        if (shortsRepeatCurrent) await loadShortTrack(shortTrackIndex);
+        else if (shortsAutoNext) await playNextShort();
+        return;
+      }
+      if (abStart !== null && abEnd !== null) {
+        video.currentTime = abStart;
+        try { await video.play(); } catch (error) { setPlayingState(false); }
+      } else {
+        await playNext(true);
+      }
+    });
+    video.addEventListener('click', event => {
+      if (playerMode !== 'shorts' || event.target !== video) return;
+      if (shortsDragMoved) { shortsDragMoved = false; return; }
+      togglePlayback();
+    });
+    frame.addEventListener('pointerdown', handleShortsSwipe);
+    frame.addEventListener('pointermove', handleShortsSwipe);
+    frame.addEventListener('pointerup', handleShortsSwipe);
+    frame.addEventListener('pointercancel', handleShortsSwipe);
+    document.addEventListener('keydown', event => {
+      if (playerMode !== 'shorts') return;
+      if (event.key === 'ArrowDown') { event.preventDefault(); playNextShort(); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); playPreviousShort(); }
+    });
+    video.addEventListener('enterpictureinpicture', () => document.querySelectorAll('[data-action="pip"]').forEach(button => button.setAttribute('aria-pressed', 'true')));
+    video.addEventListener('leavepictureinpicture', () => document.querySelectorAll('[data-action="pip"]').forEach(button => button.setAttribute('aria-pressed', 'false')));
+    document.addEventListener('fullscreenchange', () => {
+      const isFullscreen = Boolean(document.fullscreenElement);
+      document.querySelectorAll('[data-action="fullscreen"]').forEach(button => {
+        button.querySelector('i').className = isFullscreen ? 'ti ti-minimize' : 'ti ti-maximize';
+        button.setAttribute('aria-label', isFullscreen ? '退出全屏' : '全屏');
+      });
+      if (!isFullscreen && screen.orientation?.unlock) screen.orientation.unlock();
+    });
+    setPlaybackMode('sequence', false);
+    renderShortsBlacklist();
+    renderShortsFavorites();
+    updateAbUI();
+    video.volume = 0.8;
+    document.querySelectorAll('[data-action="pip"]').forEach(button => button.setAttribute('aria-pressed', 'false'));
+    setOrientation(false, false);
+    updateTrackUI();
+    updateMediaInfo();
+    updateTimeline(0, tracks[0].duration);
+  </script>
+</body>
+</html>

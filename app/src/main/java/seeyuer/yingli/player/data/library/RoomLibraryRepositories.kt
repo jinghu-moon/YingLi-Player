@@ -30,6 +30,7 @@ import seeyuer.yingli.player.domain.library.LibraryMedia
 import seeyuer.yingli.player.domain.library.LibraryPage
 import seeyuer.yingli.player.domain.library.LibraryPageDirection
 import seeyuer.yingli.player.domain.library.LibraryQuery
+import seeyuer.yingli.player.domain.library.LibraryFolder
 import seeyuer.yingli.player.domain.library.LibraryRepository
 import seeyuer.yingli.player.domain.library.LibraryPagingRepository
 import seeyuer.yingli.player.domain.library.LibraryResult
@@ -84,9 +85,78 @@ class RoomLibraryRepository(
             .distinctUntilChanged()
             .flowOn(dispatchers.io)
 
+    override fun observeFolderTreeVideoCount(path: String): Flow<Int> =
+        libraryDao.observeCount(buildFolderTreeCountQuery(path))
+            .distinctUntilChanged()
+            .flowOn(dispatchers.io)
+
     override fun observeInvalidations(): Flow<Unit> = database.invalidationTracker
         .createFlow(*OBSERVED_TABLES, emitInitialState = false)
         .map { }
+
+    override suspend fun folders(query: LibraryQuery): List<LibraryFolder> {
+        val sql = """
+            WITH child_locations AS (
+                SELECT CASE
+                           WHEN ? = '' THEN trim(media_locations.relativePath, '/')
+                           ELSE substr(trim(media_locations.relativePath, '/'), length(?) + 2)
+                       END AS remainder,
+                       media_locations.sizeBytes
+                FROM media_items
+                INNER JOIN media_item_locations ON media_item_locations.mediaItemId = media_items.id
+                INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId
+                LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
+                WHERE trash_entries.mediaItemId IS NULL
+                  AND media_locations.missingScanCount = 0
+                  AND COALESCE(media_locations.relativePath, '') <> ''
+                  AND (
+                      ? = '' OR
+                      substr(trim(media_locations.relativePath, '/'), 1, length(?) + 1) = ? || '/'
+                  )
+            ), folder_rows AS (
+                SELECT CASE
+                           WHEN instr(remainder, '/') > 0 THEN substr(remainder, 1, instr(remainder, '/') - 1)
+                           ELSE remainder
+                       END AS name,
+                       sizeBytes
+                FROM child_locations
+            )
+            SELECT CASE WHEN ? = '' THEN name ELSE ? || '/' || name END AS path,
+                   name,
+                   COUNT(*) AS videoCount,
+                   COALESCE(SUM(sizeBytes), 0) AS sizeBytes
+            FROM folder_rows
+            WHERE name <> ''
+            GROUP BY path, name
+            ORDER BY name COLLATE NOCASE
+        """.trimIndent()
+        val args = Array<Any?>(7) { query.currentPath }
+        return libraryDao.folders(SimpleSQLiteQuery(sql, args)).map {
+            LibraryFolder(it.path, it.name, it.videoCount, it.sizeBytes)
+        }
+    }
+
+    override suspend fun findByIds(ids: Set<MediaItemId>): List<LibraryMedia> {
+        if (ids.isEmpty()) return emptyList()
+        val placeholders = ids.joinToString(",") { "?" }
+        val sql = """
+            SELECT media_items.id, media_items.title, media_items.playbackPositionMillis, media_items.completed,
+                media_locations.id AS locationId, media_locations.uri, media_locations.fileName,
+                media_sources.displayName AS folderAlias, media_locations.sizeBytes,
+                media_locations.durationMillis, media_locations.width, media_locations.height,
+                media_locations.modifiedEpochMillis, COALESCE(playback_history.playCount, 0) AS playCount
+            FROM media_items
+            INNER JOIN media_item_locations ON media_item_locations.mediaItemId = media_items.id
+            INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId
+            INNER JOIN media_sources ON media_sources.id = media_locations.sourceId
+            LEFT JOIN playback_history ON playback_history.mediaItemId = media_items.id
+            LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
+            WHERE media_items.id IN ($placeholders) AND trash_entries.mediaItemId IS NULL
+                AND media_locations.missingScanCount = 0
+        """.trimIndent()
+        val rows = libraryDao.page(SimpleSQLiteQuery(sql, ids.map { it.value }.toTypedArray()))
+        return rows.map { it.toModel(emptySet()) }
+    }
 
     private fun toPage(
         query: LibraryQuery,
@@ -128,12 +198,54 @@ class RoomLibraryRepository(
 
     private fun countKey(query: LibraryQuery): String = query.copy(cursor = null).toString()
 
+    private fun buildFolderTreeCountQuery(path: String): SimpleSQLiteQuery {
+        val normalizedPath = path.trim('/')
+        val sql = """
+            WITH latest_location AS (
+                SELECT media_item_locations.mediaItemId, media_locations.id AS locationId,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY media_item_locations.mediaItemId
+                        ORDER BY CASE
+                            WHEN TRIM(media_locations.relativePath, '/') = ?
+                              OR substr(TRIM(media_locations.relativePath, '/'), 1, length(?) + 1) = ? || '/'
+                            THEN 0 ELSE 1 END,
+                            media_locations.lastSeenEpochMillis DESC, media_locations.id DESC
+                    ) AS rn
+                FROM media_item_locations
+                INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId
+                WHERE media_locations.missingScanCount = 0
+            )
+            SELECT COUNT(*)
+            FROM media_items
+            INNER JOIN latest_location ON latest_location.mediaItemId = media_items.id AND latest_location.rn = 1
+            INNER JOIN media_locations ON media_locations.id = latest_location.locationId
+            LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
+            WHERE trash_entries.mediaItemId IS NULL
+              AND (
+                  TRIM(media_locations.relativePath, '/') = ?
+                  OR substr(TRIM(media_locations.relativePath, '/'), 1, length(?) + 1) = ? || '/'
+              )
+        """.trimIndent()
+        return SimpleSQLiteQuery(
+            sql,
+            arrayOf(normalizedPath, normalizedPath, normalizedPath, normalizedPath, normalizedPath, normalizedPath),
+        )
+    }
+
     private fun buildQuery(
         query: LibraryQuery,
         countOnly: Boolean,
         direction: LibraryPageDirection = LibraryPageDirection.APPEND,
     ): SimpleSQLiteQuery {
         val args = mutableListOf<Any?>()
+        val folderPath = query.currentPath.trim('/').takeIf {
+            query.browseMode == seeyuer.yingli.player.domain.library.LibraryBrowseMode.FOLDER &&
+                query.normalizedKeyword.isBlank() && it.isNotBlank()
+        }
+        args += if (folderPath != null) 1 else 0
+        args += folderPath.orEmpty()
+        args += folderPath.orEmpty()
+        args += folderPath.orEmpty()
         val where = mutableListOf(
             "trash_entries.mediaItemId IS NULL",
             "latest_location.rn = 1",
@@ -145,6 +257,14 @@ class RoomLibraryRepository(
             repeat(5) { args += pattern }
         }
         if (query.group == LibraryGroup.UNWATCHED) where += "media_items.completed = 0 AND media_items.playbackPositionMillis = 0"
+        if (query.browseMode == seeyuer.yingli.player.domain.library.LibraryBrowseMode.FOLDER && keyword.isEmpty()) {
+            if (query.currentPath.isBlank()) {
+                where += "1 = 0"
+            } else {
+                where += "COALESCE(TRIM(media_locations.relativePath, '/'), '') = ?"
+                args += query.currentPath
+            }
+        }
         query.filter.minimumWidth?.let { where += "COALESCE(media_locations.width, 0) >= ?"; args += it }
         query.filter.duration.minimumMillis?.let { where += "COALESCE(media_locations.durationMillis, -1) >= ?"; args += it }
         query.filter.duration.maximumMillis?.let { where += "COALESCE(media_locations.durationMillis, -1) <= ?"; args += it }
@@ -190,6 +310,7 @@ class RoomLibraryRepository(
             }
             val cursorValue: Any = when (query.sort.field) {
                 LibrarySortField.NAME -> cursor.textValue.orEmpty()
+                LibrarySortField.RESOLUTION -> cursor.longValue ?: 0L
                 else -> cursor.longValue ?: 0L
             }
             where += "($column $primaryOperator ? OR ($column = ? AND media_items.id $tieOperator ?))"
@@ -207,7 +328,8 @@ class RoomLibraryRepository(
         val sql = buildString {
             append("WITH latest_location AS (SELECT media_item_locations.mediaItemId, media_locations.id AS locationId, ")
             append("ROW_NUMBER() OVER (PARTITION BY media_item_locations.mediaItemId ")
-            append("ORDER BY media_locations.lastSeenEpochMillis DESC, media_locations.id DESC) AS rn ")
+            append("ORDER BY CASE WHEN ? = 1 AND (TRIM(media_locations.relativePath, '/') = ? OR substr(TRIM(media_locations.relativePath, '/'), 1, length(?) + 1) = ? || '/') THEN 0 ELSE 1 END, ")
+            append("media_locations.lastSeenEpochMillis DESC, media_locations.id DESC) AS rn ")
             append("FROM media_item_locations INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId ")
             append("WHERE media_locations.missingScanCount = 0) ")
             append(select)
@@ -233,6 +355,7 @@ class RoomLibraryRepository(
         LibrarySortField.NAME -> "LOWER(media_items.title)"
         LibrarySortField.RECENTLY_ADDED -> "media_locations.modifiedEpochMillis"
         LibrarySortField.DURATION -> "COALESCE(media_locations.durationMillis, -1)"
+        LibrarySortField.RESOLUTION -> "COALESCE(media_locations.width, 0)"
         LibrarySortField.PLAY_COUNT -> "COALESCE(playback_history.playCount, 0)"
     }
 
@@ -243,6 +366,7 @@ class RoomLibraryRepository(
         LibrarySortField.NAME -> LibraryCursor(query.sort.field, query.sort.direction, id, textValue = title.lowercase())
         LibrarySortField.RECENTLY_ADDED -> LibraryCursor(query.sort.field, query.sort.direction, id, longValue = modifiedEpochMillis)
         LibrarySortField.DURATION -> LibraryCursor(query.sort.field, query.sort.direction, id, longValue = durationMillis ?: -1L)
+        LibrarySortField.RESOLUTION -> LibraryCursor(query.sort.field, query.sort.direction, id, longValue = (width ?: 0).toLong())
         LibrarySortField.PLAY_COUNT -> LibraryCursor(query.sort.field, query.sort.direction, id, longValue = playCount.toLong())
     }
 

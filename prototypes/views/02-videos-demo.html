@@ -1,0 +1,1055 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>影里 · 视频 Demo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f5f5f5;
+      --surface: #ffffff;
+      --surface-subtle: #fafafa;
+      --surface-muted: #eeeeee;
+      --surface-component: #eeeeee;
+      --surface-hover: #e0e0e0;
+      --text-primary: #1f1f1f;
+      --text-secondary: #525252;
+      --text-placeholder: #737373;
+      --border-divider: #eeeeee;
+      --border-default: #e0e0e0;
+      --border-strong: #737373;
+      --selection: #1f1f1f;
+      --on-selection: #ffffff;
+      --shadow-phone: 0 28px 70px rgb(0 0 0 / .34), 0 6px 20px rgb(0 0 0 / .24);
+      --shadow-menu: 0 18px 42px rgb(0 0 0 / .48);
+    }
+    * { box-sizing: border-box; }
+    html, body { min-width: 320px; min-height: 100%; }
+    body {
+      margin: 0;
+      background: #e1e3e4;
+      color: var(--text-primary);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+    button, input { font: inherit; letter-spacing: 0; }
+    button { border: 0; color: inherit; cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+    [hidden] { display: none !important; }
+
+    .showcase { min-height: 100vh; display: grid; place-items: center; padding: 28px 16px; }
+    .phone-shell {
+      position: relative;
+      width: min(390px, calc(100vw - 32px));
+      height: min(844px, calc(100vh - 56px));
+      min-height: 640px;
+      padding: 9px;
+      border: 1px solid #080808;
+      border-radius: 45px;
+      background: #0a0a0a;
+      box-shadow: var(--shadow-phone);
+    }
+    .phone-screen { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: 36px; background: var(--page); }
+    .camera-hole {
+      position: absolute;
+      top: 17px;
+      left: 50%;
+      z-index: 50;
+      width: 10px;
+      height: 10px;
+      transform: translateX(-50%);
+      border: 2px solid #1d1d1d;
+      border-radius: 50%;
+      background: #050505;
+      box-shadow: 0 0 0 2px #0b0b0b;
+    }
+    .side-key { position: absolute; right: -3px; top: 155px; width: 3px; height: 72px; border-radius: 0 3px 3px 0; background: #202020; }
+    .status-bar {
+      position: absolute;
+      inset: 0 0 auto;
+      z-index: 30;
+      height: 31px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      font-size: 10px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+    .status-icons { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+    .app { position: absolute; inset: 31px 0 0; }
+
+    /* ---------- header ---------- */
+    .video-header { position: absolute; inset: 0 0 auto; z-index: 20; height: 60px; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 6px; border-bottom: 1px solid var(--border-divider); background: rgb(255 255 255 / .94); backdrop-filter: blur(18px); }
+    .icon-button { width: 44px; height: 44px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 21px; transition: background .16s ease, color .16s ease; }
+    .icon-button:hover, .icon-button[aria-expanded="true"] { background: var(--surface-component); color: var(--text-primary); }
+    .icon-button:disabled { opacity: .35; pointer-events: none; }
+    .header-normal, .header-selection { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+    .header-selection { display: none; }
+    .video-header.selecting .header-normal { display: none; }
+    .video-header.selecting .header-selection { display: flex; }
+    .header-title-group { min-width: 0; flex: 1; display: flex; flex-direction: column; justify-content: center; }
+    .header-title { font-size: 17px; font-weight: 700; line-height: 21px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .header-meta { margin-top: 1px; color: var(--text-secondary); font-size: 10px; line-height: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .header-meta:empty { display: none; }
+    .header-actions { display: flex; gap: 2px; }
+    .selection-count { flex: 1; min-width: 0; font-size: 14px; font-weight: 650; }
+    .text-button { min-height: 36px; display: inline-flex; align-items: center; gap: 3px; padding: 0 9px; border-radius: 6px; background: transparent; color: var(--text-secondary); font-size: 11px; }
+    .text-button:hover { background: var(--surface-subtle); color: var(--text-primary); }
+
+    /* ---------- breadcrumb ---------- */
+    .breadcrumb-bar { position: absolute; top: 60px; right: 0; left: 0; z-index: 18; height: 36px; padding: 0 12px; display: flex; align-items: center; border-bottom: 1px solid var(--border-divider); background: var(--surface); }
+    .breadcrumb { min-width: 0; width: 100%; display: flex; align-items: center; overflow: hidden; }
+    .breadcrumb-root { width: 34px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; font-size: 17px; }
+    .breadcrumb-scroll { min-width: 0; flex: 1; display: flex; align-items: center; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x; }
+    .breadcrumb-scroll::-webkit-scrollbar { display: none; }
+    .crumb { min-width: 0; width: auto; max-width: 108px; min-height: 32px; flex: 0 0 auto; display: inline-flex; align-items: center; padding: 0 7px; border-radius: 6px; background: transparent; color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
+    .crumb:hover { background: var(--surface-subtle); color: var(--text-primary); }
+    .crumb.current { width: auto; max-width: 144px; color: var(--text-primary); font-weight: 650; cursor: default; }
+    .breadcrumb .breadcrumb-root { width: 34px; max-width: 34px; display: grid; place-items: center; padding: 0; }
+    .breadcrumb .breadcrumb-root.crumb.current { width: 34px; max-width: 34px; }
+    .crumb-label { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .crumb-overflow { width: 34px; max-width: 34px; justify-content: center; padding: 0; font-size: 16px; }
+    .crumb-sep { flex: 0 0 auto; margin: 0 1px; color: var(--text-placeholder); font-size: 14px; }
+    .breadcrumb-overflow-menu { position: absolute; top: 40px; left: 46px; z-index: 28; width: min(250px, calc(100% - 58px)); padding: 5px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); box-shadow: 0 12px 28px rgb(0 0 0 / .18); }
+    .breadcrumb-overflow-item { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 6px; background: transparent; color: var(--text-primary); font-size: 11px; line-height: 16px; text-align: left; overflow-wrap: anywhere; }
+    .breadcrumb-overflow-item:hover { background: var(--surface-subtle); }
+    .breadcrumb-overflow-item i { flex: 0 0 auto; color: var(--text-placeholder); font-size: 15px; }
+
+    /* ---------- search ---------- */
+    .search-panel { position: absolute; top: 60px; right: 0; left: 0; z-index: 19; padding: 10px 14px; border-bottom: 1px solid var(--border-divider); background: var(--surface); transform: translateY(-10px); opacity: 0; pointer-events: none; transition: transform .18s ease, opacity .18s ease; }
+    .search-panel.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+    .search-field { height: 44px; display: flex; align-items: center; gap: 9px; padding: 0 11px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-subtle); color: var(--text-secondary); }
+    .search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 13px; }
+    .search-field input::placeholder { color: var(--text-placeholder); }
+    .search-clear { width: 32px; height: 32px; border-radius: 6px; background: transparent; color: var(--text-placeholder); }
+
+    /* ---------- more menu ---------- */
+    .more-menu { position: absolute; top: 52px; right: 10px; z-index: 25; width: 188px; padding: 6px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-muted); box-shadow: var(--shadow-menu); transform: translateY(-5px) scale(.98); transform-origin: top right; opacity: 0; pointer-events: none; transition: transform .14s ease, opacity .14s ease; }
+    .more-menu.open { transform: translateY(0) scale(1); opacity: 1; pointer-events: auto; }
+    .menu-item { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 11px; padding: 0 10px; border-radius: 6px; background: transparent; color: var(--text-primary); font-size: 13px; text-align: left; }
+    .menu-item:hover { background: var(--surface-hover); }
+    .menu-item i { width: 19px; color: var(--text-secondary); font-size: 19px; }
+    .menu-separator { height: 1px; margin: 5px 4px; background: var(--border-default); }
+
+    /* ---------- content ---------- */
+    .content-scroll { position: absolute; inset: 96px 0 66px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+    .content-scroll::-webkit-scrollbar { display: none; }
+    .content-scroll.is-selecting { padding-bottom: 60px; }
+    .content { padding: 16px 16px 28px; }
+    .section { margin-top: 22px; }
+    .section:first-child { margin-top: 0; }
+    .section-header { min-height: 26px; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .section-title { margin: 0; font-size: 14px; font-weight: 680; line-height: 20px; }
+    .section-meta { color: var(--text-placeholder); font-size: 10px; font-weight: 500; }
+    .empty-search { padding: 30px 10px; color: var(--text-secondary); font-size: 12px; text-align: center; }
+
+    /* ---------- folders ---------- */
+    .folder-list { border-top: 1px solid var(--border-divider); transition: opacity .16s ease; }
+    .folder-list.is-disabled { opacity: .45; pointer-events: none; }
+    .folder-row { width: 100%; min-height: 58px; display: flex; align-items: center; gap: 11px; padding: 8px 2px; border-bottom: 1px solid var(--border-divider); background: transparent; text-align: left; }
+    .folder-row:hover { background: var(--surface-subtle); }
+    .folder-icon { width: 48px; height: 48px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; background: var(--surface-component); color: var(--text-secondary); font-size: 25px; }
+    .folder-copy { min-width: 0; flex: 1; }
+    .folder-name, .folder-path, .folder-meta { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .folder-name { font-size: 12px; font-weight: 630; }
+    .folder-path { margin-top: 2px; color: var(--text-placeholder); font-size: 9px; }
+    .folder-meta { margin-top: 2px; overflow: hidden; color: var(--text-placeholder); font-size: 9px; }
+    .folder-row > i { flex: 0 0 auto; color: var(--text-placeholder); font-size: 17px; }
+
+    /* ---------- video grid / list ---------- */
+    .video-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 10px; }
+    .video-card { width: 100%; min-width: 0; display: block; padding: 0; overflow: hidden; background: transparent; text-align: left; }
+    .video-thumb { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 7px; background: var(--surface-muted); }
+    .video-thumb img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .duration { position: absolute; right: 5px; bottom: 5px; padding: 2px 4px; border-radius: 3px; background: rgb(0 0 0 / .76); color: #fff; font-size: 8px; }
+    .video-title { display: block; margin-top: 7px; overflow: hidden; color: var(--text-primary); font-size: 11px; font-weight: 620; line-height: 15px; white-space: nowrap; text-overflow: ellipsis; }
+    .video-meta { display: block; margin-top: 2px; overflow: hidden; color: var(--text-placeholder); font-size: 9px; white-space: nowrap; text-overflow: ellipsis; }
+    .video-location { display: block; margin-top: 2px; overflow: hidden; color: var(--text-placeholder); font-size: 9px; white-space: nowrap; text-overflow: ellipsis; }
+
+    .video-rows { display: flex; flex-direction: column; }
+    .video-row { width: 100%; min-height: 66px; display: flex; align-items: center; gap: 11px; padding: 7px 2px; border-bottom: 1px solid var(--border-divider); background: transparent; text-align: left; }
+    .video-row:hover { background: var(--surface-subtle); }
+    .video-row-thumb { position: relative; flex: 0 0 auto; width: 96px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; background: var(--surface-muted); }
+    .video-row-thumb img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .video-row-copy { min-width: 0; flex: 1; }
+
+    .select-mark { position: absolute; top: 6px; left: 6px; z-index: 2; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; border: 1.5px solid rgb(255 255 255 / .9); background: rgb(0 0 0 / .35); color: #fff; font-size: 12px; opacity: 0; transform: scale(.8); transition: opacity .12s ease, transform .12s ease, background .12s ease, border-color .12s ease; }
+    .video-card.selecting .select-mark, .video-row.selecting .select-mark { opacity: 1; transform: scale(1); }
+    .video-card.is-selected .select-mark, .video-row.is-selected .select-mark { background: var(--selection); border-color: var(--selection); }
+
+    .video-card > .video-thumb, .video-card > .video-title, .video-card > .video-meta, .video-card > .progress-track { width: 100%; }
+    .progress-track { display: block; width: 100%; margin-top: 4px; height: 3px; border-radius: 2px; background: var(--border-default); overflow: hidden; }
+    .progress-fill { display: block; width: min(100%, var(--progress, 0%)); height: 100%; background: var(--text-primary); }
+
+    /* ---------- selection bar ---------- */
+    .selection-bar { position: absolute; right: 0; bottom: 66px; left: 0; z-index: 19; height: 60px; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--border-default); background: rgb(255 255 255 / .96); backdrop-filter: blur(18px); }
+    .selection-bar.is-disabled .selection-action { color: var(--text-placeholder); pointer-events: none; }
+    .selection-action { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: transparent; color: var(--text-primary); font-size: 10px; font-weight: 600; }
+    .selection-action:hover { background: var(--surface-subtle); }
+    .selection-action i { font-size: 19px; }
+
+    /* ---------- sheets / scrim ---------- */
+    .scrim { position: absolute; inset: 0; z-index: 34; background: rgb(0 0 0 / .58); opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+    .scrim.open { opacity: 1; pointer-events: auto; }
+    .sheet { position: absolute; right: 0; bottom: 0; left: 0; z-index: 35; padding: 9px 16px 22px; border-top: 1px solid var(--border-default); border-radius: 14px 14px 0 0; background: var(--surface); transform: translateY(102%); transition: transform .24s cubic-bezier(.2,.8,.2,1); }
+    .sheet.open { transform: translateY(0); }
+    .sheet-handle { width: 34px; height: 4px; margin: 0 auto 14px; border-radius: 2px; background: var(--border-strong); }
+    .sheet-header { display: flex; align-items: center; justify-content: space-between; min-height: 42px; }
+    .sheet-title { margin: 0; font-size: 16px; }
+    .sheet p { margin: 7px 0 17px; color: var(--text-secondary); font-size: 11px; line-height: 17px; }
+    .sheet-actions { display: grid; gap: 8px; }
+    .sheet-actions .action-button { width: 100%; }
+    .action-button { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-subtle); color: var(--text-primary); font-size: 12px; font-weight: 620; }
+    .action-button:hover { background: var(--surface-component); }
+    .action-button.primary { border-color: var(--selection); background: var(--selection); color: var(--on-selection); }
+    .action-button i { font-size: 18px; }
+
+    .quick-settings-sheet { display: flex; flex-direction: column; max-height: 82%; padding-bottom: 14px; }
+    .qs-body { overflow-y: auto; scrollbar-width: none; padding-bottom: 2px; }
+    .qs-body::-webkit-scrollbar { display: none; }
+    .qs-group { margin-top: 18px; }
+    .qs-group:first-child { margin-top: 2px; }
+    .qs-label { margin: 0 0 9px; color: var(--text-secondary); font-size: 12px; font-weight: 650; }
+    .qs-sort-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+    .qs-sort-header .qs-label { margin: 0; }
+    .qs-row { display: flex; gap: 8px; }
+    .qs-row-2 .qs-chip { flex: 1; }
+    .qs-segmented { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--surface-subtle); }
+    .qs-segmented .qs-chip { min-height: 32px; flex: 1; padding: 0 10px; border-radius: 6px; background: transparent; color: var(--text-placeholder); font-size: 11px; }
+    .qs-segmented .qs-chip.active { background: var(--surface-component); color: var(--text-primary); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+    .qs-segmented .qs-chip:hover:not(.active) { background: transparent; color: var(--text-primary); }
+    .qs-wrap { flex-wrap: wrap; }
+    .qs-row.is-disabled { opacity: .4; pointer-events: none; }
+    .qs-chip { min-height: 42px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--surface-subtle); color: var(--text-secondary); font-size: 12px; font-weight: 620; text-align: center; }
+    .qs-chip.active { background: var(--surface-component); color: var(--text-primary); font-weight: 700; }
+    .qs-chip:hover:not(.active) { background: var(--surface-hover); }
+    .qs-direction { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--surface-subtle); }
+    .qs-direction .qs-dir { min-height: 32px; min-width: 48px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--text-placeholder); font-size: 11px; font-weight: 620; white-space: nowrap; }
+    .qs-direction .qs-dir.active { background: var(--surface-component); color: var(--text-primary); font-weight: 700; box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+    .qs-direction .qs-dir:hover:not(.active) { color: var(--text-primary); }
+    .qs-sort-cluster + .qs-sort-cluster { margin-top: 10px; }
+    .qs-sub-label { margin: 0 0 6px; color: var(--text-placeholder); font-size: 10px; font-weight: 600; }
+    .qs-collapse-toggle { width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 2px; border-bottom: 1px solid var(--border-divider); background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 650; text-align: left; }
+    .qs-collapse-toggle:hover { color: var(--text-primary); }
+    .qs-collapse-toggle i { color: var(--text-placeholder); font-size: 16px; transition: transform .16s ease; }
+    .qs-collapse-toggle[aria-expanded="true"] i { transform: rotate(180deg); }
+    .qs-fields-body { padding-top: 12px; }
+    .qs-field-block + .qs-field-block { margin-top: 12px; }
+    .qs-field-block.is-disabled { opacity: .4; pointer-events: none; }
+    .qs-field-title { margin: 0 0 7px; color: var(--text-secondary); font-size: 11px; font-weight: 650; }
+    .qs-tag { min-height: 42px; display: inline-flex; align-items: center; gap: 8px; padding: 0 13px; border: 2px solid var(--border-default); border-radius: 999px; background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 650; }
+    .qs-tag.active { border-color: var(--border-strong); background: var(--surface-component); color: var(--text-primary); }
+    .qs-tag-check { width: 20px; height: 20px; display: grid; place-items: center; flex: 0 0 auto; border: 2px solid var(--text-placeholder); border-radius: 50%; color: transparent; font-size: 0; }
+    .qs-tag.active .qs-tag-check { border-color: var(--border-strong); background: var(--border-strong); color: var(--surface); font-size: 12px; }
+    .qs-tag:hover:not(.active) { background: var(--surface-hover); }
+    .qs-actions { grid-template-columns: 1fr 1fr; margin-top: 16px; }
+
+    /* ---------- toast / bottom nav ---------- */
+    .toast { position: absolute; right: 16px; bottom: 78px; left: 16px; z-index: 45; min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 0 13px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--text-primary); color: var(--on-selection); box-shadow: var(--shadow-menu); font-size: 11px; transform: translateY(12px); opacity: 0; pointer-events: none; transition: transform .18s ease, opacity .18s ease; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .bottom-nav { position: absolute; right: 0; bottom: 0; left: 0; z-index: 20; height: 66px; display: grid; grid-template-columns: repeat(3, 1fr); padding: 5px 12px 7px; border-top: 1px solid var(--border-divider); background: rgb(255 255 255 / .96); backdrop-filter: blur(18px); }
+    .nav-button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 7px; background: transparent; color: var(--text-placeholder); font-size: 9px; }
+    .nav-button i { font-size: 21px; }
+    .nav-button[aria-current="page"] { color: var(--text-primary); }
+    .nav-button[aria-current="page"]::before { content: ""; position: absolute; top: 0; width: 22px; height: 2px; border-radius: 2px; background: var(--text-primary); }
+    .nav-badge { position: absolute; top: 6px; left: calc(50% + 8px); min-width: 17px; height: 17px; display: grid; place-items: center; padding: 0 4px; border: 2px solid var(--surface); border-radius: 9px; background: var(--text-primary); color: var(--page); font-size: 8px; font-weight: 750; }
+
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+    @media (max-width: 430px) {
+      .showcase { padding: 0; }
+      .phone-shell { width: 100vw; height: 100vh; min-height: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+      .phone-screen { border-radius: 0; }
+      .camera-hole, .side-key { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="showcase">
+    <div class="phone-shell" aria-label="影里视频页预览">
+      <span class="camera-hole" aria-hidden="true"></span>
+      <span class="side-key" aria-hidden="true"></span>
+      <div class="phone-screen">
+        <div class="status-bar" aria-hidden="true"><span>09:41</span><span class="status-icons"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+        <div class="app">
+          <header class="video-header" id="videoHeader">
+            <button class="icon-button" id="backBtn" aria-label="返回上一级" title="返回上一级" hidden><i class="ti ti-arrow-left"></i></button>
+            <div class="header-normal" id="headerNormal">
+              <div class="header-title-group">
+                <div class="header-title" id="headerTitle">视频</div>
+                <div class="header-meta" id="headerMeta">8,247 个视频 · 3 个目录</div>
+              </div>
+              <div class="header-actions">
+                <button class="icon-button" id="searchToggle" aria-label="搜索" aria-expanded="false" title="搜索"><i class="ti ti-search"></i></button>
+                <button class="icon-button" id="moreToggle" aria-label="更多" aria-expanded="false" title="更多"><i class="ti ti-dots-vertical"></i></button>
+              </div>
+            </div>
+            <div class="header-selection" id="headerSelection">
+              <button class="icon-button" id="closeSelection" aria-label="退出选择"><i class="ti ti-x"></i></button>
+              <span class="selection-count" id="selectionCount">已选择 0 项</span>
+              <button class="text-button" id="selectAllBtn">全选</button>
+            </div>
+          </header>
+
+          <div class="breadcrumb-bar" id="breadcrumbBar">
+            <div class="breadcrumb" id="breadcrumb"></div>
+            <div class="breadcrumb-overflow-menu" id="breadcrumbOverflowMenu" role="menu" hidden></div>
+          </div>
+
+          <div class="search-panel" id="searchPanel">
+            <div class="search-field"><i class="ti ti-search"></i><input id="searchInput" type="search" aria-label="全局搜索视频或文件夹" placeholder="搜索全部视频或文件夹" autocomplete="off"><button class="search-clear" id="searchClear" type="button" aria-label="清空搜索"><i class="ti ti-x"></i></button></div>
+          </div>
+          <div class="more-menu" id="moreMenu" role="menu">
+            <button class="menu-item" id="openDirectorySheet" role="menuitem"><i class="ti ti-folder-plus"></i>添加媒体目录</button>
+            <button class="menu-item" id="rescanBtn" role="menuitem"><i class="ti ti-refresh"></i>重新扫描</button>
+            <button class="menu-item" id="selectMenuBtn" role="menuitem"><i class="ti ti-square-check"></i>选择</button>
+            <button class="menu-item" id="openQuickSettings" role="menuitem"><i class="ti ti-adjustments-horizontal"></i>显示设置</button>
+            <div class="menu-separator"></div>
+            <button class="menu-item" data-message="设置页面即将打开" role="menuitem"><i class="ti ti-settings"></i>设置</button>
+          </div>
+
+          <div class="content-scroll" id="contentScroll">
+            <div class="content">
+              <div id="browseContent"></div>
+              <div id="searchResults" hidden></div>
+            </div>
+          </div>
+
+          <div class="selection-bar is-disabled" id="selectionBar" hidden>
+            <button class="selection-action" id="actMove"><i class="ti ti-folder-symlink"></i>移动</button>
+            <button class="selection-action" id="actCollect"><i class="ti ti-folder-plus"></i>合集</button>
+            <button class="selection-action" id="actDelete"><i class="ti ti-trash"></i>删除</button>
+          </div>
+
+          <nav class="bottom-nav" aria-label="底部导航">
+            <button class="nav-button" data-nav="首页"><i class="ti ti-home-filled"></i><span>首页</span></button>
+            <button class="nav-button" aria-current="page" data-nav="视频"><i class="ti ti-video"></i><span>视频</span><span class="nav-badge">8K</span></button>
+            <button class="nav-button" data-nav="整理"><i class="ti ti-folders"></i><span>整理</span></button>
+          </nav>
+
+          <div class="scrim" id="scrim"></div>
+          <section class="sheet" id="directorySheet" aria-label="添加媒体目录">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header"><h2 class="sheet-title">添加媒体目录</h2><button class="icon-button" id="sheetClose" aria-label="关闭"><i class="ti ti-x"></i></button></div>
+            <p>系统目录选择器每次选择一个目录。添加后可以继续选择，影里会合并管理所有已授权目录。</p>
+            <div class="sheet-actions"><button class="action-button primary" id="chooseDirectory"><i class="ti ti-folder-plus"></i>选择一个目录</button><button class="action-button" id="finishDirectory">完成</button></div>
+          </section>
+          <section class="sheet quick-settings-sheet" id="quickSettingsSheet" aria-label="快捷设置">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header"><h2 class="sheet-title">快捷设置</h2><button class="icon-button" id="qsClose" aria-label="关闭"><i class="ti ti-x"></i></button></div>
+            <div class="qs-body">
+              <div class="qs-group">
+                <h3 class="qs-label">浏览范围</h3>
+                <div class="qs-row qs-row-2 qs-segmented" id="qsBrowseMode" role="group" aria-label="浏览范围">
+                  <button class="qs-chip" data-browse="folder">文件夹</button>
+                  <button class="qs-chip" data-browse="flat">全部视频</button>
+                </div>
+              </div>
+              <div class="qs-group">
+                <h3 class="qs-label">排列方式</h3>
+                <div class="qs-row qs-row-2 qs-segmented" id="qsLayout" role="group" aria-label="排列方式">
+                  <button class="qs-chip" data-layout="list">列表</button>
+                  <button class="qs-chip" data-layout="grid">网格</button>
+                </div>
+              </div>
+              <div class="qs-group">
+                <div class="qs-sort-header">
+                  <h3 class="qs-label">排序</h3>
+                  <div class="qs-direction" id="qsSortDir" role="group" aria-label="排序方向">
+                    <button class="qs-dir active" data-dir="asc" type="button">升序</button>
+                    <button class="qs-dir" data-dir="desc" type="button">降序</button>
+                  </div>
+                </div>
+                <div id="qsSortKey">
+                  <div class="qs-sort-cluster">
+                    <h4 class="qs-sub-label">内容属性</h4>
+                    <div class="qs-row qs-wrap">
+                      <button class="qs-chip" data-sort="name">标题</button>
+                      <button class="qs-chip" data-sort="modified">修改时间</button>
+                      <button class="qs-chip" data-sort="duration">时长</button>
+                      <button class="qs-chip" data-sort="size">大小</button>
+                      <button class="qs-chip" data-sort="resolution">分辨率</button>
+                    </div>
+                  </div>
+                  <div class="qs-sort-cluster">
+                    <h4 class="qs-sub-label">使用记录</h4>
+                    <div class="qs-row qs-wrap">
+                      <button class="qs-chip" data-sort="lastPlayed">上次播放</button>
+                      <button class="qs-chip" data-sort="playCount">播放次数</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="qs-group">
+                <button class="qs-collapse-toggle" id="qsFieldsToggle" type="button" aria-expanded="false" aria-controls="qsFieldsBody">
+                  <span>字段显示</span><i class="ti ti-chevron-down" aria-hidden="true"></i>
+                </button>
+                <div class="qs-fields-body" id="qsFieldsBody" hidden>
+                  <div class="qs-field-block" id="qsFolderFieldBlock">
+                    <h4 class="qs-field-title">文件夹</h4>
+                    <div class="qs-row qs-wrap" id="qsFolderFields">
+                      <button class="qs-tag" data-field="videoCount" type="button"><i class="ti ti-check qs-tag-check"></i>视频总数</button>
+                      <button class="qs-tag" data-field="folderSize" type="button"><i class="ti ti-check qs-tag-check"></i>文件夹大小</button>
+                      <button class="qs-tag" data-field="totalDuration" type="button"><i class="ti ti-check qs-tag-check"></i>总时长</button>
+                      <button class="qs-tag" data-field="folderModified" type="button"><i class="ti ti-check qs-tag-check"></i>修改时间</button>
+                      <button class="qs-tag" data-field="folderPath" type="button"><i class="ti ti-check qs-tag-check"></i>路径</button>
+                    </div>
+                  </div>
+                  <div class="qs-field-block">
+                    <h4 class="qs-field-title">视频</h4>
+                    <div class="qs-row qs-wrap" id="qsVideoFields">
+                      <button class="qs-tag" data-field="path" type="button"><i class="ti ti-check qs-tag-check"></i>路径</button>
+                      <button class="qs-tag" data-field="fileSize" type="button"><i class="ti ti-check qs-tag-check"></i>文件大小</button>
+                      <button class="qs-tag" data-field="resolution" type="button"><i class="ti ti-check qs-tag-check"></i>分辨率</button>
+                      <button class="qs-tag" data-field="modified" type="button"><i class="ti ti-check qs-tag-check"></i>修改时间</button>
+                      <button class="qs-tag" data-field="progress" type="button"><i class="ti ti-check qs-tag-check"></i>播放进度</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="sheet-actions qs-actions">
+              <button class="action-button" id="qsCancel">取消</button>
+              <button class="action-button primary" id="qsConfirm">确定</button>
+            </div>
+          </section>
+          <div class="toast" id="toast"><i class="ti ti-check"></i><span></span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const $ = selector => document.querySelector(selector);
+    const $$ = selector => [...document.querySelectorAll(selector)];
+    const toast = $('#toast');
+    let toastTimer;
+    function notify(message) {
+      toast.querySelector('span').textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 1900);
+    }
+
+    /* ---------------- data ---------------- */
+    const TH = {
+      star: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=500&q=80',
+      city: 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=500&q=80',
+      station: 'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=500&q=80',
+      kitchen: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=500&q=80',
+      tokyo: 'https://images.unsplash.com/photo-1493780474015-ba834fd0ce2f?auto=format&fit=crop&w=500&q=80',
+      road: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=500&q=80',
+      forest: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=500&q=80',
+      stars2: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=500&q=80',
+      birds: 'https://images.unsplash.com/photo-1444464666168-49d633b86797?auto=format&fit=crop&w=500&q=80',
+      coral: 'https://images.unsplash.com/photo-1546026423-cc4642628d2b?auto=format&fit=crop&w=500&q=80',
+      plateau: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=500&q=80',
+      rainforest: 'https://images.unsplash.com/photo-1440342359743-84fcb8c21f21?auto=format&fit=crop&w=500&q=80',
+      deepsea: 'https://images.unsplash.com/photo-1439405326854-014607f694d7?auto=format&fit=crop&w=500&q=80',
+      wild: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=500&q=80',
+      diner: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=500&q=80',
+      workshop: 'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=500&q=80',
+    };
+    function stableSeed(value) {
+      return [...value].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 7);
+    }
+    function v(title, duration, size, resolution, thumb, ext, progress) {
+      const seed = stableSeed(title);
+      return {
+        title,
+        duration,
+        size,
+        resolution,
+        thumb,
+        ext: ext || '.mp4',
+        progress: progress == null ? null : progress,
+        modifiedAt: Date.UTC(2024 + seed % 3, seed % 12, 1 + seed % 26),
+        lastPlayedAt: progress == null ? 0 : Date.UTC(2026, seed % 8, 1 + seed % 26),
+        playCount: progress == null ? 0 : 1 + seed % 24,
+      };
+    }
+
+    const rawFootage = { name: '第一阶段原始文件与代理媒体', count: 18, size: '42 GB', directVideoCount: 18, folders: [], videos: [
+      v('春季样片 · 原始素材', '12:40', '4.2 GB', '2160P', TH.road, '.mov'),
+    ]};
+    const springCapture = { name: '2026 年春季拍摄计划', count: 18, size: '42 GB', directVideoCount: 0, folders: [rawFootage], videos: [] };
+    const travelArchive = { name: '旅行与城市纪录片素材', count: 18, size: '42 GB', directVideoCount: 0, folders: [springCapture], videos: [] };
+    const archive = { name: '一个非常长的文件夹名称示例', count: 18, size: '42 GB', directVideoCount: 0, folders: [travelArchive], videos: [] };
+    const movies2026 = { name: '2026', count: 3862, size: '820 GB', directVideoCount: 3844, folders: [archive], videos: [
+      v('夜航西飞 · 第 01 集', '1:08:12', '2.4 GB', '1080P', TH.star, '.mkv', 100),
+      v('夜航西飞 · 第 02 集', '58:30', '2.1 GB', '1080P', TH.star, '.mkv', 100),
+      v('夜航西飞 · 第 04 集', '1:12:40', '2.6 GB', '1080P', TH.star, '.mkv', 62),
+      v('边境公路', '1:34:20', '3.8 GB', '2160P', TH.road, '.mp4', 15),
+      v('低语的森林', '46:05', '1.6 GB', '1080P', TH.forest),
+      v('群星之间', '2:02:15', '4.4 GB', '2160P', TH.stars2, '.mkv'),
+    ]};
+    const movies = { name: 'Movies', count: 3862, size: '820 GB', directVideoCount: 0, folders: [movies2026], videos: [] };
+
+    const nature = { name: '自然', count: 860, size: '245 GB', directVideoCount: 860, folders: [], videos: [
+      v('候鸟迁徙记', '51:40', '1.1 GB', '1080P', TH.birds),
+      v('珊瑚礁纪事', '44:18', '980 MB', '1080P', TH.coral),
+      v('高原上的牧民', '1:02:33', '1.8 GB', '2160P', TH.plateau, '.mkv'),
+      v('雨林深处', '39:57', '890 MB', '1080P', TH.rainforest),
+    ]};
+    const docs = { name: '纪录片收藏', count: 2148, size: '612 GB', directVideoCount: 1288, folders: [nature], videos: [
+      v('城市切片：凌晨四点', '32:18', '780 MB', '1080P', TH.city, '.mp4', 40),
+      v('深海之谜', '55:02', '1.2 GB', '2160P', TH.deepsea, '.mkv', 88),
+      v('荒野求生特辑', '47:29', '1.0 GB', '1080P', TH.wild),
+    ]};
+    const downloads = { name: 'Downloads', count: 2237, size: '390 GB', directVideoCount: 2237, folders: [], videos: [
+      v('雾中车站 · 短片', '18:42', '2.1 GB', '1080P', TH.station),
+      v('厨房实验室 · 12', '42:08', '1.4 GB', '1080P', TH.kitchen),
+      v('纸上建筑 · 东京篇', '26:17', '986 MB', '2160P', TH.tokyo, '.mkv'),
+      v('深夜食堂手记', '21:05', '640 MB', '1080P', TH.diner),
+      v('旧物改造实验', '33:50', '810 MB', '1080P', TH.workshop),
+    ]};
+    const breadcrumbDemo = { name: '面包屑导航测试：超长项目素材归档', count: 18, size: '42 GB', directVideoCount: 0, folders: [travelArchive], videos: [] };
+    const library = { name: '全部视频', count: 8247, directVideoCount: 0, folders: [movies, docs, downloads, breadcrumbDemo], videos: [] };
+
+    /* ---------------- state ---------------- */
+    let path = [];
+    let browseMode = 'folder'; // 'folder' | 'flat'
+    let layoutMode = 'grid'; // 'list' | 'grid'
+    let sortKey = 'name';
+    let sortDir = 'asc';
+    let folderFields = new Set(['videoCount', 'folderSize', 'folderPath']);
+    let videoFields = new Set(['fileSize', 'resolution', 'progress']);
+    let selecting = false;
+    let selected = new Set();
+    let draft = null;
+
+    function currentFolder() { return path.length ? path[path.length - 1] : library; }
+    function formatCount(n) { return n.toLocaleString('zh-CN'); }
+    function pathKey(pathArr) { return pathArr.map(p => p.name).join('/') || 'root'; }
+    function videoKey(vid, pathArr) { return pathKey(pathArr) + '::' + vid.title; }
+    function locationLabel(pathArr) { return ['全部视频', ...pathArr.map(p => p.name)].join(' / '); }
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    }
+    function flattenAll() {
+      const result = [];
+      (function walk(node, p) {
+        node.videos.forEach(vid => result.push({ vid, path: p }));
+        node.folders.forEach(f => walk(f, [...p, f]));
+      })(library, []);
+      return result;
+    }
+
+    /* deep link: ?open=Movies/2026 */
+    (function initDeepLink() {
+      const openParam = new URLSearchParams(location.search).get('open');
+      if (!openParam) return;
+      const segs = openParam.split('/').map(decodeURIComponent).filter(Boolean);
+      let node = library; const found = [];
+      for (const seg of segs) {
+        const next = node.folders.find(f => f.name === seg);
+        if (!next) break;
+        found.push(next); node = next;
+      }
+      path = found;
+    })();
+
+    /* ---------------- search index ---------------- */
+    const searchIndex = [];
+    (function indexNode(node, pathToNode) {
+      node.folders.forEach(f => {
+        const fPath = [...pathToNode, f];
+        searchIndex.push({ type: 'folder', node: f, path: fPath, parentPath: pathToNode });
+        indexNode(f, fPath);
+      });
+      node.videos.forEach(vid => { searchIndex.push({ type: 'video', node: vid, path: pathToNode }); });
+    })(library, []);
+
+    /* ---------------- rendering ---------------- */
+    function renderBreadcrumb() {
+      // 当前目录已在顶部标题显示，面包屑只保留根入口和祖先目录。
+      const crumbs = [{ name: '全部视频' }, ...path.slice(0, -1)];
+      const overflowMenu = $('#breadcrumbOverflowMenu');
+      const breadcrumb = $('#breadcrumb');
+      const root = crumbs[0];
+      const rootLabel = escapeHTML(root.name);
+      const rootMarkup = `<button class="breadcrumb-root crumb" data-crumb-index="0" title="${rootLabel}" aria-label="返回${rootLabel}"><i class="ti ti-device-desktop"></i></button>`;
+
+      const tailCount = 2;
+      const tailStart = crumbs.length > tailCount + 1 ? crumbs.length - tailCount : 1;
+      const hiddenCrumbs = crumbs.slice(1, tailStart);
+      const visibleCrumbs = crumbs.slice(tailStart);
+      const overflowMarkup = hiddenCrumbs.length
+        ? '<i class="ti ti-chevron-right crumb-sep" aria-hidden="true"></i><button class="crumb crumb-overflow" id="breadcrumbOverflowToggle" type="button" aria-label="显示隐藏的上级目录" aria-expanded="false" title="显示隐藏的上级目录"><i class="ti ti-dots"></i></button>'
+        : '';
+      const trackParts = [];
+      visibleCrumbs.forEach((crumb, offset) => {
+        const index = tailStart + offset;
+        const isLast = index === crumbs.length - 1;
+        const label = escapeHTML(crumb.name);
+        trackParts.push('<i class="ti ti-chevron-right crumb-sep" aria-hidden="true"></i>');
+        trackParts.push(isLast
+          ? `<span class="crumb current" title="${label}" aria-label="${label}"><span class="crumb-label">${label}</span></span>`
+          : `<button class="crumb" data-crumb-index="${index}" type="button" title="${label}"><span class="crumb-label">${label}</span></button>`);
+      });
+      breadcrumb.innerHTML = `${rootMarkup}${overflowMarkup}<div class="breadcrumb-scroll" id="breadcrumbScroll">${trackParts.join('')}</div>`;
+
+      overflowMenu.innerHTML = hiddenCrumbs.map((crumb, offset) => {
+        const index = offset + 1;
+        const label = escapeHTML(crumb.name);
+        return `<button class="breadcrumb-overflow-item" data-crumb-index="${index}" type="button" role="menuitem" title="${label}"><i class="ti ti-folder"></i><span>${label}</span></button>`;
+      }).join('');
+      overflowMenu.hidden = true;
+    }
+
+    function closeBreadcrumbOverflow() {
+      const menu = $('#breadcrumbOverflowMenu');
+      const toggle = $('#breadcrumbOverflowToggle');
+      if (!menu || !toggle) return;
+      menu.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function updateChromeVisibility() {
+      const isSearching = searchInput.value.trim().length > 0;
+      $('#breadcrumbBar').hidden = isSearching || browseMode !== 'folder' || path.length === 0;
+    }
+
+    function renderHeader() {
+      if (browseMode === 'folder') {
+        const folder = currentFolder();
+        $('#backBtn').hidden = path.length === 0 || selecting;
+        $('#headerTitle').textContent = path.length === 0 ? '视频' : folder.name;
+        if (path.length === 0) {
+          $('#headerMeta').textContent = '';
+        } else {
+          const parts = [];
+          if (folder.folders.length) parts.push(`${folder.folders.length} 个文件夹`);
+          parts.push(`${formatCount(folder.count)} 个视频`);
+          if (folder.size) parts.push(folder.size);
+          $('#headerMeta').textContent = parts.join(' · ');
+        }
+      } else {
+        $('#backBtn').hidden = true;
+        $('#headerTitle').textContent = browseMode === 'flat' ? '全部视频' : '视频';
+        $('#headerMeta').textContent = `${formatCount(library.count)} 个视频 · ${library.folders.length} 个目录`;
+      }
+      updateChromeVisibility();
+    }
+
+    function parseSize(s) {
+      const m = s.match(/([\d.]+)\s*(GB|MB)/i);
+      if (!m) return 0;
+      const num = parseFloat(m[1]);
+      return m[2].toUpperCase() === 'GB' ? num * 1024 : num;
+    }
+    function parseDuration(s) {
+      return s.split(':').map(Number).reduce((acc, n) => acc * 60 + n, 0);
+    }
+    function formatDate(timestamp) {
+      return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric' }).format(timestamp);
+    }
+    const naturalTitleCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' });
+    function compareVideos(a, b) {
+      const dir = sortDir === 'asc' ? 1 : -1;
+      if (sortKey === 'name') return naturalTitleCollator.compare(a.title, b.title) * dir;
+      if (sortKey === 'modified') return (a.modifiedAt - b.modifiedAt) * dir;
+      if (sortKey === 'size') return (parseSize(a.size) - parseSize(b.size)) * dir;
+      if (sortKey === 'duration') return (parseDuration(a.duration) - parseDuration(b.duration)) * dir;
+      if (sortKey === 'resolution') return (parseInt(a.resolution, 10) - parseInt(b.resolution, 10)) * dir;
+      if (sortKey === 'lastPlayed') return (a.lastPlayedAt - b.lastPlayedAt) * dir;
+      if (sortKey === 'playCount') return (a.playCount - b.playCount) * dir;
+      return 0;
+    }
+    function sortedVideos(list) {
+      return [...list].sort(compareVideos);
+    }
+
+    function folderSampleVideos(folder) {
+      const result = [...folder.videos];
+      folder.folders.forEach(child => result.push(...folderSampleVideos(child)));
+      return result;
+    }
+    function folderTotalDuration(folder) {
+      const sample = folderSampleVideos(folder);
+      if (!sample.length) return '—';
+      const sampleSeconds = sample.reduce((sum, video) => sum + parseDuration(video.duration), 0);
+      const scaledSeconds = sampleSeconds / sample.length * Math.max(folder.count, sample.length);
+      const hours = Math.round(scaledSeconds / 3600);
+      return hours > 0 ? `${formatCount(hours)} 小时` : `${Math.max(1, Math.round(scaledSeconds / 60))} 分钟`;
+    }
+    function folderModifiedAt(folder) {
+      return Math.max(...folderSampleVideos(folder).map(video => video.modifiedAt), 0);
+    }
+    function folderInfoLine(folder) {
+      const parts = [];
+      if (folderFields.has('videoCount')) parts.push(`${formatCount(folder.count)} 个视频`);
+      if (folderFields.has('folderSize') && folder.size) parts.push(folder.size);
+      if (folderFields.has('totalDuration')) parts.push(folderTotalDuration(folder));
+      if (folderFields.has('folderModified') && folderModifiedAt(folder)) parts.push(formatDate(folderModifiedAt(folder)));
+      return parts.join(' · ');
+    }
+    function folderPathLine(folder, parentPath = []) {
+      return folderFields.has('folderPath') ? locationLabel([...parentPath, folder.name]) : '';
+    }
+    function folderRowHTML(f, parentPath = path) {
+      const folderPath = folderPathLine(f, parentPath);
+      const info = folderInfoLine(f);
+      return `<button class="folder-row" data-folder="${f.name}"><span class="folder-icon"><i class="ti ti-folder-filled"></i></span><span class="folder-copy"><span class="folder-name">${f.name}</span>${folderPath ? `<span class="folder-path">${folderPath}</span>` : ''}${info ? `<span class="folder-meta">${info}</span>` : ''}</span><i class="ti ti-chevron-right"></i></button>`;
+    }
+    function searchFolderMetaLine(folder, parentPath) {
+      const folderPath = folderPathLine(folder, parentPath);
+      const info = folderInfoLine(folder);
+      return `${folderPath ? `<span class="folder-path">${folderPath}</span>` : ''}${info ? `<span class="folder-meta">${info}</span>` : ''}`;
+    }
+
+    function metaLine(vid, pathArr) {
+      const parts = [];
+      if (videoFields.has('fileSize')) parts.push(vid.size);
+      if (videoFields.has('resolution')) parts.push(vid.resolution);
+      if (videoFields.has('modified')) parts.push(formatDate(vid.modifiedAt));
+      if (videoFields.has('path')) parts.push(locationLabel(pathArr));
+      return parts.join(' · ');
+    }
+    function progressHTML(vid) {
+      if (!videoFields.has('progress') || vid.progress == null) return '';
+      return `<span class="progress-track"><span class="progress-fill" style="--progress:${vid.progress}%"></span></span>`;
+    }
+
+    function videoItemHTML(vid, pathArr) {
+      const key = videoKey(vid, pathArr);
+      const isSelected = selected.has(key);
+      const markInner = isSelected ? '<i class="ti ti-check"></i>' : '';
+      const meta = metaLine(vid, pathArr);
+      const prog = progressHTML(vid);
+      if (layoutMode === 'grid') {
+        return `<button class="video-card${selecting ? ' selecting' : ''}${isSelected ? ' is-selected' : ''}" data-video-key="${key}" data-video-title="${vid.title}">
+          <span class="video-thumb"><img src="${vid.thumb}" alt="${vid.title}缩略图"><span class="select-mark">${markInner}</span><span class="duration">${vid.duration}</span></span>
+          <span class="video-title">${vid.title}</span>
+          ${meta ? `<span class="video-meta">${meta}</span>` : ''}
+          ${prog}
+        </button>`;
+      }
+      return `<button class="video-row${selecting ? ' selecting' : ''}${isSelected ? ' is-selected' : ''}" data-video-key="${key}" data-video-title="${vid.title}">
+        <span class="video-row-thumb"><img src="${vid.thumb}" alt="${vid.title}缩略图"><span class="select-mark">${markInner}</span><span class="duration">${vid.duration}</span></span>
+        <span class="video-row-copy"><span class="video-title">${vid.title}</span>${meta ? `<span class="video-meta">${meta}</span>` : ''}${prog}</span>
+      </button>`;
+    }
+
+    function renderBrowse() {
+      if (browseMode === 'flat') { renderFlat(); return; }
+      renderFolderMode();
+    }
+
+    function renderFolderMode() {
+      const folder = currentFolder();
+      let html = '';
+      if (folder.folders.length) {
+        html += `<section class="section"><div class="section-header"><h2 class="section-title">文件夹 <span class="section-meta">${folder.folders.length}</span></h2></div><div class="folder-list${selecting ? ' is-disabled' : ''}">${folder.folders.map(child => folderRowHTML(child, path)).join('')}</div></section>`;
+      }
+      if (folder.videos.length) {
+        const items = sortedVideos(folder.videos);
+        const listClass = layoutMode === 'grid' ? 'video-grid' : 'video-rows';
+        html += `<section class="section"><div class="section-header"><h2 class="section-title">视频 <span class="section-meta">${formatCount(folder.directVideoCount)}</span></h2></div><div class="${listClass}">${items.map(vid => videoItemHTML(vid, path)).join('')}</div></section>`;
+      }
+      if (!folder.folders.length && !folder.videos.length) html = `<div class="empty-search">此文件夹为空</div>`;
+      $('#browseContent').innerHTML = html;
+    }
+
+    function renderFlat() {
+      const all = flattenAll();
+      all.sort((a, b) => compareVideos(a.vid, b.vid));
+      const listClass = layoutMode === 'grid' ? 'video-grid' : 'video-rows';
+      const html = `<section class="section"><div class="section-header"><h2 class="section-title">全部视频 <span class="section-meta">${formatCount(library.count)}</span></h2></div><div class="${listClass}">${all.map(({ vid, path: p }) => videoItemHTML(vid, p)).join('')}</div></section>`;
+      $('#browseContent').innerHTML = html;
+    }
+
+    function afterNavigate() {
+      if (selecting) setSelecting(false);
+      renderBreadcrumb();
+      renderHeader();
+      renderBrowse();
+      $('#contentScroll').scrollTop = 0;
+    }
+
+    /* ---------------- selection mode ---------------- */
+    function visibleVideoEntries() {
+      if (browseMode === 'folder') return currentFolder().videos.map(vid => ({ vid, path }));
+      return flattenAll();
+    }
+    function setSelecting(on) {
+      selecting = on;
+      selected.clear();
+      $('#videoHeader').classList.toggle('selecting', on);
+      $('#selectionBar').hidden = !on;
+      $('#contentScroll').classList.toggle('is-selecting', on);
+      $('#backBtn').hidden = path.length === 0 || selecting;
+      updateSelectionUI();
+      renderBrowse();
+    }
+    function updateSelectionUI() {
+      $('#selectionCount').textContent = `已选择 ${selected.size} 项`;
+      $('#selectionBar').classList.toggle('is-disabled', selected.size === 0);
+      const allKeys = visibleVideoEntries().map(({ vid, path: p }) => videoKey(vid, p));
+      const allSelected = allKeys.length > 0 && allKeys.every(k => selected.has(k));
+      $('#selectAllBtn').textContent = allSelected ? '取消全选' : '全选';
+    }
+    function finishBulk(fmt) {
+      if (!selected.size) return;
+      notify(fmt(selected.size));
+      setSelecting(false);
+    }
+    $('#closeSelection').addEventListener('click', () => setSelecting(false));
+    $('#selectAllBtn').addEventListener('click', () => {
+      const allKeys = visibleVideoEntries().map(({ vid, path: p }) => videoKey(vid, p));
+      const allSelected = allKeys.length > 0 && allKeys.every(k => selected.has(k));
+      if (allSelected) selected.clear(); else allKeys.forEach(k => selected.add(k));
+      updateSelectionUI();
+      renderBrowse();
+    });
+    $('#actMove').addEventListener('click', () => finishBulk(n => `已移动 ${n} 个视频`));
+    $('#actCollect').addEventListener('click', () => finishBulk(n => `已将 ${n} 个视频添加到合集`));
+    $('#actDelete').addEventListener('click', () => finishBulk(n => `已删除 ${n} 个视频`));
+    $('#selectMenuBtn').addEventListener('click', () => { closeMenu(); setSelecting(true); });
+
+    /* ---------------- browse interactions ---------------- */
+    $('#browseContent').addEventListener('click', e => {
+      const folderBtn = e.target.closest('.folder-row');
+      const videoBtn = e.target.closest('[data-video-key]');
+      if (folderBtn) {
+        if (selecting) return;
+        const target = currentFolder().folders.find(f => f.name === folderBtn.dataset.folder);
+        if (target) { path = [...path, target]; afterNavigate(); }
+        return;
+      }
+      if (videoBtn) {
+        if (selecting) {
+          const key = videoBtn.dataset.videoKey;
+          if (selected.has(key)) selected.delete(key); else selected.add(key);
+          updateSelectionUI();
+          renderBrowse();
+        } else {
+          notify(`播放：${videoBtn.dataset.videoTitle}`);
+        }
+      }
+    });
+
+    $('#backBtn').addEventListener('click', () => {
+      if (!path.length) return;
+      path = path.slice(0, -1);
+      afterNavigate();
+    });
+    $('#breadcrumb').addEventListener('click', e => {
+      const overflowToggle = e.target.closest('#breadcrumbOverflowToggle');
+      if (overflowToggle) {
+        const menu = $('#breadcrumbOverflowMenu');
+        const open = menu.hidden;
+        menu.hidden = !open;
+        overflowToggle.setAttribute('aria-expanded', String(open));
+        return;
+      }
+      const btn = e.target.closest('[data-crumb-index]');
+      if (!btn) return;
+      path = path.slice(0, Number(btn.dataset.crumbIndex));
+      afterNavigate();
+    });
+    $('#breadcrumbOverflowMenu').addEventListener('click', e => {
+      const btn = e.target.closest('[data-crumb-index]');
+      if (!btn) return;
+      path = path.slice(0, Number(btn.dataset.crumbIndex));
+      afterNavigate();
+    });
+    document.addEventListener('click', e => {
+      const bar = $('#breadcrumbBar');
+      if (bar && !bar.contains(e.target)) closeBreadcrumbOverflow();
+    });
+
+    /* ---------------- quick settings sheet ---------------- */
+    const quickSettingsSheet = $('#quickSettingsSheet');
+    const directorySheet = $('#directorySheet');
+    const scrim = $('#scrim');
+    function syncScrim() { scrim.classList.toggle('open', directorySheet.classList.contains('open') || quickSettingsSheet.classList.contains('open')); }
+    function setDirectorySheet(open) { directorySheet.classList.toggle('open', open); syncScrim(); }
+    function setQuickSettingsSheet(open) { quickSettingsSheet.classList.toggle('open', open); syncScrim(); }
+
+    function sortDirectionLabels() {
+      return { asc: '升序', desc: '降序' };
+    }
+    const sortLabels = {
+      name: '标题',
+      modified: '修改时间',
+      duration: '时长',
+      size: '大小',
+      resolution: '分辨率',
+      lastPlayed: '上次播放',
+      playCount: '播放次数',
+    };
+
+    function syncQuickSettingsUI() {
+      $$('#qsBrowseMode .qs-chip').forEach(b => b.classList.toggle('active', b.dataset.browse === draft.browseMode));
+      $$('#qsLayout .qs-chip').forEach(b => b.classList.toggle('active', b.dataset.layout === draft.layoutMode));
+      $$('#qsSortKey .qs-chip').forEach(b => b.classList.toggle('active', b.dataset.sort === draft.sortKey));
+      const directionLabels = sortDirectionLabels();
+      $$('#qsSortDir .qs-dir').forEach(b => {
+        const label = directionLabels[b.dataset.dir];
+        b.textContent = label;
+        b.classList.toggle('active', b.dataset.dir === draft.sortDir);
+        b.setAttribute('aria-label', `${sortLabels[draft.sortKey]}：${label}`);
+      });
+      $$('#qsFolderFields .qs-tag').forEach(b => b.classList.toggle('active', draft.folderFields.has(b.dataset.field)));
+      $$('#qsVideoFields .qs-tag').forEach(b => b.classList.toggle('active', draft.videoFields.has(b.dataset.field)));
+      $('#qsFolderFieldBlock').classList.toggle('is-disabled', draft.browseMode === 'flat');
+      const fieldsToggle = $('#qsFieldsToggle');
+      const fieldsBody = $('#qsFieldsBody');
+      const fieldsOpen = fieldsToggle.getAttribute('aria-expanded') === 'true';
+      fieldsToggle.querySelector('span').textContent = `字段显示（${draft.folderFields.size + draft.videoFields.size} 项已启用）`;
+      fieldsBody.hidden = !fieldsOpen;
+    }
+    function openQuickSettings() {
+      draft = {
+        browseMode,
+        layoutMode,
+        sortKey,
+        sortDir,
+        folderFields: new Set(folderFields),
+        videoFields: new Set(videoFields),
+      };
+      $('#qsFieldsToggle').setAttribute('aria-expanded', 'false');
+      $('#qsFieldsBody').hidden = true;
+      syncQuickSettingsUI();
+      setQuickSettingsSheet(true);
+    }
+    function cancelQuickSettings() { draft = null; setQuickSettingsSheet(false); }
+    $('#qsBrowseMode').addEventListener('click', e => { const b = e.target.closest('.qs-chip'); if (!b) return; draft.browseMode = b.dataset.browse; syncQuickSettingsUI(); });
+    $('#qsLayout').addEventListener('click', e => { const b = e.target.closest('.qs-chip'); if (!b) return; draft.layoutMode = b.dataset.layout; syncQuickSettingsUI(); });
+    $('#qsSortKey').addEventListener('click', e => { const b = e.target.closest('.qs-chip'); if (!b) return; draft.sortKey = b.dataset.sort; syncQuickSettingsUI(); });
+    $('#qsSortDir').addEventListener('click', e => { const b = e.target.closest('.qs-dir'); if (!b) return; draft.sortDir = b.dataset.dir; syncQuickSettingsUI(); });
+    $('#qsFieldsToggle').addEventListener('click', () => {
+      const toggle = $('#qsFieldsToggle');
+      const open = toggle.getAttribute('aria-expanded') !== 'true';
+      toggle.setAttribute('aria-expanded', String(open));
+      $('#qsFieldsBody').hidden = !open;
+    });
+    $('#qsFolderFields').addEventListener('click', e => {
+      const b = e.target.closest('.qs-tag'); if (!b) return;
+      const f = b.dataset.field;
+      if (draft.folderFields.has(f)) draft.folderFields.delete(f); else draft.folderFields.add(f);
+      syncQuickSettingsUI();
+    });
+    $('#qsVideoFields').addEventListener('click', e => {
+      const b = e.target.closest('.qs-tag'); if (!b) return;
+      const f = b.dataset.field;
+      if (draft.videoFields.has(f)) draft.videoFields.delete(f); else draft.videoFields.add(f);
+      syncQuickSettingsUI();
+    });
+    $('#qsConfirm').addEventListener('click', () => {
+      const modeChanged = draft.browseMode !== browseMode;
+      browseMode = draft.browseMode;
+      layoutMode = draft.layoutMode;
+      sortKey = draft.sortKey;
+      sortDir = draft.sortDir;
+      folderFields = new Set(draft.folderFields);
+      videoFields = new Set(draft.videoFields);
+      if (modeChanged) path = [];
+      draft = null;
+      setQuickSettingsSheet(false);
+      afterNavigate();
+    });
+    $('#qsCancel').addEventListener('click', cancelQuickSettings);
+    $('#qsClose').addEventListener('click', cancelQuickSettings);
+    scrim.addEventListener('click', () => { setDirectorySheet(false); if (quickSettingsSheet.classList.contains('open')) cancelQuickSettings(); });
+    $('#openDirectorySheet').addEventListener('click', () => { closeMenu(); setDirectorySheet(true); });
+    $('#openQuickSettings').addEventListener('click', () => { closeMenu(); openQuickSettings(); });
+    $('#sheetClose').addEventListener('click', () => setDirectorySheet(false));
+    $('#finishDirectory').addEventListener('click', () => setDirectorySheet(false));
+    $('#chooseDirectory').addEventListener('click', () => notify('已添加目录，可继续选择'));
+    $('#rescanBtn').addEventListener('click', () => {
+      closeMenu();
+      notify('正在重新扫描…');
+      setTimeout(() => notify('扫描完成，未发现新增视频'), 1600);
+    });
+
+    /* ---------------- search ---------------- */
+    const searchPanel = $('#searchPanel');
+    const searchToggle = $('#searchToggle');
+    const searchInput = $('#searchInput');
+    function renderSearchResults(q) {
+      const query = q.toLowerCase();
+      const folderMatches = searchIndex.filter(e => e.type === 'folder' && e.node.name.toLowerCase().includes(query));
+      const videoMatches = searchIndex.filter(e => e.type === 'video' && e.node.title.toLowerCase().includes(query));
+      let html = '';
+      if (folderMatches.length) {
+        html += `<section class="section"><div class="section-header"><h2 class="section-title">文件夹 <span class="section-meta">${folderMatches.length}</span></h2></div><div class="folder-list">${folderMatches.map(e => `
+          <button class="folder-row" data-result-path="${encodeURIComponent(e.path.map(p => p.name).join('/'))}"><span class="folder-icon"><i class="ti ti-folder-filled"></i></span><span class="folder-copy"><span class="folder-name">${e.node.name}</span>${searchFolderMetaLine(e.node, e.parentPath)}</span><i class="ti ti-chevron-right"></i></button>`).join('')}</div></section>`;
+      }
+      if (videoMatches.length) {
+        html += `<section class="section"><div class="section-header"><h2 class="section-title">视频 <span class="section-meta">${videoMatches.length}</span></h2></div><div class="video-rows">${videoMatches.map(e => `
+          <button class="video-row" data-result-path="${encodeURIComponent(e.path.map(p => p.name).join('/'))}" data-result-video="1" data-video-title="${e.node.title}">
+            <span class="video-row-thumb"><img src="${e.node.thumb}" alt="${e.node.title}缩略图"><span class="duration">${e.node.duration}</span></span>
+            <span class="video-row-copy"><span class="video-title">${e.node.title}</span><span class="video-meta">${metaLine(e.node, e.path)}</span>${videoFields.has('path') ? `<span class="video-location">位于 ${locationLabel(e.path)}</span>` : ''}</span>
+          </button>`).join('')}</div></section>`;
+      }
+      if (!folderMatches.length && !videoMatches.length) html = `<div class="empty-search">没有匹配的视频或文件夹</div>`;
+      $('#searchResults').innerHTML = html;
+    }
+    $('#searchResults').addEventListener('click', e => {
+      const btn = e.target.closest('[data-result-path]');
+      if (!btn) return;
+      const segs = btn.dataset.resultPath ? btn.dataset.resultPath.split('/').map(decodeURIComponent).filter(Boolean) : [];
+      let node = library; const newPath = [];
+      for (const seg of segs) { const nxt = node.folders.find(f => f.name === seg); if (!nxt) break; newPath.push(nxt); node = nxt; }
+      path = newPath;
+      browseMode = 'folder';
+      if (btn.dataset.resultVideo) notify(`播放：${btn.dataset.videoTitle}`);
+      searchPanel.classList.remove('open');
+      searchToggle.setAttribute('aria-expanded', 'false');
+      searchInput.value = '';
+      applySearch();
+      afterNavigate();
+    });
+    function applySearch() {
+      const q = searchInput.value.trim();
+      const isSearching = q.length > 0;
+      updateChromeVisibility();
+      $('#browseContent').hidden = isSearching;
+      $('#searchResults').hidden = !isSearching;
+      if (isSearching) renderSearchResults(q);
+    }
+    searchInput.addEventListener('input', applySearch);
+    searchToggle.addEventListener('click', () => {
+      closeMenu();
+      const open = !searchPanel.classList.contains('open');
+      searchPanel.classList.toggle('open', open);
+      searchToggle.setAttribute('aria-expanded', String(open));
+      if (open) setTimeout(() => searchInput.focus(), 80);
+      else { searchInput.value = ''; applySearch(); }
+    });
+    $('#searchClear').addEventListener('click', () => { searchInput.value = ''; applySearch(); searchInput.focus(); });
+
+    /* ---------------- more menu ---------------- */
+    const moreMenu = $('#moreMenu');
+    const moreToggle = $('#moreToggle');
+    function closeMenu() { moreMenu.classList.remove('open'); moreToggle.setAttribute('aria-expanded', 'false'); }
+    moreToggle.addEventListener('click', event => {
+      event.stopPropagation();
+      searchPanel.classList.remove('open');
+      searchToggle.setAttribute('aria-expanded', 'false');
+      const open = moreMenu.classList.toggle('open');
+      moreToggle.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', event => { if (!moreMenu.contains(event.target) && !moreToggle.contains(event.target)) closeMenu(); });
+    $$('[data-message]').forEach(button => button.addEventListener('click', () => { closeMenu(); notify(button.dataset.message); }));
+
+    /* ---------------- bottom nav ---------------- */
+    $$('[data-nav]').forEach(button => button.addEventListener('click', () => {
+      if (button.dataset.nav === '首页') { window.location.href = '01-home-demo.html'; return; }
+      $$('[data-nav]').forEach(item => item.removeAttribute('aria-current'));
+      button.setAttribute('aria-current', 'page');
+      notify(button.dataset.nav === '整理' ? '整理页面即将打开' : '已在视频页面');
+    }));
+
+    /* ---------------- init ---------------- */
+    afterNavigate();
+  </script>
+</body>
+</html>

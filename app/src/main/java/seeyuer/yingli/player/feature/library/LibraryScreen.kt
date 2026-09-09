@@ -4,12 +4,16 @@ import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,6 +23,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -27,6 +33,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -40,11 +47,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
@@ -85,9 +97,21 @@ import seeyuer.yingli.player.core.designsystem.component.YingLiBanner
 import seeyuer.yingli.player.core.designsystem.component.YingLiButton
 import seeyuer.yingli.player.core.designsystem.component.YingLiEmptyState
 import seeyuer.yingli.player.core.designsystem.component.YingLiSegmentedControl
+import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
+import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
+import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.library.LibraryDisplayPreference
+import seeyuer.yingli.player.domain.library.BreadcrumbMode
 import seeyuer.yingli.player.domain.library.LibraryGroup
+import seeyuer.yingli.player.domain.library.LibraryBrowseMode
+import seeyuer.yingli.player.domain.library.LibraryPathSegment
+import seeyuer.yingli.player.domain.library.LibraryDisplayFields
+import seeyuer.yingli.player.domain.library.LibraryFolder
+import seeyuer.yingli.player.domain.library.FolderField
+import seeyuer.yingli.player.domain.library.VideoField
+import seeyuer.yingli.player.domain.library.SortDirection
+import seeyuer.yingli.player.domain.library.SortSpec
 import seeyuer.yingli.player.domain.library.LibraryMedia
 import seeyuer.yingli.player.domain.library.LibrarySortField
 import seeyuer.yingli.player.domain.library.LibraryViewMode
@@ -98,6 +122,8 @@ fun LibraryRoute(
     viewModel: LibraryViewModel,
     isWide: Boolean,
     onMediaSelected: (String) -> Unit,
+    onAddDirectory: () -> Unit,
+    onRescan: () -> Unit,
     modifier: Modifier = Modifier,
     thumbnailRepository: ThumbnailLoader? = null,
 ) {
@@ -123,6 +149,16 @@ fun LibraryRoute(
         onRestore = viewModel::restore,
         onPurge = viewModel::purge,
         onMediaSelected = onMediaSelected,
+        onBrowseModeChange = viewModel::setBrowseMode,
+        onEnterFolder = viewModel::enterFolder,
+        onNavigatePath = viewModel::navigateToPath,
+        onNavigateUp = { viewModel.navigateUp() },
+        onToggleSearch = viewModel::toggleSearch,
+        onToggleMore = viewModel::toggleMoreMenu,
+        onCloseMore = viewModel::closeMoreMenu,
+        onApplyQuickSettings = viewModel::applyQuickSettings,
+        onAddDirectory = onAddDirectory,
+        onRescan = onRescan,
         thumbnailRepository = thumbnailRepository,
         modifier = modifier,
     )
@@ -152,10 +188,44 @@ fun LibraryScreen(
     onMediaSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     thumbnailRepository: ThumbnailLoader? = null,
+    onBrowseModeChange: (LibraryBrowseMode) -> Unit = {},
+    onEnterFolder: (LibraryPathSegment) -> Unit = {},
+    onNavigatePath: (Int) -> Unit = {},
+    onNavigateUp: () -> Unit = {},
+    onToggleSearch: () -> Unit = {},
+    onToggleMore: () -> Unit = {},
+    onCloseMore: () -> Unit = {},
+    onApplyQuickSettings: (LibraryBrowseMode, LibraryViewMode, SortSpec, LibraryDisplayFields, BreadcrumbMode, Int, Int) -> Unit = { _, _, _, _, _, _, _ -> },
+    onAddDirectory: () -> Unit = {},
+    onRescan: () -> Unit = {},
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmPurge by remember { mutableStateOf<TrashEntry?>(null) }
-    val content: @Composable (Modifier) -> Unit = { contentModifier ->
+    Column(modifier.fillMaxSize()) {
+        LibraryTopBar(
+            state = state,
+            onNavigateUp = onNavigateUp,
+            onToggleSearch = onToggleSearch,
+            onToggleMore = onToggleMore,
+            onCloseMore = onCloseMore,
+            onToggleFilter = onToggleFilter,
+            onOpenTrash = onToggleTrash,
+            onAddDirectory = onAddDirectory,
+            onRescan = onRescan,
+            onClearSelection = onClearSelection,
+        )
+        if (state.searchOpen) {
+            OutlinedTextField(
+                value = state.keyword,
+                onValueChange = onKeywordChange,
+                placeholder = { Text(stringResource(R.string.library_search)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        if (state.browseMode == LibraryBrowseMode.FOLDER && state.currentPath.isNotEmpty() && state.keyword.isBlank()) {
+            BreadcrumbBar(state.currentPath, state.preference.breadcrumbMode, onNavigatePath)
+        }
         LibraryContent(
             state = state,
             pagingItems = pagingItems,
@@ -166,47 +236,22 @@ fun LibraryScreen(
             onToggleFilter = onToggleFilter,
             onToggleSelection = onToggleSelection,
             onMediaSelected = onMediaSelected,
+            onEnterFolder = onEnterFolder,
             onClearSelection = onClearSelection,
             onRequestDelete = { confirmDelete = true },
             onToggleTrash = onToggleTrash,
             onRestore = onRestore,
             onRequestPurge = { confirmPurge = it },
             thumbnailRepository = thumbnailRepository,
-            modifier = contentModifier,
+            modifier = Modifier.weight(1f),
         )
-    }
-    if (isWide && state.filterPanelOpen) {
-        Row(modifier.fillMaxSize()) {
-            content(Modifier.weight(1f))
-            FilterPanel(
-                state,
-                onViewModeChange,
-                onThumbnailScaleChange,
-                onSort,
-                onResolutionFilter,
-                onDurationFilter,
-                onResetFilter,
-                onToggleTrash,
-                onToggleFilter,
-                Modifier.width(320.dp).fillMaxHeight(),
-            )
-        }
-    } else {
-        content(modifier)
         if (state.filterPanelOpen) {
-            ModalBottomSheet(onDismissRequest = onToggleFilter) {
-                FilterPanel(
-                    state,
-                    onViewModeChange,
-                    onThumbnailScaleChange,
-                    onSort,
-                    onResolutionFilter,
-                    onDurationFilter,
-                    onResetFilter,
-                    onToggleTrash,
-                    onToggleFilter,
-                    Modifier.fillMaxWidth(),
-                )
+            ModalBottomSheet(
+                onDismissRequest = onToggleFilter,
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                sheetGesturesEnabled = false,
+            ) {
+                QuickSettingsPanel(state, onApplyQuickSettings, onToggleFilter)
             }
         }
     }
@@ -241,6 +286,174 @@ fun LibraryScreen(
 }
 
 @Composable
+private fun LibraryTopBar(
+    state: LibraryUiState,
+    onNavigateUp: () -> Unit,
+    onToggleSearch: () -> Unit,
+    onToggleMore: () -> Unit,
+    onCloseMore: () -> Unit,
+    onToggleFilter: () -> Unit,
+    onOpenTrash: () -> Unit,
+    onAddDirectory: () -> Unit,
+    onRescan: () -> Unit,
+    onClearSelection: () -> Unit,
+) {
+    Surface(color = YingLiTheme.colors.surface, shadowElevation = 2.dp) {
+        Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (state.selectionMode) {
+                YingLiIconButton(YingLiIcon.BACK, stringResource(R.string.library_cancel), onClearSelection)
+            } else if (state.currentPath.isNotEmpty()) {
+                YingLiIconButton(YingLiIcon.BACK, stringResource(R.string.action_back), onNavigateUp)
+            }
+            Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                Text(
+                    if (state.selectionMode) stringResource(R.string.library_selected_count, state.selectedIds.size)
+                    else if (state.currentPath.isEmpty()) stringResource(R.string.nav_library)
+                    else state.currentPath.last().name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (state.currentPath.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.library_result_count, state.folderTreeVideoCount),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = YingLiTheme.colors.textSecondary,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+            YingLiIconButton(YingLiIcon.SEARCH, stringResource(R.string.library_search), onToggleSearch)
+            Box {
+                YingLiIconButton(YingLiIcon.OVERFLOW, stringResource(R.string.home_more), onToggleMore)
+                DropdownMenu(expanded = state.moreMenuOpen, onDismissRequest = onCloseMore) {
+                    DropdownMenuItem(text = { Text("添加媒体目录") }, onClick = { onCloseMore(); onAddDirectory() })
+                    DropdownMenuItem(text = { Text("重新扫描") }, onClick = { onCloseMore(); onRescan() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.library_view_settings)) }, onClick = { onCloseMore(); onToggleFilter() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.library_trash)) }, onClick = { onCloseMore(); onOpenTrash() })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BreadcrumbBar(
+    path: List<LibraryPathSegment>,
+    mode: BreadcrumbMode,
+    onNavigatePath: (Int) -> Unit,
+) {
+    Surface(color = YingLiTheme.colors.surface) {
+        when (mode) {
+            BreadcrumbMode.COLLAPSED -> CollapsedBreadcrumb(path, onNavigatePath)
+            BreadcrumbMode.SCROLL -> ScrollableBreadcrumb(path, onNavigatePath)
+        }
+    }
+}
+
+@Composable
+private fun ScrollableBreadcrumb(path: List<LibraryPathSegment>, onNavigatePath: (Int) -> Unit) {
+    val scrollState = rememberScrollState()
+    LaunchedEffect(path.map(LibraryPathSegment::path)) {
+        snapshotFlow { scrollState.maxValue }
+            .distinctUntilChanged()
+            .collect { scrollState.scrollTo(it) }
+    }
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(scrollState).padding(horizontal = 12.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        TextButton(onClick = { onNavigatePath(-1) }) { Text("视频", maxLines = 1) }
+        path.forEachIndexed { index, segment ->
+            Text("›", color = YingLiTheme.colors.textSecondary)
+            TextButton(onClick = { onNavigatePath(index) }) {
+                Text(segment.name, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollapsedBreadcrumb(path: List<LibraryPathSegment>, onNavigatePath: (Int) -> Unit) {
+    var overflowExpanded by remember(path) { mutableStateOf(false) }
+    val layout = remember(path) { collapsedBreadcrumbLayout(path) }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        YingLiIconButton(
+            icon = YingLiIcon.HOME,
+            contentDescription = "返回全部视频",
+            onClick = { onNavigatePath(-1) },
+        )
+        if (layout.hidden.isNotEmpty()) {
+            BreadcrumbSeparator()
+            Box {
+                YingLiIconButton(
+                    icon = YingLiIcon.BREADCRUMB_OVERFLOW,
+                    contentDescription = "显示隐藏的上级目录",
+                    onClick = { overflowExpanded = true },
+                )
+                DropdownMenu(
+                    expanded = overflowExpanded,
+                    onDismissRequest = { overflowExpanded = false },
+                ) {
+                    layout.hidden.forEach { crumb ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = crumb.value.name,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                            onClick = {
+                                overflowExpanded = false
+                                onNavigatePath(crumb.index)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        layout.visible.forEach { crumb ->
+            BreadcrumbSeparator()
+            TextButton(
+                onClick = { onNavigatePath(crumb.index) },
+                modifier = Modifier.weight(1f, fill = false).widthIn(max = 144.dp),
+            ) {
+                Text(crumb.value.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BreadcrumbSeparator() {
+    Text("›", color = YingLiTheme.colors.textSecondary)
+}
+
+internal data class CollapsedBreadcrumbLayout(
+    val hidden: List<IndexedValue<LibraryPathSegment>>,
+    val visible: List<IndexedValue<LibraryPathSegment>>,
+)
+
+internal fun collapsedBreadcrumbLayout(
+    path: List<LibraryPathSegment>,
+    visibleAncestorCount: Int = 2,
+): CollapsedBreadcrumbLayout {
+    require(visibleAncestorCount > 0)
+    val ancestors = path.dropLast(1).withIndex().toList()
+    val visibleStart = (ancestors.size - visibleAncestorCount).coerceAtLeast(0)
+    return CollapsedBreadcrumbLayout(
+        hidden = ancestors.take(visibleStart),
+        visible = ancestors.drop(visibleStart),
+    )
+}
+
+@Composable
 private fun LibraryContent(
     state: LibraryUiState,
     pagingItems: LazyPagingItems<LibraryMedia>,
@@ -251,6 +464,7 @@ private fun LibraryContent(
     onToggleFilter: () -> Unit,
     onToggleSelection: (LibraryMedia) -> Unit,
     onMediaSelected: (String) -> Unit,
+    onEnterFolder: (LibraryPathSegment) -> Unit,
     onClearSelection: () -> Unit,
     onRequestDelete: () -> Unit,
     onToggleTrash: () -> Unit,
@@ -260,26 +474,13 @@ private fun LibraryContent(
     modifier: Modifier,
 ) {
     Column(modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = state.keyword,
-            onValueChange = onKeywordChange,
-            label = { Text(stringResource(R.string.library_search)) },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = YingLiTheme.components.pagePadding),
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = YingLiTheme.components.pagePadding),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            LibraryGroup.entries.forEach { group ->
-                FilterChip(
-                    selected = group == state.group,
-                    onClick = { onGroupChange(group) },
-                    label = { Text(group.label()) },
-                )
-            }
+        if (state.browseMode == LibraryBrowseMode.FOLDER && state.keyword.isBlank()) {
+            FolderSection(
+                folders = state.folders,
+                viewMode = state.preference.viewMode,
+                columns = state.preference.folderColumns,
+                onEnterFolder = onEnterFolder,
+            )
         }
         Row(
             modifier = Modifier
@@ -304,7 +505,7 @@ private fun LibraryContent(
                 BannerKind.WARNING,
             )
         }
-        if (state.selectedIds.isNotEmpty()) {
+        if (state.selectionMode) {
             SelectionToolbar(state.selectedIds.size, onClearSelection, onRequestDelete)
         }
         when {
@@ -313,12 +514,122 @@ private fun LibraryContent(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             pagingItems.loadState.refresh is LoadState.Error && pagingItems.itemCount == 0 ->
                 PagingErrorState(pagingItems::retry, Modifier.fillMaxSize())
-            pagingItems.itemCount == 0 -> YingLiEmptyState(
+            pagingItems.itemCount == 0 && state.folders.isEmpty() -> YingLiEmptyState(
                 stringResource(R.string.library_empty_result_title),
                 stringResource(R.string.library_empty_result_message),
                 Modifier.fillMaxSize(),
             )
             else -> MediaLayout(state, pagingItems, onToggleSelection, onMediaSelected, thumbnailRepository, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun FolderSection(
+    folders: List<LibraryFolder>,
+    viewMode: LibraryViewMode,
+    columns: Int,
+    onEnterFolder: (LibraryPathSegment) -> Unit,
+) {
+    if (folders.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Text("文件夹", style = MaterialTheme.typography.titleSmall)
+        if (viewMode == LibraryViewMode.GRID) {
+            val columnCount = columns.coerceAtLeast(1)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, start = 2.dp, end = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                folders.chunked(columnCount).forEach { rowFolders ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        repeat(columnCount) { index ->
+                            val folder = rowFolders.getOrNull(index)
+                            if (folder == null) {
+                                Spacer(Modifier.weight(1f))
+                            } else {
+                                FolderGridCard(
+                                    folder = folder,
+                                    onEnterFolder = onEnterFolder,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            folders.forEach { folder ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    color = YingLiTheme.colors.surfaceComponent,
+                    shape = RoundedCornerShape(8.dp),
+                    onClick = { onEnterFolder(LibraryPathSegment(folder.name, folder.path)) },
+                ) {
+                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(Modifier.size(48.dp), shape = RoundedCornerShape(8.dp), color = YingLiTheme.colors.surfaceMuted) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(YingLiIcon.ORGANIZE.imageVector, contentDescription = null, modifier = Modifier.size(25.dp))
+                            }
+                        }
+                        Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                            Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(folder.path, maxLines = 1, overflow = TextOverflow.Ellipsis, color = YingLiTheme.colors.textSecondary, style = MaterialTheme.typography.labelSmall)
+                            Text("${folder.videoCount} 个视频 · ${formatFileSize(folder.sizeBytes)}", maxLines = 1, overflow = TextOverflow.Ellipsis, color = YingLiTheme.colors.textSecondary, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Icon(YingLiIcon.ARROW_RIGHT.imageVector, contentDescription = null)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderGridCard(
+    folder: LibraryFolder,
+    onEnterFolder: (LibraryPathSegment) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.Transparent,
+        onClick = { onEnterFolder(LibraryPathSegment(folder.name, folder.path)) },
+    ) {
+        Column {
+            Surface(
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                color = YingLiTheme.colors.surfaceMuted,
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        YingLiIcon.ORGANIZE.imageVector,
+                        contentDescription = null,
+                        tint = YingLiTheme.colors.actionPrimary,
+                        modifier = Modifier.fillMaxSize(0.7f),
+                    )
+                }
+            }
+            Text(
+                folder.name,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp),
+            )
+            Text(
+                "${folder.videoCount} 个视频 · ${formatFileSize(folder.sizeBytes)}",
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = YingLiTheme.colors.textSecondary,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(top = 2.dp, start = 2.dp, end = 2.dp),
+            )
         }
     }
 }
@@ -416,7 +727,7 @@ private fun MediaLayout(
                 visibleRange = { gridState.layoutInfo.visibleItemsInfo.map { it.index }.toIntRange() },
             )
             LazyVerticalGrid(
-                columns = GridCells.Adaptive((144.dp * state.preference.thumbnailScale)),
+                columns = GridCells.Fixed(state.preference.videoColumns.coerceAtLeast(1)),
                 state = gridState,
                 modifier = modifier.testTag(LibraryTestTags.GRID),
                 contentPadding = PaddingValues(12.dp),
@@ -693,81 +1004,242 @@ private fun MetadataCapsule(text: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterPanel(
+private fun QuickSettingsPanel(
     state: LibraryUiState,
-    onViewModeChange: (LibraryViewMode) -> Unit,
-    onThumbnailScaleChange: (Float) -> Unit,
-    onSort: (LibrarySortField) -> Unit,
-    onResolutionFilter: (Int?) -> Unit,
-    onDurationFilter: (Long?) -> Unit,
-    onReset: () -> Unit,
-    onToggleTrash: () -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier,
+    onApply: (LibraryBrowseMode, LibraryViewMode, SortSpec, LibraryDisplayFields, BreadcrumbMode, Int, Int) -> Unit,
+    onCancel: () -> Unit,
 ) {
-    Surface(modifier, color = YingLiTheme.colors.surface) {
+    var browseMode by remember(state.filterPanelOpen) { mutableStateOf(state.browseMode) }
+    var viewMode by remember(state.filterPanelOpen) { mutableStateOf(state.preference.viewMode) }
+    var sort by remember(state.filterPanelOpen) { mutableStateOf(state.sort) }
+    var fields by remember(state.filterPanelOpen) { mutableStateOf(state.displayFields) }
+    var breadcrumbMode by remember(state.filterPanelOpen) { mutableStateOf(state.preference.breadcrumbMode) }
+    var folderColumns by remember(state.filterPanelOpen) { mutableStateOf(state.preference.folderColumns) }
+    var videoColumns by remember(state.filterPanelOpen) { mutableStateOf(state.preference.videoColumns) }
+    Column(
+        modifier = Modifier.fillMaxWidth().fillMaxHeight(0.7f),
+    ) {
         Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(stringResource(R.string.library_view_settings), style = MaterialTheme.typography.titleLarge)
-            Text(stringResource(R.string.library_layout), style = MaterialTheme.typography.titleMedium)
+            Text("快捷设置", style = MaterialTheme.typography.titleLarge)
+            Text("浏览范围", style = MaterialTheme.typography.titleSmall)
             YingLiSegmentedControl(
-                options = listOf(
-                    stringResource(R.string.library_list),
-                    stringResource(R.string.library_grid),
-                ),
-                selectedIndex = listOf(
-                    LibraryViewMode.LIST,
-                    LibraryViewMode.GRID,
-                ).indexOf(state.preference.viewMode),
-                onSelected = { index ->
-                    onViewModeChange(
-                        listOf(
-                            LibraryViewMode.LIST,
-                            LibraryViewMode.GRID,
-                        )[index],
-                    )
-                },
+                options = listOf("文件夹", "全部视频"),
+                selectedIndex = if (browseMode == LibraryBrowseMode.FOLDER) 0 else 1,
+                onSelected = { browseMode = if (it == 0) LibraryBrowseMode.FOLDER else LibraryBrowseMode.ALL_VIDEOS },
             )
-            Text(stringResource(R.string.library_thumbnail_size), style = MaterialTheme.typography.titleMedium)
-            Slider(
-                value = state.preference.thumbnailScale,
-                onValueChange = onThumbnailScaleChange,
-                valueRange = LibraryDisplayPreference.MIN_SCALE..LibraryDisplayPreference.MAX_SCALE,
+            Text("面包屑样式", style = MaterialTheme.typography.titleSmall)
+            YingLiSegmentedControl(
+                options = listOf("折叠 + 省略菜单", "横向滚动"),
+                selectedIndex = if (breadcrumbMode == BreadcrumbMode.COLLAPSED) 0 else 1,
+                onSelected = { breadcrumbMode = if (it == 0) BreadcrumbMode.COLLAPSED else BreadcrumbMode.SCROLL },
             )
-            Text(stringResource(R.string.library_sort))
-            LibrarySortField.entries.forEach { field ->
-                FilterChip(
-                    selected = state.sort.field == field,
-                    onClick = { onSort(field) },
-                    label = { Text(field.label()) },
+            if (viewMode == LibraryViewMode.GRID) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    GridColumnsSlider("文件夹列数", folderColumns) { folderColumns = it }
+                    GridColumnsSlider("视频列数", videoColumns) { videoColumns = it }
+                }
+            }
+            Text("排列方式", style = MaterialTheme.typography.titleSmall)
+            YingLiSegmentedControl(
+                options = listOf(stringResource(R.string.library_list), stringResource(R.string.library_grid)),
+                selectedIndex = if (viewMode == LibraryViewMode.LIST) 0 else 1,
+                onSelected = { viewMode = if (it == 0) LibraryViewMode.LIST else LibraryViewMode.GRID },
+            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.library_sort), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                YingLiSegmentedControl(
+                    options = listOf("升序", "降序"),
+                    selectedIndex = if (sort.direction == SortDirection.ASCENDING) 0 else 1,
+                    onSelected = { sort = sort.copy(direction = if (it == 0) SortDirection.ASCENDING else SortDirection.DESCENDING) },
+                    modifier = Modifier.width(112.dp),
+                    fillMaxWidth = false,
                 )
             }
-            Text(stringResource(R.string.library_resolution))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(state.filter.minimumWidth == null, { onResolutionFilter(null) }, { Text(stringResource(R.string.library_all)) })
-                FilterChip(state.filter.minimumWidth == 1_920, { onResolutionFilter(1_920) }, { Text("1080p+") })
-                FilterChip(state.filter.minimumWidth == 3_840, { onResolutionFilter(3_840) }, { Text("4K+") })
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LibrarySortField.entries.forEach { field ->
+                    SortFieldChip(field.label(), sort.field == field) { sort = sort.copy(field = field) }
+                }
             }
-            Text(stringResource(R.string.library_duration))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(state.filter.duration.maximumMillis == null, { onDurationFilter(null) }, { Text(stringResource(R.string.library_all)) })
-                FilterChip(state.filter.duration.maximumMillis == 300_000L, { onDurationFilter(300_000L) }, { Text("≤ 5 min") })
-                FilterChip(state.filter.duration.maximumMillis == 1_800_000L, { onDurationFilter(1_800_000L) }, { Text("≤ 30 min") })
+            Text("字段显示（${fields.folderFields.size + fields.videoFields.size} 项已启用）", style = MaterialTheme.typography.titleSmall)
+            Text("文件夹字段", style = MaterialTheme.typography.titleSmall, color = if (browseMode == LibraryBrowseMode.FOLDER) YingLiTheme.colors.textPrimary else YingLiTheme.colors.textSecondary)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FolderField.entries.forEach { field ->
+                    FieldCapsule(field.folderLabel(), field in fields.folderFields, browseMode == LibraryBrowseMode.FOLDER) { fields = fields.copy(folderFields = fields.folderFields.toggle(field)) }
+                }
             }
-            Text(stringResource(R.string.library_result_count, state.totalCount))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                YingLiButton(stringResource(R.string.library_reset), onReset)
-                YingLiButton(stringResource(R.string.library_trash), {
-                    onToggleTrash()
-                    onClose()
-                })
-                YingLiButton(stringResource(R.string.library_view_results, state.totalCount), onClose, enabled = state.totalCount > 0)
+            Text("视频字段", style = MaterialTheme.typography.titleSmall)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                VideoField.entries.forEach { field ->
+                    FieldCapsule(field.videoLabel(), field in fields.videoFields, true) { fields = fields.copy(videoFields = fields.videoFields.toggle(field)) }
+                }
             }
         }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, top = 8.dp, end = 20.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f).height(48.dp)) { Text(stringResource(R.string.library_cancel)) }
+            Button(onClick = { onApply(browseMode, viewMode, sort, fields, breadcrumbMode, folderColumns, videoColumns) }, modifier = Modifier.weight(1f).height(48.dp)) { Text("确定") }
+        }
     }
+}
+
+@Composable
+private fun GridColumnsSlider(label: String, columns: Int, onColumnsChange: (Int) -> Unit) {
+    val minColumns = LibraryDisplayPreference.MIN_COLUMNS
+    val maxColumns = LibraryDisplayPreference.MAX_COLUMNS
+    val safeColumns = columns.coerceIn(minColumns, maxColumns)
+    val fraction = (safeColumns - minColumns).toFloat() / (maxColumns - minColumns).toFloat()
+    val trackColor = YingLiTheme.colors.borderDivider
+    val tickColor = YingLiTheme.colors.textSecondary
+    val activeColor = YingLiTheme.colors.textPrimary
+    val surfaceColor = YingLiTheme.colors.surface
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text(
+                "$safeColumns",
+                style = MaterialTheme.typography.titleSmall,
+                color = YingLiTheme.colors.textPrimary,
+            )
+        }
+        Box(
+            modifier = Modifier.fillMaxWidth().height(44.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(
+                modifier = Modifier.fillMaxWidth().height(32.dp).padding(horizontal = 10.dp),
+            ) {
+                val centerY = size.height / 2f
+                val startX = 0f
+                val endX = size.width
+                val thumbX = startX + (endX - startX) * fraction
+                val trackWidth = 8.dp.toPx()
+                drawLine(
+                    color = trackColor,
+                    start = androidx.compose.ui.geometry.Offset(startX, centerY),
+                    end = androidx.compose.ui.geometry.Offset(endX, centerY),
+                    strokeWidth = trackWidth,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                )
+                drawLine(
+                    color = activeColor,
+                    start = androidx.compose.ui.geometry.Offset(startX, centerY),
+                    end = androidx.compose.ui.geometry.Offset(thumbX, centerY),
+                    strokeWidth = trackWidth,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                )
+                val step = (endX - startX) / (maxColumns - minColumns)
+                (minColumns..maxColumns).forEach { value ->
+                    drawCircle(
+                        color = tickColor,
+                        radius = 3.dp.toPx(),
+                        center = androidx.compose.ui.geometry.Offset(startX + (value - minColumns) * step, centerY),
+                    )
+                }
+                drawCircle(
+                    color = surfaceColor,
+                    radius = 10.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(thumbX, centerY),
+                )
+                drawCircle(
+                    color = activeColor,
+                    radius = 9.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(thumbX, centerY),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
+                )
+            }
+            Slider(
+                value = safeColumns.toFloat(),
+                onValueChange = {
+                    onColumnsChange(it.toInt().coerceIn(minColumns, maxColumns))
+                },
+                valueRange = minColumns.toFloat()..maxColumns.toFloat(),
+                steps = maxColumns - minColumns - 1,
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.Transparent,
+                    activeTrackColor = Color.Transparent,
+                    inactiveTrackColor = Color.Transparent,
+                    activeTickColor = Color.Transparent,
+                    inactiveTickColor = Color.Transparent,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SortFieldChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.height(40.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) YingLiTheme.colors.surfaceComponent else YingLiTheme.colors.surface,
+        tonalElevation = if (selected) 2.dp else 0.dp,
+    ) {
+        Box(Modifier.padding(horizontal = 16.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun FieldCapsule(text: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.height(40.dp).clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) YingLiTheme.colors.surfaceComponent else Color.Transparent,
+        border = androidx.compose.foundation.BorderStroke(2.dp, if (selected) YingLiTheme.colors.textSecondary else YingLiTheme.colors.borderDivider),
+    ) {
+        Row(Modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier.size(24.dp).clip(RoundedCornerShape(50)).background(if (selected) YingLiTheme.colors.textSecondary else Color.Transparent).then(if (!selected) Modifier.border(2.dp, YingLiTheme.colors.textSecondary, RoundedCornerShape(50)) else Modifier),
+                contentAlignment = Alignment.Center,
+            ) { if (selected) Icon(YingLiIcon.SUCCESS.imageVector, contentDescription = null, tint = YingLiTheme.colors.surface, modifier = Modifier.size(16.dp)) }
+            Text(text, style = MaterialTheme.typography.labelLarge, color = if (enabled) YingLiTheme.colors.textPrimary else YingLiTheme.colors.textSecondary, maxLines = 1)
+        }
+    }
+}
+
+private fun <T> Set<T>.toggle(value: T): Set<T> = if (value in this) this - value else this + value
+
+private fun FolderField.folderLabel(): String = when (this) {
+    FolderField.VIDEO_COUNT -> "视频总数"
+    FolderField.FOLDER_SIZE -> "文件夹大小"
+    FolderField.TOTAL_DURATION -> "总时长"
+    FolderField.MODIFIED_TIME -> "修改时间"
+    FolderField.PATH -> "路径"
+}
+
+private fun VideoField.videoLabel(): String = when (this) {
+    VideoField.PATH -> "路径"
+    VideoField.FILE_SIZE -> "文件大小"
+    VideoField.RESOLUTION -> "分辨率"
+    VideoField.MODIFIED_TIME -> "修改时间"
+    VideoField.PLAYBACK_PROGRESS -> "播放进度"
 }
 
 @Composable
@@ -783,6 +1255,7 @@ private fun LibrarySortField.label(): String = stringResource(when (this) {
     LibrarySortField.NAME -> R.string.library_sort_name
     LibrarySortField.RECENTLY_ADDED -> R.string.library_sort_recent
     LibrarySortField.DURATION -> R.string.library_sort_duration
+    LibrarySortField.RESOLUTION -> R.string.library_sort_resolution
     LibrarySortField.PLAY_COUNT -> R.string.library_sort_play_count
 })
 

@@ -90,6 +90,7 @@ data class BatchOperationSummary(
 
 interface LibraryMutationRepository {
     suspend fun trash(items: List<LibraryMedia>): BatchOperationSummary
+    suspend fun trashByIds(ids: Set<MediaItemId>): BatchOperationSummary = BatchOperationSummary(0, emptyMap())
     suspend fun restore(entry: TrashEntry): FileOperationResult
     suspend fun purge(entry: TrashEntry): FileOperationResult
 }

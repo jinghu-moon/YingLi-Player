@@ -15,15 +15,39 @@ enum class LibraryGroup {
     UNWATCHED,
 }
 
+enum class LibraryBrowseMode {
+    FOLDER,
+    ALL_VIDEOS,
+}
+
+data class LibraryPathSegment(
+    val name: String,
+    val path: String,
+)
+
+data class LibraryDisplayFields(
+    val folderFields: Set<FolderField> = setOf(FolderField.VIDEO_COUNT, FolderField.FOLDER_SIZE, FolderField.PATH),
+    val videoFields: Set<VideoField> = setOf(VideoField.PATH, VideoField.FILE_SIZE, VideoField.RESOLUTION, VideoField.PLAYBACK_PROGRESS),
+)
+
+enum class FolderField { VIDEO_COUNT, FOLDER_SIZE, TOTAL_DURATION, MODIFIED_TIME, PATH }
+enum class VideoField { PATH, FILE_SIZE, RESOLUTION, MODIFIED_TIME, PLAYBACK_PROGRESS }
+
 enum class LibraryViewMode {
     GRID,
     LIST,
+}
+
+enum class BreadcrumbMode {
+    COLLAPSED,
+    SCROLL,
 }
 
 enum class LibrarySortField {
     NAME,
     RECENTLY_ADDED,
     DURATION,
+    RESOLUTION,
     PLAY_COUNT,
 }
 
@@ -129,14 +153,23 @@ data class LibraryDisplayPreference(
     val viewMode: LibraryViewMode = LibraryViewMode.GRID,
     val thumbnailScale: Float = 1f,
     val sort: SortSpec = SortSpec(),
+    val folderColumns: Int = DEFAULT_FOLDER_COLUMNS,
+    val videoColumns: Int = DEFAULT_VIDEO_COLUMNS,
+    val breadcrumbMode: BreadcrumbMode = BreadcrumbMode.SCROLL,
 ) {
     init {
         require(thumbnailScale in MIN_SCALE..MAX_SCALE)
+        require(folderColumns in MIN_COLUMNS..MAX_COLUMNS)
+        require(videoColumns in MIN_COLUMNS..MAX_COLUMNS)
     }
 
     companion object {
         const val MIN_SCALE = 0.75f
         const val MAX_SCALE = 1.50f
+        const val MIN_COLUMNS = 1
+        const val MAX_COLUMNS = 6
+        const val DEFAULT_FOLDER_COLUMNS = 2
+        const val DEFAULT_VIDEO_COLUMNS = 3
     }
 }
 
@@ -155,6 +188,8 @@ data class LibraryQuery(
     val filter: FilterExpression = FilterExpression(),
     val cursor: LibraryCursor? = null,
     val pageSize: Int = DEFAULT_PAGE_SIZE,
+    val browseMode: LibraryBrowseMode = LibraryBrowseMode.ALL_VIDEOS,
+    val currentPath: String = "",
 ) {
     val normalizedKeyword: String = keyword.trim().take(MAX_KEYWORD_LENGTH)
 
@@ -197,6 +232,7 @@ fun LibraryMedia.cursorFor(sort: SortSpec): LibraryCursor = when (sort.field) {
     LibrarySortField.NAME -> LibraryCursor(sort.field, sort.direction, id, textValue = title.lowercase())
     LibrarySortField.RECENTLY_ADDED -> LibraryCursor(sort.field, sort.direction, id, longValue = modifiedEpochMillis)
     LibrarySortField.DURATION -> LibraryCursor(sort.field, sort.direction, id, longValue = durationMillis ?: -1L)
+    LibrarySortField.RESOLUTION -> LibraryCursor(sort.field, sort.direction, id, longValue = (width ?: 0).toLong())
     LibrarySortField.PLAY_COUNT -> LibraryCursor(sort.field, sort.direction, id, longValue = playCount.toLong())
 }
 
@@ -205,6 +241,13 @@ data class LibraryPage(
     val nextCursor: LibraryCursor?,
     val totalCount: Int,
     val previousCursor: LibraryCursor? = null,
+)
+
+data class LibraryFolder(
+    val path: String,
+    val name: String,
+    val videoCount: Int,
+    val sizeBytes: Long,
 )
 
 enum class LibraryPageDirection {
@@ -230,7 +273,10 @@ interface LibraryPagingRepository : LibraryRepository {
         direction: LibraryPageDirection = LibraryPageDirection.APPEND,
     ): LibraryPage
     fun observeCount(query: LibraryQuery): Flow<Int>
+    fun observeFolderTreeVideoCount(path: String): Flow<Int>
     fun observeInvalidations(): Flow<Unit>
+    suspend fun folders(query: LibraryQuery): List<LibraryFolder> = emptyList()
+    suspend fun findByIds(ids: Set<MediaItemId>): List<LibraryMedia> = emptyList()
 }
 
 interface SearchRepository {
@@ -240,6 +286,9 @@ interface SearchRepository {
 interface LibraryPreferenceRepository {
     val preference: Flow<LibraryDisplayPreference>
     suspend fun setViewMode(mode: LibraryViewMode)
+    suspend fun setBreadcrumbMode(mode: BreadcrumbMode)
     suspend fun setThumbnailScale(scale: Float)
     suspend fun setSort(sort: SortSpec)
+    suspend fun setFolderColumns(columns: Int) {}
+    suspend fun setVideoColumns(columns: Int) {}
 }

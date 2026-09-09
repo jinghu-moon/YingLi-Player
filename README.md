@@ -16,6 +16,16 @@
 .\gradlew.bat connectedDebugAndroidTest
 ```
 
+构建并通过 ADB 安装到已连接手机：
+
+```powershell
+.\install2device.ps1 -d                 # Debug
+.\install2device.ps1 -r                 # Release（使用环境变量或 keystore.properties 签名）
+.\install2device.ps1 -d -DeviceSerial <序列号>
+```
+
+不传 `-d` 或 `-r` 时脚本会显示构建类型菜单。`-d` 与 `-r` 不能同时使用。
+
 Macrobenchmark 使用独立、非 debuggable 的 `benchmark` variant：
 
 ```powershell
@@ -30,4 +40,3 @@ Macrobenchmark 使用独立、非 debuggable 的 `benchmark` variant：
 - 仅处理用户设备上的本地媒体和用户主动选择的 SAF 文档。
 - 快速切片使用平台 Extractor/Muxer；精确切片使用 Media3 Transformer。
 - 输出先写入应用私有临时目录，验证成功后提交到 `Movies/YingLi-Output`。
-

@@ -634,7 +634,7 @@ private fun AppScaffold(
                             )
                         }
                     }
-                } else {
+                } else if (route != AppRoute.Root(RootDestination.LIBRARY)) {
                     CenterAlignedTopAppBar(
                         title = { Text(route.title()) },
                         navigationIcon = {
@@ -648,13 +648,6 @@ private fun AppScaffold(
                                     icon = YingLiIcon.PROCESSING,
                                     contentDescription = stringResource(R.string.action_open_processing),
                                     onClick = { onGlobalAction(GlobalAppAction.OPEN_PROCESSING) },
-                                )
-                            }
-                            if (route == AppRoute.Root(RootDestination.LIBRARY)) {
-                                YingLiIconButton(
-                                    icon = YingLiIcon.OVERFLOW,
-                                    contentDescription = stringResource(R.string.library_view_settings),
-                                    onClick = { libraryViewModel?.toggleFilterPanel() },
                                 )
                             }
                         },
@@ -774,6 +767,8 @@ private fun RouteContent(
                     viewModel = viewModel,
                     isWide = libraryIsWide,
                     onMediaSelected = onMediaSelected,
+                    onAddDirectory = onSafSource,
+                    onRescan = onRescan,
                     thumbnailRepository = thumbnailRepository,
                     modifier = modifier,
                 )

@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -29,13 +30,24 @@ android {
     }
 
     signingConfigs {
-        val keystorePath = providers.environmentVariable("YINGLI_KEYSTORE_PATH").orNull
-        val storePasswordValue = providers.environmentVariable("YINGLI_KEYSTORE_PASSWORD").orNull
-        val keyAliasValue = providers.environmentVariable("YINGLI_KEY_ALIAS").orNull
-        val keyPasswordValue = providers.environmentVariable("YINGLI_KEY_PASSWORD").orNull
+        val localSigningProperties = Properties().apply {
+            val propertiesFile = rootProject.file("keystore.properties")
+            if (propertiesFile.isFile) {
+                propertiesFile.inputStream().use(::load)
+            }
+        }
+        fun signingValue(environmentName: String, propertyName: String): String? =
+            providers.environmentVariable(environmentName).orNull
+                ?.takeIf(String::isNotBlank)
+                ?: localSigningProperties.getProperty(propertyName)?.takeIf(String::isNotBlank)
+
+        val keystorePath = signingValue("YINGLI_KEYSTORE_PATH", "storeFile")
+        val storePasswordValue = signingValue("YINGLI_KEYSTORE_PASSWORD", "storePassword")
+        val keyAliasValue = signingValue("YINGLI_KEY_ALIAS", "keyAlias")
+        val keyPasswordValue = signingValue("YINGLI_KEY_PASSWORD", "keyPassword")
         if (listOf(keystorePath, storePasswordValue, keyAliasValue, keyPasswordValue).all { it != null }) {
             create("release") {
-                storeFile = file(requireNotNull(keystorePath))
+                storeFile = rootProject.file(requireNotNull(keystorePath))
                 storePassword = storePasswordValue
                 keyAlias = keyAliasValue
                 keyPassword = keyPasswordValue

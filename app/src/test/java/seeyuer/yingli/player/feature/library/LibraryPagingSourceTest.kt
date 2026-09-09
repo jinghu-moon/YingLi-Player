@@ -165,6 +165,7 @@ class LibraryPagingSourceTest {
             return pages[queries.size - 1]
         }
         override fun observeCount(query: LibraryQuery) = flowOf(2)
+        override fun observeFolderTreeVideoCount(path: String) = flowOf(0)
         override fun observeInvalidations() = invalidations
     }
 
@@ -173,6 +174,7 @@ class LibraryPagingSourceTest {
         override suspend fun query(query: LibraryQuery) = LibraryResult.RetryableFailure
         override suspend fun page(query: LibraryQuery, direction: LibraryPageDirection): LibraryPage = error("database unavailable")
         override fun observeCount(query: LibraryQuery) = flowOf(0)
+        override fun observeFolderTreeVideoCount(path: String) = flowOf(0)
         override fun observeInvalidations() = emptyFlow<Unit>()
     }
 

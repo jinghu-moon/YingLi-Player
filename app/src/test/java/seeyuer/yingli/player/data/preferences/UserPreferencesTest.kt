@@ -28,9 +28,12 @@ class UserPreferencesTest {
         val restored = UserPreferences.sanitize(
             schemaVersion = 99,
             libraryLayout = "CAROUSEL",
+            libraryBreadcrumb = "WRAP",
             thumbnailScale = 9f,
             librarySort = "SIZE",
             librarySortDirection = "SIDEWAYS",
+            libraryFolderColumns = -4,
+            libraryVideoColumns = 99,
             trashRetentionDays = -2,
             miniPlayerEnabled = null,
             autoPictureInPicture = null,
@@ -40,7 +43,10 @@ class UserPreferencesTest {
 
         assertEquals(UserPreferences.CURRENT_SCHEMA_VERSION, restored.schemaVersion)
         assertEquals(LibraryLayoutPreference.GRID, restored.libraryLayout)
+        assertEquals(BreadcrumbPreference.SCROLL, restored.libraryBreadcrumb)
         assertEquals(UserPreferences.MAX_THUMBNAIL_SCALE, restored.thumbnailScale)
+        assertEquals(UserPreferences.MIN_LIBRARY_COLUMNS, restored.libraryFolderColumns)
+        assertEquals(UserPreferences.MAX_LIBRARY_COLUMNS, restored.libraryVideoColumns)
         assertEquals(UserPreferences.MIN_TRASH_RETENTION_DAYS, restored.trashRetentionDays)
         assertEquals(ExportDirectoryPreference.YINGLI_OUTPUT, restored.exportDirectory)
     }

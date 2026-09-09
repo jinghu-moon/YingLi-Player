@@ -88,7 +88,7 @@ abstract class BuildBaselineTask : DefaultTask() {
             "coroutines" to "1.11.0",
             "documentfile" to "1.1.0",
             "material3-window" to "1.4.0",
-            "tabler-icons" to "1.1.1",
+            "tabler-icons" to "0.1.0-local.1",
         )
     }
 }

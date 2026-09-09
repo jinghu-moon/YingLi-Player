@@ -141,9 +141,7 @@ dependencies {
     implementation(libs.androidx.compose.material3.window.size)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.core.splashscreen)
-    implementation(libs.compose.icons.tabler) {
-        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-common")
-    }
+    implementation(libs.compose.icons.tabler)
     implementation(libs.reorderable)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)

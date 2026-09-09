@@ -86,7 +86,7 @@ APK 按 `armeabi-v7a`、`arm64-v8a`、`x86`、`x86_64` 四种 ABI 分包，不�
 
 协程测试统一使用 `MainDispatcherRule`、`StandardTestDispatcher` 和 `runTest` 虚拟时间。测试不得用 `Thread.sleep` 或真实时间等待；`runTest` 会在未完成子协程或泄漏 Job 时失败。
 
-Phase 2 将 AndroidX Lifecycle 固定为 `2.10.0`。`2.11.0` 的 Compose AAR 要求 `compileSdk 37`，与项目稳定 `compileSdk 36` 基线冲突；该降级不改变 Kotlin、targetSdk 或 minSdk。Tabler Icons `1.1.1` 的旧 `kotlin-stdlib-common` 传递声明在应用依赖处排除，由 Kotlin `2.4.0` 的标准库事实源统一提供。
+Phase 2 将 AndroidX Lifecycle 固定为 `2.10.0`。`2.11.0` 的 Compose AAR 要求 `compileSdk 37`，与项目稳定 `compileSdk 36` 基线冲突；该降级不改变 Kotlin、targetSdk 或 minSdk。Tabler 图标依赖使用本地从 Tabler Icons `3.46.0` 生成的 `io.github.jinghu-moon.composeicons:icons-tabler:0.1.0-local.1`，由 `mavenLocal()` 解析；在本机执行 YingLi 构建前，必须先在 `compose-icons` 项目执行 `:icons-core:publishToMavenLocal :icons-tabler:publishToMavenLocal`。该本地依赖不适用于干净的托管 CI，后续需要远程可复现构建时再发布至受管 Maven 仓库。
 
 ## CI
 

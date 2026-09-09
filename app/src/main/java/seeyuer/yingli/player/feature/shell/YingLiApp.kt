@@ -9,12 +9,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,16 +52,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.data.preferences.AppearanceSettings
 import seeyuer.yingli.player.core.designsystem.component.YingLiEmptyState
 import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
+import seeyuer.yingli.player.core.designsystem.component.YingLiTopBar
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiSystemBars
@@ -536,157 +536,182 @@ private fun AppScaffold(
 ) {
     val route = navigationState.currentRoute
     val mediaOnboarding = route == AppRoute.Root(RootDestination.HOME) && mediaState.onboarding
-    var homeSearchExpanded by remember(route) { mutableStateOf(false) }
-    var homeSearchQuery by remember(route) { mutableStateOf("") }
-    var homeMoreExpanded by remember(route) { mutableStateOf(false) }
     Scaffold(
         modifier = modifier,
         containerColor = YingLiTheme.colors.page,
-        topBar = {
-            if (mediaOnboarding) {
-                androidx.compose.material3.TopAppBar(
-                    title = { Text(stringResource(R.string.app_name)) },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = if (mediaOnboarding) ({}) else bottomBar,
+    ) { padding ->
+        AnimatedContent(
+            targetState = route,
+            modifier = Modifier.fillMaxSize().padding(padding),
+            transitionSpec = { pageContentTransform(initialState, targetState) },
+            label = "AppPageTransition",
+        ) { route ->
+            Column(Modifier.fillMaxSize()) {
+                AppRouteTopBar(
+                    route = route,
+                    mediaState = mediaState,
+                    homeViewModel = homeViewModel,
+                    onBack = onBack,
+                    onSafSource = onSafSource,
+                    onRescan = onRescan,
+                    onGlobalAction = onGlobalAction,
                 )
-            } else Column {
-                if (route == AppRoute.Root(RootDestination.HOME)) {
-                    androidx.compose.material3.TopAppBar(
-                        title = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                FiveLineLogo()
-                                Column(Modifier.padding(start = 10.dp)) {
-                                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleMedium)
-                                    Text(
-                                        if (mediaState.scanning) stringResource(R.string.home_scanning_status)
-                                        else stringResource(R.string.home_source_status, mediaState.sources.size),
-                                        color = YingLiTheme.colors.textSecondary,
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
-                                }
-                            }
-                        },
-                        actions = {
-                            YingLiIconButton(
-                                icon = if (homeSearchExpanded) YingLiIcon.BACK else YingLiIcon.SEARCH,
-                                contentDescription = stringResource(R.string.library_search),
-                                onClick = {
-                                    homeMoreExpanded = false
-                                    homeSearchExpanded = !homeSearchExpanded
-                                    if (!homeSearchExpanded) {
-                                        homeSearchQuery = ""
-                                        homeViewModel?.setKeyword("")
-                                    }
-                                },
-                            )
-                            Box {
-                                YingLiIconButton(
-                                    icon = YingLiIcon.OVERFLOW,
-                                    contentDescription = stringResource(R.string.home_more),
-                                    onClick = {
-                                        homeSearchExpanded = false
-                                        homeSearchQuery = ""
-                                        homeViewModel?.setKeyword("")
-                                        homeMoreExpanded = true
-                                    },
-                                )
-                                DropdownMenu(expanded = homeMoreExpanded, onDismissRequest = { homeMoreExpanded = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.home_add_media_directory)) },
-                                        leadingIcon = { Icon(YingLiIcon.ORGANIZE.imageVector, contentDescription = null) },
-                                        onClick = { homeMoreExpanded = false; onSafSource() },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.media_rescan)) },
-                                        leadingIcon = { Icon(YingLiIcon.REPLAY.imageVector, contentDescription = null) },
-                                        onClick = { homeMoreExpanded = false; onRescan() },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.home_customize)) },
-                                        leadingIcon = { Icon(YingLiIcon.GRID.imageVector, contentDescription = null) },
-                                        onClick = { homeMoreExpanded = false; homeViewModel?.showEditor() },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.nav_settings)) },
-                                        leadingIcon = { Icon(YingLiIcon.SETTINGS.imageVector, contentDescription = null) },
-                                        onClick = { homeMoreExpanded = false; onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
-                                    )
-                                }
+                RouteContent(
+                    route = route,
+                    settings = settings,
+                    playerPreferences = playerPreferences,
+                    onMiniPlayerChanged = onMiniPlayerChanged,
+                    onAutoPipChanged = onAutoPipChanged,
+                    settingsTools = settingsTools,
+                    securitySettings = securitySettings,
+                    processingViewModel = processingViewModel,
+                    vaultViewModel = vaultViewModel,
+                    onVaultImport = onVaultImport,
+                    onVaultPlay = onVaultPlay,
+                    onVaultExport = onVaultExport,
+                    onOpenProcessingOutput = onOpenProcessingOutput,
+                    mediaState = mediaState,
+                    libraryViewModel = libraryViewModel,
+                    organizeViewModel = organizeViewModel,
+                    homeViewModel = homeViewModel,
+                    libraryIsWide = libraryIsWide,
+                    onRecommendedSource = onRecommendedSource,
+                    onSafSource = onSafSource,
+                    onSkipMediaOnboarding = onSkipMediaOnboarding,
+                    onRescan = onRescan,
+                    onMediaSelected = onMediaSelected,
+                    onRootSelected = onRootSelected,
+                    onGlobalAction = onGlobalAction,
+                    thumbnailRepository = thumbnailRepository,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppRouteTopBar(
+    route: AppRoute,
+    mediaState: MediaLibraryUiState,
+    homeViewModel: HomeViewModel?,
+    onBack: () -> Unit,
+    onSafSource: () -> Unit,
+    onRescan: () -> Unit,
+    onGlobalAction: (GlobalAppAction) -> Unit,
+) {
+    var homeSearchExpanded by remember { mutableStateOf(false) }
+    var homeSearchQuery by remember { mutableStateOf("") }
+    var homeMoreExpanded by remember { mutableStateOf(false) }
+    val isHome = route == AppRoute.Root(RootDestination.HOME)
+    when {
+        isHome && mediaState.onboarding -> YingLiTopBar(
+            title = { AppTitle() },
+        )
+        isHome -> Column {
+            YingLiTopBar(
+                title = { AppTitle() },
+                actions = {
+                    YingLiIconButton(
+                        icon = if (homeSearchExpanded) YingLiIcon.BACK else YingLiIcon.SEARCH,
+                        contentDescription = stringResource(R.string.library_search),
+                        onClick = {
+                            homeMoreExpanded = false
+                            homeSearchExpanded = !homeSearchExpanded
+                            if (!homeSearchExpanded) {
+                                homeSearchQuery = ""
+                                homeViewModel?.setKeyword("")
                             }
                         },
                     )
-                    if (mediaState.scanning) {
-                        LinearProgressIndicator(
-                            modifier = Modifier.fillMaxWidth().height(2.dp),
-                            color = YingLiTheme.functional.info.base,
-                            trackColor = YingLiTheme.colors.surfaceMuted,
+                    Box {
+                        YingLiIconButton(
+                            icon = YingLiIcon.OVERFLOW,
+                            contentDescription = stringResource(R.string.home_more),
+                            onClick = {
+                                homeSearchExpanded = false
+                                homeSearchQuery = ""
+                                homeViewModel?.setKeyword("")
+                                homeMoreExpanded = true
+                            },
                         )
-                    }
-                    if (homeSearchExpanded) {
-                        Surface(color = YingLiTheme.colors.surface, modifier = Modifier.fillMaxWidth()) {
-                            OutlinedTextField(
-                                value = homeSearchQuery,
-                                onValueChange = {
-                                    homeSearchQuery = it
-                                    homeViewModel?.setKeyword(it)
-                                },
-                                placeholder = { Text(stringResource(R.string.library_search)) },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        DropdownMenu(expanded = homeMoreExpanded, onDismissRequest = { homeMoreExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.home_add_media_directory)) },
+                                leadingIcon = { Icon(YingLiIcon.ORGANIZE.imageVector, contentDescription = null) },
+                                onClick = { homeMoreExpanded = false; onSafSource() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.media_rescan)) },
+                                leadingIcon = { Icon(YingLiIcon.REPLAY.imageVector, contentDescription = null) },
+                                onClick = { homeMoreExpanded = false; onRescan() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.home_customize)) },
+                                leadingIcon = { Icon(YingLiIcon.GRID.imageVector, contentDescription = null) },
+                                onClick = { homeMoreExpanded = false; homeViewModel?.showEditor() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.nav_settings)) },
+                                leadingIcon = { Icon(YingLiIcon.SETTINGS.imageVector, contentDescription = null) },
+                                onClick = { homeMoreExpanded = false; onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
                             )
                         }
                     }
-                } else if (route != AppRoute.Root(RootDestination.LIBRARY)) {
-                    CenterAlignedTopAppBar(
-                        title = { Text(route.title()) },
-                        navigationIcon = {
-                            if (navigationState.canNavigateBack) {
-                                YingLiIconButton(YingLiIcon.BACK, stringResource(R.string.action_back), onBack)
-                            }
+                },
+            )
+            if (mediaState.scanning) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = YingLiTheme.functional.info.base,
+                    trackColor = YingLiTheme.colors.surfaceMuted,
+                )
+            }
+            if (homeSearchExpanded) {
+                Surface(color = YingLiTheme.colors.surface, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = homeSearchQuery,
+                        onValueChange = {
+                            homeSearchQuery = it
+                            homeViewModel?.setKeyword(it)
                         },
-                        actions = {
-                            if (route != AppRoute.Processing && route != AppRoute.Root(RootDestination.PROCESSING)) {
-                                YingLiIconButton(
-                                    icon = YingLiIcon.PROCESSING,
-                                    contentDescription = stringResource(R.string.action_open_processing),
-                                    onClick = { onGlobalAction(GlobalAppAction.OPEN_PROCESSING) },
-                                )
-                            }
-                        },
+                        placeholder = { Text(stringResource(R.string.library_search)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
             }
-        },
-        bottomBar = if (mediaOnboarding) ({}) else bottomBar,
-    ) { padding ->
-        RouteContent(
-            route = route,
-            settings = settings,
-            playerPreferences = playerPreferences,
-            onMiniPlayerChanged = onMiniPlayerChanged,
-            onAutoPipChanged = onAutoPipChanged,
-            settingsTools = settingsTools,
-            securitySettings = securitySettings,
-            processingViewModel = processingViewModel,
-            vaultViewModel = vaultViewModel,
-            onVaultImport = onVaultImport,
-            onVaultPlay = onVaultPlay,
-            onVaultExport = onVaultExport,
-            onOpenProcessingOutput = onOpenProcessingOutput,
-            mediaState = mediaState,
-            libraryViewModel = libraryViewModel,
-            organizeViewModel = organizeViewModel,
-            homeViewModel = homeViewModel,
-            libraryIsWide = libraryIsWide,
-            onRecommendedSource = onRecommendedSource,
-            onSafSource = onSafSource,
-            onSkipMediaOnboarding = onSkipMediaOnboarding,
-            onRescan = onRescan,
-            onMediaSelected = onMediaSelected,
-            onRootSelected = onRootSelected,
-            onGlobalAction = onGlobalAction,
-            thumbnailRepository = thumbnailRepository,
-            modifier = Modifier.padding(padding),
+        }
+        route == AppRoute.Root(RootDestination.LIBRARY) -> Unit
+        else -> YingLiTopBar(
+            title = { Text(route.title()) },
+            navigationIcon = {
+                if (route !is AppRoute.Root) {
+                    YingLiIconButton(YingLiIcon.BACK, stringResource(R.string.action_back), onBack)
+                }
+            },
+            actions = {
+                if (route != AppRoute.Processing && route != AppRoute.Root(RootDestination.PROCESSING)) {
+                    YingLiIconButton(
+                        icon = YingLiIcon.PROCESSING,
+                        contentDescription = stringResource(R.string.action_open_processing),
+                        onClick = { onGlobalAction(GlobalAppAction.OPEN_PROCESSING) },
+                    )
+                }
+            },
         )
     }
+}
+
+@Composable
+private fun AppTitle() {
+    Text(
+        text = stringResource(R.string.app_name),
+        style = MaterialTheme.typography.headlineLarge,
+        fontWeight = FontWeight.Bold,
+    )
 }
 
 @Composable
@@ -794,34 +819,6 @@ private fun ProcessingPlaceholder(modifier: Modifier = Modifier) {
         message = stringResource(R.string.processing_empty_message),
         modifier = modifier.fillMaxSize(),
     )
-}
-
-@Composable
-private fun FiveLineLogo() {
-    val lineColor = YingLiTheme.colors.textPrimary
-    Surface(
-        modifier = Modifier.size(34.dp),
-        shape = YingLiTheme.components.compactCorner,
-        color = YingLiTheme.colors.surfaceMuted,
-    ) {
-        Canvas(Modifier.padding(6.dp)) {
-            rotate(-45f) {
-                val lengths = listOf(.42f, .66f, .86f, .66f, .42f)
-                val alphas = listOf(.4f, .7f, 1f, .7f, .4f)
-                lengths.forEachIndexed { index, length ->
-                    val y = size.height * (.18f + index * .16f)
-                    val half = size.width * length / 2f
-                    drawLine(
-                        color = lineColor.copy(alpha = alphas[index]),
-                        start = androidx.compose.ui.geometry.Offset(size.width / 2f - half, y),
-                        end = androidx.compose.ui.geometry.Offset(size.width / 2f + half, y),
-                        strokeWidth = 3.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable

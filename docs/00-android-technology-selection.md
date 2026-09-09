@@ -53,7 +53,7 @@ Lint 的 `UseKtx` 风格规则已关闭，避免仅为 `String.toUri()` 等可�
 |---|---|---:|---|
 | UI | Jetpack Compose + Material 3 | BOM `2026.06.01` | 页面、主题和自定义播放控制层 |
 | 窗口分类 | Material 3 Window Size Class | `1.4.0` | Compact/Medium/Expanded 自适应导航断点 |
-| 图标 | Compose Icons Tabler | `1.1.1` | 业务语义图标；缺失项集中回退 Material Icons |
+| 图标 | Compose Icons Tabler（本地构建） | `0.1.0-local.1` | 基于 Tabler Icons `3.46.0` 生成；业务语义图标，缺失项集中回退 Material Icons |
 | 播放内核 | AndroidX Media3 ExoPlayer | `1.10.1` | 解封装、播放、轨道和字幕 |
 | 媒体会话 | Media3 Session | `1.10.1` | 后台播放、通知栏、锁屏和耳机控制 |
 | 播放控件 | Media3 UI / UI Compose | `1.10.1` | 播放画面和官方控制组件 |
@@ -211,7 +211,7 @@ coil = "3.5.0"
 coroutines = "1.11.0"
 documentfile = "1.1.0"
 material3-window = "1.4.0"
-tabler-icons = "1.1.1"
+tabler-icons = "0.1.0-local.1"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

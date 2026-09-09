@@ -76,6 +76,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,6 +100,7 @@ import seeyuer.yingli.player.core.designsystem.component.YingLiButton
 import seeyuer.yingli.player.core.designsystem.component.YingLiEmptyState
 import seeyuer.yingli.player.core.designsystem.component.YingLiSegmentedControl
 import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
+import seeyuer.yingli.player.core.designsystem.component.YingLiTopBar
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
@@ -299,32 +301,26 @@ private fun LibraryTopBar(
     onRescan: () -> Unit,
     onClearSelection: () -> Unit,
 ) {
-    Surface(color = YingLiTheme.colors.surface, shadowElevation = 2.dp) {
-        Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    YingLiTopBar(
+        navigationIcon = {
             if (state.selectionMode) {
                 YingLiIconButton(YingLiIcon.BACK, stringResource(R.string.library_cancel), onClearSelection)
             } else if (state.currentPath.isNotEmpty()) {
                 YingLiIconButton(YingLiIcon.BACK, stringResource(R.string.action_back), onNavigateUp)
             }
-            Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                Text(
-                    if (state.selectionMode) stringResource(R.string.library_selected_count, state.selectedIds.size)
-                    else if (state.currentPath.isEmpty()) stringResource(R.string.nav_library)
-                    else state.currentPath.last().name,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                if (state.currentPath.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.library_result_count, state.folderTreeVideoCount),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = YingLiTheme.colors.textSecondary,
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
+        },
+        title = {
+            Text(
+                text = if (state.selectionMode) stringResource(R.string.library_selected_count, state.selectedIds.size)
+                else if (state.currentPath.isEmpty()) stringResource(R.string.nav_library)
+                else state.currentPath.last().name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = if (state.selectionMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineLarge,
+                fontWeight = if (state.selectionMode) null else FontWeight.Bold,
+            )
+        },
+        actions = {
             YingLiIconButton(YingLiIcon.SEARCH, stringResource(R.string.library_search), onToggleSearch)
             Box {
                 YingLiIconButton(YingLiIcon.OVERFLOW, stringResource(R.string.home_more), onToggleMore)
@@ -335,8 +331,8 @@ private fun LibraryTopBar(
                     DropdownMenuItem(text = { Text(stringResource(R.string.library_trash)) }, onClick = { onCloseMore(); onOpenTrash() })
                 }
             }
-        }
-    }
+        },
+    )
 }
 
 @Composable

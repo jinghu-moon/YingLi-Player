@@ -20,7 +20,7 @@
 ## 依赖取舍
 
 - Lifecycle `2.11.0` 的 Compose AAR 要求 `compileSdk 37`，因此统一固定为兼容 `compileSdk 36` 的稳定版 `2.10.0`。
-- Tabler Icons `1.1.1` 是稳定版但携带旧 `kotlin-stdlib-common` 声明；应用排除该传递模块，由 Kotlin `2.4.0` 统一标准库版本。
+- Tabler 图标改用本地从 Tabler Icons `3.46.0` 生成的 `io.github.jinghu-moon.composeicons:icons-tabler:0.1.0-local.1`；构建机需预先发布 `icons-core` 与 `icons-tabler` 至 Maven Local。本阶段不发布远程仓库，因此干净托管 CI 不解析该本地依赖。
 - 未引入 Navigation Compose。Phase 2 路由只需要确定性的 SavedState 状态机，引入 NavController 不会减少当前复杂度；后续出现多 Activity、复杂图图或平台深链集成需求时再评估。
 
 ## 最终门禁

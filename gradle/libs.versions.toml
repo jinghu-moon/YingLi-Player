@@ -16,7 +16,7 @@ serialization = "1.11.0"
 documentfile = "1.1.0"
 material3-window = "1.4.0"
 splashscreen = "1.2.0"
-tabler-icons = "1.1.1"
+tabler-icons = "0.1.0-local.1"
 reorderable = "3.1.0"
 junit = "4.13.2"
 androidx-test-ext = "1.3.0"
@@ -55,7 +55,7 @@ androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", versi
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
-compose-icons-tabler = { module = "br.com.devsrsouza.compose.icons:tabler-icons", version.ref = "tabler-icons" }
+compose-icons-tabler = { module = "io.github.jinghu-moon.composeicons:icons-tabler", version.ref = "tabler-icons" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-video = { module = "io.coil-kt.coil3:coil-video", version.ref = "coil" }

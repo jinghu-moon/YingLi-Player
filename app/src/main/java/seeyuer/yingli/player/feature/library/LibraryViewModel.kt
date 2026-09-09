@@ -145,7 +145,14 @@ class LibraryViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), 0)
 
     private val folders = queryInput
-        .flatMapLatest { input -> kotlinx.coroutines.flow.flow { emit(repository.folders(input.toQuery())) } }
+        .flatMapLatest { input ->
+            val query = input.toQuery()
+            if (query.browseMode != LibraryBrowseMode.FOLDER || query.normalizedKeyword.isNotBlank()) {
+                kotlinx.coroutines.flow.flowOf(emptyList())
+            } else {
+                kotlinx.coroutines.flow.flow { emit(repository.folders(query)) }
+            }
+        }
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), emptyList())
 

@@ -64,6 +64,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -474,14 +475,6 @@ private fun LibraryContent(
     modifier: Modifier,
 ) {
     Column(modifier.fillMaxSize()) {
-        if (state.browseMode == LibraryBrowseMode.FOLDER && state.keyword.isBlank()) {
-            FolderSection(
-                folders = state.folders,
-                viewMode = state.preference.viewMode,
-                columns = state.preference.folderColumns,
-                onEnterFolder = onEnterFolder,
-            )
-        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -510,6 +503,20 @@ private fun LibraryContent(
         }
         when {
             state.trashOpen -> TrashPanel(state.trashEntries, onToggleTrash, onRestore, onRequestPurge, Modifier.weight(1f))
+            state.browseMode == LibraryBrowseMode.FOLDER && state.keyword.isBlank() -> key(
+                state.currentPath.lastOrNull()?.path.orEmpty(),
+                state.preference.viewMode,
+            ) {
+                FolderBrowseLayout(
+                    state = state,
+                    pagingItems = pagingItems,
+                    onToggleSelection = onToggleSelection,
+                    onMediaSelected = onMediaSelected,
+                    onEnterFolder = onEnterFolder,
+                    thumbnailRepository = thumbnailRepository,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             pagingItems.loadState.refresh is LoadState.Loading && pagingItems.itemCount == 0 ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             pagingItems.loadState.refresh is LoadState.Error && pagingItems.itemCount == 0 ->
@@ -525,30 +532,71 @@ private fun LibraryContent(
 }
 
 @Composable
-private fun FolderSection(
-    folders: List<LibraryFolder>,
-    viewMode: LibraryViewMode,
-    columns: Int,
+private fun FolderBrowseLayout(
+    state: LibraryUiState,
+    pagingItems: LazyPagingItems<LibraryMedia>,
+    onToggleSelection: (LibraryMedia) -> Unit,
+    onMediaSelected: (String) -> Unit,
     onEnterFolder: (LibraryPathSegment) -> Unit,
+    thumbnailRepository: ThumbnailLoader?,
+    modifier: Modifier,
 ) {
-    if (folders.isEmpty()) return
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-        Text("文件夹", style = MaterialTheme.typography.titleSmall)
-        if (viewMode == LibraryViewMode.GRID) {
-            val columnCount = columns.coerceAtLeast(1)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp, start = 2.dp, end = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                folders.chunked(columnCount).forEach { rowFolders ->
+    val folderGrid = state.preference.viewMode == LibraryViewMode.GRID
+    val folderColumnCount = state.preference.folderColumns.coerceAtLeast(1)
+    val videoColumnCount = state.preference.videoColumns.coerceAtLeast(1)
+    val folderRowCount = if (folderGrid) {
+        gridRowCount(state.folders.size, folderColumnCount)
+    } else {
+        state.folders.size
+    }
+    val folderHeaderCount = if (state.folders.isEmpty()) 0 else 1
+    val hasVideoContent = pagingItems.itemCount > 0 ||
+        pagingItems.loadState.refresh is LoadState.Loading ||
+        pagingItems.loadState.refresh is LoadState.Error
+    val videoHeaderCount = if (state.folders.isNotEmpty() && hasVideoContent) 1 else 0
+    val mediaStartIndex = folderHeaderCount + folderRowCount + videoHeaderCount
+    val listState = rememberLazyListState()
+    val select = mediaSelectionHandler(state.selectedIds, onToggleSelection, onMediaSelected)
+    ThumbnailPrefetchEffect(
+        pagingItems = pagingItems,
+        thumbnailRepository = thumbnailRepository,
+        visibleRange = {
+            listState.layoutInfo.visibleItemsInfo
+                .filter { it.index >= mediaStartIndex }
+                .flatMap { info ->
+                    if (folderGrid) {
+                        val row = info.index - mediaStartIndex
+                        gridRowIndices(row, pagingItems.itemCount, videoColumnCount).toList()
+                    } else {
+                        listOf(info.index - mediaStartIndex)
+                    }
+                }
+                .filter { it in 0 until pagingItems.itemCount }
+                .toIntRange()
+        },
+    )
+    LazyColumn(
+        state = listState,
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        if (state.folders.isNotEmpty()) {
+            item(key = "folders-header", contentType = "section-header") {
+                Text("文件夹", style = MaterialTheme.typography.titleSmall)
+            }
+            if (folderGrid) {
+                items(
+                    count = folderRowCount,
+                    key = { row -> "folder-row-${state.folders[row * folderColumnCount].path}" },
+                    contentType = { "folder-grid-row" },
+                ) { rowIndex ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        repeat(columnCount) { index ->
-                            val folder = rowFolders.getOrNull(index)
+                        repeat(folderColumnCount) { columnIndex ->
+                            val folder = state.folders.getOrNull(rowIndex * folderColumnCount + columnIndex)
                             if (folder == null) {
                                 Spacer(Modifier.weight(1f))
                             } else {
@@ -561,32 +609,146 @@ private fun FolderSection(
                         }
                     }
                 }
+            } else {
+                items(
+                    items = state.folders,
+                    key = { it.path },
+                    contentType = { "folder-list-row" },
+                ) { folder ->
+                    FolderListRow(folder, onEnterFolder)
+                }
             }
-        } else {
-            folders.forEach { folder ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    color = YingLiTheme.colors.surfaceComponent,
-                    shape = RoundedCornerShape(8.dp),
-                    onClick = { onEnterFolder(LibraryPathSegment(folder.name, folder.path)) },
-                ) {
-                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(Modifier.size(48.dp), shape = RoundedCornerShape(8.dp), color = YingLiTheme.colors.surfaceMuted) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(YingLiIcon.ORGANIZE.imageVector, contentDescription = null, modifier = Modifier.size(25.dp))
-                            }
-                        }
-                        Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                            Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(folder.path, maxLines = 1, overflow = TextOverflow.Ellipsis, color = YingLiTheme.colors.textSecondary, style = MaterialTheme.typography.labelSmall)
-                            Text("${folder.videoCount} 个视频 · ${formatFileSize(folder.sizeBytes)}", maxLines = 1, overflow = TextOverflow.Ellipsis, color = YingLiTheme.colors.textSecondary, style = MaterialTheme.typography.labelSmall)
-                        }
-                        Icon(YingLiIcon.ARROW_RIGHT.imageVector, contentDescription = null)
+            if (hasVideoContent) {
+                item(key = "videos-header", contentType = "section-header") {
+                    Text("视频", style = MaterialTheme.typography.titleSmall)
+                }
+            }
+        }
+        when {
+            pagingItems.loadState.refresh is LoadState.Loading && pagingItems.itemCount == 0 ->
+                item(key = "media-refresh-loading") {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+            pagingItems.loadState.refresh is LoadState.Error && pagingItems.itemCount == 0 ->
+                item(key = "media-refresh-error") {
+                    PagingErrorState(pagingItems::retry, Modifier.fillMaxWidth())
+                }
+            pagingItems.itemCount == 0 && state.folders.isEmpty() ->
+                item(key = "media-empty") {
+                    YingLiEmptyState(
+                        stringResource(R.string.library_empty_result_title),
+                        stringResource(R.string.library_empty_result_message),
+                        Modifier.fillMaxWidth(),
+                    )
+                }
+            pagingItems.itemCount > 0 && folderGrid -> {
+                val rowCount = gridRowCount(pagingItems.itemCount, videoColumnCount)
+                items(
+                    count = rowCount,
+                    key = { row -> "media-row-$row" },
+                    contentType = { "media-grid-row" },
+                ) { rowIndex ->
+                    MediaGridRow(
+                        startIndex = rowIndex * videoColumnCount,
+                        columnCount = videoColumnCount,
+                        pagingItems = pagingItems,
+                        selectedIds = state.selectedIds,
+                        onClick = select,
+                        onLongClick = onToggleSelection,
+                        thumbnailRepository = thumbnailRepository,
+                    )
+                }
+            }
+            pagingItems.itemCount > 0 -> {
+                items(
+                    count = pagingItems.itemCount,
+                    key = pagingItems.itemKey { it.id.value },
+                    contentType = pagingItems.itemContentType { "media" },
+                ) { index ->
+                    pagingItems[index]?.let { item ->
+                        MediaListRow(item, item.id in state.selectedIds, select, { onToggleSelection(item) }, thumbnailRepository)
                     }
                 }
             }
         }
+        if (pagingItems.loadState.append is LoadState.Loading || pagingItems.loadState.append is LoadState.Error) {
+            item(key = "media-footer") { PagingFooter(pagingItems.loadState.append, pagingItems::retry) }
+        }
     }
+}
+
+@Composable
+private fun FolderListRow(folder: LibraryFolder, onEnterFolder: (LibraryPathSegment) -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = YingLiTheme.colors.surfaceComponent,
+        shape = RoundedCornerShape(8.dp),
+        onClick = { onEnterFolder(LibraryPathSegment(folder.name, folder.path)) },
+    ) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(Modifier.size(48.dp), shape = RoundedCornerShape(8.dp), color = YingLiTheme.colors.surfaceMuted) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(YingLiIcon.ORGANIZE.imageVector, contentDescription = null, modifier = Modifier.size(25.dp))
+                }
+            }
+            Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(folder.path, maxLines = 1, overflow = TextOverflow.Ellipsis, color = YingLiTheme.colors.textSecondary, style = MaterialTheme.typography.labelSmall)
+                Text("${folder.videoCount} 个视频 · ${formatFileSize(folder.sizeBytes)}", maxLines = 1, overflow = TextOverflow.Ellipsis, color = YingLiTheme.colors.textSecondary, style = MaterialTheme.typography.labelSmall)
+            }
+            Icon(YingLiIcon.ARROW_RIGHT.imageVector, contentDescription = null)
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MediaGridRow(
+    startIndex: Int,
+    columnCount: Int,
+    pagingItems: LazyPagingItems<LibraryMedia>,
+    selectedIds: Set<seeyuer.yingli.player.core.model.media.MediaItemId>,
+    onClick: (LibraryMedia) -> Unit,
+    onLongClick: (LibraryMedia) -> Unit,
+    thumbnailRepository: ThumbnailLoader?,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        repeat(columnCount) { columnIndex ->
+            val itemIndex = startIndex + columnIndex
+            val item = itemIndex.takeIf { it < pagingItems.itemCount }?.let(pagingItems::get)
+            if (item == null) {
+                Spacer(Modifier.weight(1f))
+            } else {
+                MediaCard(
+                    item = item,
+                    selected = item.id in selectedIds,
+                    ratio = VIDEO_ASPECT_RATIO,
+                    onClick = onClick,
+                    onLongClick = { onLongClick(item) },
+                    thumbnailRepository = thumbnailRepository,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+internal fun gridRowCount(itemCount: Int, columnCount: Int): Int {
+    require(columnCount > 0)
+    return (itemCount + columnCount - 1) / columnCount
+}
+
+internal fun gridRowIndices(rowIndex: Int, itemCount: Int, columnCount: Int): IntRange {
+    require(rowIndex >= 0)
+    require(columnCount > 0)
+    val start = rowIndex * columnCount
+    if (start >= itemCount) return IntRange.EMPTY
+    return start until minOf(start + columnCount, itemCount)
 }
 
 @Composable
@@ -712,9 +874,7 @@ private fun MediaLayout(
     thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier,
 ) {
-    val select: (LibraryMedia) -> Unit = { item ->
-        if (state.selectedIds.isNotEmpty()) onToggleSelection(item) else onMediaSelected(item.id.value)
-    }
+    val select = mediaSelectionHandler(state.selectedIds, onToggleSelection, onMediaSelected)
     val onLongClick: (LibraryMedia) -> Unit = onToggleSelection
     when (state.preference.viewMode) {
         LibraryViewMode.GRID -> {
@@ -776,6 +936,14 @@ private fun MediaLayout(
             }
         }
     }
+}
+
+private fun mediaSelectionHandler(
+    selectedIds: Set<seeyuer.yingli.player.core.model.media.MediaItemId>,
+    onToggleSelection: (LibraryMedia) -> Unit,
+    onMediaSelected: (String) -> Unit,
+): (LibraryMedia) -> Unit = { item ->
+    if (selectedIds.isNotEmpty()) onToggleSelection(item) else onMediaSelected(item.id.value)
 }
 
 @Composable
@@ -861,10 +1029,11 @@ private fun MediaCard(
     onClick: (LibraryMedia) -> Unit,
     onLongClick: (seeyuer.yingli.player.core.model.media.MediaItemId) -> Unit,
     thumbnailRepository: ThumbnailLoader?,
+    modifier: Modifier = Modifier,
 ) {
     val thumbnail = item.thumbnailRequest(ThumbnailPriority.VISIBLE)
     Column(
-        modifier = Modifier
+        modifier = modifier
             .padding(4.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (selected) YingLiTheme.colors.actionPrimarySoft else Color.Transparent)

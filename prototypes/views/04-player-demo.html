@@ -131,6 +131,14 @@
     .control-button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
     .control-button.label { padding: 0 8px; font-size: 12px; }
     .control-button.label i { font-size: 18px; }
+    .control-button.primary { min-width: 42px; background: rgb(255 255 255 / .12); }
+    .quick-slot-group { display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .quick-slot { min-width: 38px; }
+    .quick-slot.speed-slot { min-width: 48px; font-variant-numeric: tabular-nums; }
+    .top-slot-group { display: flex; align-items: center; gap: 7px; }
+    .top-slot-button { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / .23); border-radius: 50%; background: rgb(16 20 18 / .62); color: var(--text); font-size: 19px; backdrop-filter: blur(10px); }
+    .top-slot-button:hover { background: rgb(57 69 64 / .85); }
+    .top-slot-button[data-control-id="playlist"] { color: var(--accent); }
     .portrait-controls { display: none; }
 
     .panel-scrim { position: absolute; inset: 0; z-index: 8; background: var(--scrim-default); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
@@ -235,6 +243,35 @@
     .drawer-head h2 { margin: 0; font-size: 17px; }
     .drawer-close { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 7px; background: transparent; color: var(--muted); font-size: 20px; }
     .drawer-close:hover { background: var(--surface-3); }
+    .drawer-intro { margin: -6px 0 16px; color: var(--muted); font-size: 12px; line-height: 18px; }
+    .settings-link { width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 2px; color: var(--text); text-align: left; }
+    .settings-link > span { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+    .settings-link > span i { color: var(--accent); font-size: 19px; }
+    .settings-link > i { color: var(--dim); font-size: 18px; }
+    .settings-link:hover > span { color: var(--accent); }
+    .layout-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -4px 0 14px; }
+    .layout-editor-head span { color: var(--dim); font-size: 11px; }
+    .layout-reset { min-height: 30px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--muted); font-size: 11px; }
+    .layout-reset:hover { border-color: var(--accent); color: var(--accent); }
+    .layout-zone { padding: 14px 0; border-top: 1px solid var(--line); }
+    .layout-zone:first-of-type { border-top: 0; }
+    .layout-zone-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .layout-zone-title strong { font-size: 13px; }
+    .layout-zone-title span { color: var(--dim); font-size: 11px; }
+    .layout-cards { display: grid; gap: 6px; min-height: 44px; }
+    .layout-card { min-height: 44px; display: grid; grid-template-columns: 22px 24px minmax(0, 1fr) auto auto auto; align-items: center; gap: 7px; padding: 5px 5px 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-level-2); color: var(--text); }
+    .layout-card.dragging { opacity: .42; border-color: var(--accent); }
+    .layout-card .drag-handle { color: var(--dim); cursor: grab; }
+    .layout-card > i { color: var(--muted); font-size: 18px; }
+    .layout-card-name { min-width: 0; overflow: hidden; font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+    .layout-card button { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 5px; color: var(--muted); font-size: 15px; }
+    .layout-card button:hover { background: var(--surface-level-3); color: var(--text); }
+    .layout-card .remove-control:hover { background: color-mix(in srgb, var(--error) 14%, var(--surface-level-3)); color: var(--error); }
+    .layout-empty { min-height: 44px; display: grid; place-items: center; border: 1px dashed var(--line-strong); border-radius: 6px; color: var(--dim); font-size: 11px; }
+    .layout-library { display: flex; flex-wrap: wrap; gap: 7px; }
+    .layout-library button { min-height: 32px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 11px; }
+    .layout-library button:hover { border-color: var(--accent); color: var(--accent); }
+    .layout-library button:disabled { cursor: not-allowed; opacity: .38; }
     .setting { padding: 16px 0; border-top: 1px solid var(--line); }
     .setting:first-of-type { border-top: 0; }
     .setting-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 11px; color: var(--muted); font-size: 12px; }
@@ -262,16 +299,22 @@
     .player-frame.portrait .title-pill strong { font-size: 13px; }
     .player-frame.portrait .top-right { gap: 5px; }
     .player-frame.portrait .top-right .round-button { width: 38px; height: 38px; font-size: 17px; }
+    .player-frame.portrait .top-slot-group { gap: 5px; }
+    .player-frame.portrait .top-slot-button { width: 38px; height: 38px; font-size: 17px; }
+    .player-frame.portrait #landscapeTopSlots [data-control-id="audio"], .player-frame.portrait #landscapeTopSlots [data-control-id="subtitle"] { display: none; }
     .player-frame.portrait .center-controls { align-items: center; gap: 12px; transform: translateY(20px); }
     .player-frame.portrait .center-button { width: 58px; height: 58px; font-size: 25px; }
     .player-frame.portrait .center-button.small { width: 48px; height: 48px; font-size: 20px; }
     .player-frame.portrait .bottombar { display: none; }
     .player-frame.portrait .portrait-controls { position: absolute; right: 14px; bottom: 18px; left: 14px; z-index: 4; display: block; padding: 13px 13px 12px; border: 1px solid rgb(255 255 255 / .15); border-radius: 10px; background: rgb(18 22 20 / .78); backdrop-filter: blur(12px); }
-    .player-frame.portrait .portrait-controls .control-row { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; margin-top: 0; }
-    .player-frame.portrait .portrait-controls .control-group { display: contents; }
+    .player-frame.portrait .portrait-controls .control-row { display: flex; align-items: center; gap: 4px; margin-top: 0; }
+    .player-frame.portrait .portrait-controls .control-group { display: flex; align-items: center; gap: 3px; }
+    .player-frame.portrait .portrait-controls .quick-slot-group { flex: 1; justify-content: flex-end; overflow: hidden; }
     .player-frame.portrait .portrait-controls .control-button { width: 100%; min-width: 0; height: 34px; padding: 0; font-size: 18px; }
     .player-frame.portrait .portrait-controls .control-button.label { font-size: 11px; }
-    .player-frame.portrait .portrait-controls .control-button.label span { display: none; }
+    .player-frame.portrait .portrait-controls .control-button.label span { display: inline; }
+    .player-frame.portrait .portrait-controls .quick-slot { flex: 0 0 34px; }
+    .player-frame.portrait .portrait-controls .quick-slot.speed-slot { flex-basis: 42px; }
     .player-frame.portrait .portrait-controls .seek-row { gap: 9px; margin-top: 8px; }
     .player-frame.portrait .portrait-controls .seek { height: 20px; }
     .player-frame.portrait .portrait-controls .time { font-size: 11px; }
@@ -289,6 +332,12 @@
       .orientation-switch button { min-width: 74px; height: 31px; }
       .stage { min-height: calc(100vh - 56px); padding: 20px; }
       .device-shell:not(.portrait) { width: min(100%, calc(100vw - 32px), calc((100vh - 112px) * 16 / 9)); }
+      .device-shell:not(.portrait) .bottombar { padding: 0 12px 11px; }
+      .device-shell:not(.portrait) .control-row, .device-shell:not(.portrait) .control-group, .device-shell:not(.portrait) .quick-slot-group { gap: 2px; }
+      .device-shell:not(.portrait) .control-button { min-width: 32px; height: 32px; font-size: 17px; }
+      .device-shell:not(.portrait) .quick-slot.speed-slot { min-width: 32px; }
+      .device-shell:not(.portrait) .control-button.label { padding: 0 3px; }
+      .device-shell:not(.portrait) .control-button.label span { display: none; }
       .hint { display: none; }
     }
     @media (max-width: 480px) {
@@ -304,7 +353,7 @@
       <div class="orientation-switch" role="group" aria-label="切换播放器形态">
         <button class="active" data-orientation="landscape"><i class="ti ti-device-tv"></i>横屏</button>
         <button data-orientation="portrait"><i class="ti ti-device-mobile"></i>竖屏</button>
-        <button data-view-mode="shorts"><i class="ti ti-brand-tiktok"></i>短视频</button>
+        <button data-view-mode="shorts"><i class="ti ti-brand-tiktok"></i>YL短片</button>
       </div>
       <button class="header-action" data-toast="演示模式已开启" aria-label="演示信息"><i class="ti ti-info-circle"></i></button>
     </header>
@@ -323,28 +372,25 @@
             <div class="title-pill"><strong id="mediaTitle">横屏测试视频</strong><span id="mediaMeta">本地视频 · 1 / 2</span></div>
           </div>
           <div class="top-right">
-            <button class="round-button accent" data-action="playlist" aria-label="打开播放列表"><i class="ti ti-list"></i></button>
-            <button class="round-button" data-action="settings" aria-label="打开播放设置"><i class="ti ti-adjustments-horizontal"></i></button>
-            <button class="round-button" data-action="media-info" aria-label="视频信息"><i class="ti ti-info-circle"></i></button>
+            <div class="top-slot-group" id="landscapeTopSlots" aria-label="横屏右上快捷控件"></div>
           </div>
         </div>
 
         <div class="center-controls">
-          <button class="center-button small" data-action="previous" aria-label="上一个视频"><i class="ti ti-player-skip-back-filled"></i></button>
           <button class="center-button" data-action="play" aria-label="播放或暂停"><i class="ti ti-player-play-filled" id="centerPlayIcon"></i></button>
-          <button class="center-button small" data-action="next" aria-label="下一个视频"><i class="ti ti-player-skip-forward-filled"></i></button>
         </div>
 
         <div class="bottombar">
           <div class="seek-row"><span class="time" id="timeCurrent">00:00</span><label class="seek" aria-label="视频进度"><input id="seekLandscape" type="range" min="0" max="95.434" value="0" step="0.01"><span class="ab-marker ab-marker-a" data-ab-marker="a" role="slider" tabindex="0" aria-label="拖动 A 点" hidden></span><span class="ab-marker ab-marker-b" data-ab-marker="b" role="slider" tabindex="0" aria-label="拖动 B 点" hidden></span></label><span class="time time-total">01:35</span></div>
           <div class="control-row">
-            <div class="control-group"><button class="control-button" data-action="play" aria-label="播放或暂停"><i class="ti ti-player-play-filled" id="bottomPlayIcon"></i></button><button class="control-button label" data-toast="音量 80%"><i class="ti ti-volume-2"></i><span>80%</span></button><button class="control-button label" data-toast="播放速度 1.0x"><i class="ti ti-gauge"></i><span>1.0x</span></button></div>
-            <div class="control-group"><button class="control-button label" data-action="order" aria-label="播放顺序"><i class="ti ti-repeat"></i><span id="orderLabel">顺序</span></button><button class="control-button" data-action="pip" aria-label="画中画"><i class="ti ti-picture-in-picture"></i></button><button class="control-button" data-action="rotate" aria-label="旋转屏幕"><i class="ti ti-rotate-2"></i></button><button class="control-button" data-action="screenshot-mode" aria-label="截图"><i class="ti ti-camera"></i></button><button class="control-button" data-action="ab-mode" aria-label="AB 循环"><i class="ti ti-repeat"></i></button><button class="control-button" data-toast="画面比例：原始"><i class="ti ti-aspect-ratio"></i></button><button class="control-button" data-action="settings" aria-label="播放设置"><i class="ti ti-settings"></i></button><button class="control-button" data-action="fullscreen" aria-label="全屏"><i class="ti ti-maximize"></i></button></div>
+            <div class="control-group"><button class="control-button" data-action="previous" aria-label="上一个视频"><i class="ti ti-player-skip-back-filled"></i></button><button class="control-button primary" data-action="play" aria-label="播放或暂停"><i class="ti ti-player-play-filled" id="bottomPlayIcon"></i></button><button class="control-button" data-action="next" aria-label="下一个视频"><i class="ti ti-player-skip-forward-filled"></i></button></div>
+            <div class="quick-slot-group" id="landscapeLeftSlots" aria-label="横屏左下快捷控件"></div>
+            <div class="quick-slot-group" id="landscapeRightSlots" aria-label="横屏右下快捷控件"></div>
           </div>
         </div>
 
         <div class="portrait-controls">
-          <div class="control-row"><div class="control-group"><button class="control-button" data-action="play" aria-label="播放或暂停"><i class="ti ti-player-play-filled" id="portraitPlayIcon"></i></button><button class="control-button label" data-toast="音量 80%"><i class="ti ti-volume-2"></i><span>80%</span></button></div><div class="control-group"><button class="control-button label" data-action="order" aria-label="播放顺序"><i class="ti ti-repeat"></i><span id="orderLabelPortrait">顺序</span></button><button class="control-button" data-action="pip" aria-label="画中画"><i class="ti ti-picture-in-picture"></i></button><button class="control-button" data-action="rotate" aria-label="旋转屏幕"><i class="ti ti-rotate-2"></i></button><button class="control-button" data-action="screenshot-mode" aria-label="截图"><i class="ti ti-camera"></i></button><button class="control-button" data-action="ab-mode" aria-label="AB 循环"><i class="ti ti-repeat"></i></button><button class="control-button" data-action="settings" aria-label="播放设置"><i class="ti ti-adjustments-horizontal"></i></button><button class="control-button" data-action="fullscreen" aria-label="全屏"><i class="ti ti-maximize"></i></button></div></div>
+          <div class="control-row"><div class="control-group"><button class="control-button primary" data-action="play" aria-label="播放或暂停"><i class="ti ti-player-play-filled" id="portraitPlayIcon"></i></button></div><div class="quick-slot-group" id="portraitSlots" aria-label="竖屏底部快捷控件"></div></div>
           <div class="seek-row"><span class="time" id="timePortrait">00:00</span><label class="seek" aria-label="视频进度"><input id="seekPortrait" type="range" min="0" max="95.434" value="0" step="0.01"><span class="ab-marker ab-marker-a" data-ab-marker="a" role="slider" tabindex="0" aria-label="拖动 A 点" hidden></span><span class="ab-marker ab-marker-b" data-ab-marker="b" role="slider" tabindex="0" aria-label="拖动 B 点" hidden></span></label><span class="time time-total">01:35</span></div>
         </div>
 
@@ -423,11 +469,19 @@
         </section>
         <aside class="drawer" id="settingsDrawer" aria-label="播放设置">
           <div class="drawer-head"><h2>播放设置</h2><button class="drawer-close" data-action="close" aria-label="关闭"><i class="ti ti-x"></i></button></div>
+          <button class="settings-link" data-action="control-layout"><span><i class="ti ti-layout-grid"></i>控件布局</span><i class="ti ti-chevron-right"></i></button>
+          <button class="settings-link" data-action="media-info"><span><i class="ti ti-info-circle"></i>视频信息</span><i class="ti ti-chevron-right"></i></button>
           <div class="setting"><div class="setting-label"><span>解码器</span><span class="setting-value">硬件加速</span></div><div class="setting-options"><button class="option active">HW+</button><button class="option">HW</button><button class="option">SW</button></div></div>
           <div class="setting"><div class="setting-label"><span>播放顺序</span><span class="setting-value" id="orderSettingValue">顺序播放</span></div><div class="setting-options"><button class="option active" data-order="sequence">顺序</button><button class="option" data-order="shuffle">随机</button><button class="option" data-order="loop">列表循环</button><button class="option" data-order="repeat-one">单曲重复</button></div></div>
           <div class="setting"><div class="setting-label"><span>播放速度</span><span class="setting-value">1.0x</span></div><div class="setting-options"><button class="option" data-rate="0.75">0.75x</button><button class="option active" data-rate="1">1.0x</button><button class="option" data-rate="1.25">1.25x</button><button class="option" data-rate="1.5">1.5x</button></div></div>
           <div class="setting"><div class="setting-label"><span>画面比例</span><span class="setting-value">原始</span></div><div class="setting-options"><button class="option active">原始</button><button class="option">裁剪</button><button class="option">拉伸</button></div></div>
           <div class="setting"><div class="setting-label"><span>字幕</span><span class="setting-value">简体中文</span></div><div class="setting-options"><button class="option active">简体中文</button><button class="option">关闭</button></div></div>
+        </aside>
+        <aside class="drawer" id="controlLayoutDrawer" aria-label="控件布局编辑">
+          <div class="drawer-head"><h2>控件布局</h2><button class="drawer-close" data-action="close" aria-label="关闭"><i class="ti ti-x"></i></button></div>
+          <p class="drawer-intro">拖动调整顺序；移除后可从控件库重新添加。</p>
+          <div class="layout-editor-head"><span>核心播放、进度与全屏始终保留</span><button class="layout-reset" data-action="reset-control-layout">恢复推荐</button></div>
+          <div id="controlLayoutEditor"></div>
         </aside>
         <aside class="drawer" id="playlistDrawer" aria-label="播放列表">
           <div class="drawer-head"><h2>播放列表 <span id="playlistCount" style="color:var(--dim);font-size:12px;font-weight:500">1 / 2</span></h2><button class="drawer-close" data-action="close" aria-label="关闭"><i class="ti ti-x"></i></button></div>
@@ -457,6 +511,37 @@
       { id: 'loop', label: '循环', detail: '列表循环', icon: 'ti-repeat' },
       { id: 'repeat-one', label: '单曲', detail: '单曲重复', icon: 'ti-repeat-once' }
     ];
+    const controlCatalog = {
+      playlist: { label: '播放列表', icon: 'ti-list', action: 'playlist' },
+      audio: { label: '音轨', icon: 'ti-music', toast: '音轨：AAC 立体声' },
+      subtitle: { label: '字幕', icon: 'ti-subtitles', toast: '字幕：简体中文' },
+      info: { label: '视频信息', icon: 'ti-info-circle', action: 'media-info' },
+      order: { label: '播放顺序', icon: 'ti-list-numbers', action: 'order', value: true },
+      speed: { label: '播放速度', icon: 'ti-gauge', action: 'speed', value: true },
+      screenshot: { label: '截图', icon: 'ti-camera', action: 'screenshot-mode' },
+      ab: { label: 'A-B 循环', icon: 'ti-repeat', action: 'ab-mode' },
+      pip: { label: '画中画', icon: 'ti-picture-in-picture', action: 'pip' },
+      rotate: { label: '旋转屏幕', icon: 'ti-rotate-2', action: 'rotate' },
+      ratio: { label: '画面比例', icon: 'ti-aspect-ratio', action: 'ratio' },
+      lock: { label: '锁定界面', icon: 'ti-lock', toast: '控制界面已锁定（Demo）' },
+      background: { label: '后台播放', icon: 'ti-headphones', toast: '后台播放已开启（Demo）' },
+      sleep: { label: '睡眠定时', icon: 'ti-alarm', toast: '睡眠定时：30 分钟（Demo）' },
+      more: { label: '更多', icon: 'ti-dots', action: 'settings' },
+      fullscreen: { label: '全屏', icon: 'ti-maximize', action: 'fullscreen', pinned: true }
+    };
+    const defaultControlLayout = {
+      landscapeTop: ['playlist', 'audio', 'subtitle', 'more'],
+      landscapeLeft: ['order', 'speed', 'screenshot', 'ab'],
+      landscapeRight: ['pip', 'fullscreen'],
+      portraitBottom: ['speed', 'order', 'rotate', 'pip', 'fullscreen', 'more']
+    };
+    const layoutZones = {
+      landscapeTop: { label: '横屏右上', limit: 4, target: 'landscapeTopSlots' },
+      landscapeLeft: { label: '横屏左下', limit: 4, target: 'landscapeLeftSlots' },
+      landscapeRight: { label: '横屏右下', limit: 4, target: 'landscapeRightSlots' },
+      portraitBottom: { label: '竖屏底栏', limit: 6, target: 'portraitSlots' }
+    };
+    let controlLayout = Object.fromEntries(Object.entries(defaultControlLayout).map(([zone, controls]) => [zone, [...controls]]));
     const frame = document.querySelector('#playerFrame');
     const device = document.querySelector('#deviceShell');
     const video = document.querySelector('#playerVideo');
@@ -480,7 +565,7 @@
     const shortsFavoritesSheet = document.querySelector('#shortsFavoritesSheet');
     const shortsFavoritesList = document.querySelector('#shortsFavoritesList');
     const abMarkers = [...document.querySelectorAll('[data-ab-marker]')];
-    const drawers = { settings: document.querySelector('#settingsDrawer'), playlist: document.querySelector('#playlistDrawer') };
+    const drawers = { settings: document.querySelector('#settingsDrawer'), playlist: document.querySelector('#playlistDrawer'), layout: document.querySelector('#controlLayoutDrawer') };
     const playIcons = [...document.querySelectorAll('#centerPlayIcon, #bottomPlayIcon, #portraitPlayIcon')];
     const rangeInputs = [...document.querySelectorAll('input[type="range"]')];
     let currentTrackIndex = 0;
@@ -513,7 +598,70 @@
     let shortsSwipeAxis = null;
     let shortsFrameHoldTimer;
     let shortsFrameHeld = false;
+    let regularSpeedIndex = 0;
+    let regularRatioIndex = 0;
+    let layoutDrag = null;
+    const regularSpeeds = [1, 1.25, 1.5, 2];
+    const regularRatios = [
+      { label: '原始', fit: 'contain' },
+      { label: '裁剪', fit: 'cover' },
+      { label: '拉伸', fit: 'fill' }
+    ];
     const SHORTS_DRAG_COMMIT_PX = 64;
+
+    function controlButtonMarkup(id, zone) {
+      const control = controlCatalog[id];
+      const top = zone === 'landscapeTop';
+      const value = id === 'order' ? playbackModes.find(item => item.id === playbackMode).label : id === 'speed' ? `${regularSpeeds[regularSpeedIndex].toFixed(2).replace(/0$/, '')}x` : '';
+      const buttonClass = top ? 'top-slot-button' : `control-button quick-slot${control.value ? ' label' : ''}${id === 'speed' ? ' speed-slot' : ''}`;
+      return `<button class="${buttonClass}" data-control-id="${id}" data-control-action="${control.action || ''}" data-control-toast="${control.toast || ''}" aria-label="${control.label}"><i class="ti ${id === 'order' ? playbackModes.find(item => item.id === playbackMode).icon : control.icon}"></i>${control.value && !top ? `<span>${value}</span>` : ''}</button>`;
+    }
+
+    function renderControlSlots() {
+      Object.entries(layoutZones).forEach(([zone, config]) => {
+        document.querySelector(`#${config.target}`).innerHTML = controlLayout[zone].map(id => controlButtonMarkup(id, zone)).join('');
+      });
+      syncDynamicControlStates();
+    }
+
+    function syncDynamicControlStates() {
+      const mode = playbackModes.find(item => item.id === playbackMode);
+      document.querySelectorAll('[data-control-id="order"]').forEach(button => {
+        button.querySelector('i').className = `ti ${mode.icon}`;
+        const value = button.querySelector('span');
+        if (value) value.textContent = mode.label;
+        button.setAttribute('aria-label', `播放顺序：${mode.detail}`);
+      });
+      document.querySelectorAll('[data-control-id="speed"]').forEach(button => {
+        const value = button.querySelector('span');
+        if (value) value.textContent = `${regularSpeeds[regularSpeedIndex].toFixed(2).replace(/0$/, '')}x`;
+      });
+      const fullscreen = Boolean(document.fullscreenElement);
+      document.querySelectorAll('[data-control-id="fullscreen"]').forEach(button => {
+        button.querySelector('i').className = fullscreen ? 'ti ti-minimize' : 'ti ti-maximize';
+        button.setAttribute('aria-label', fullscreen ? '退出全屏' : '全屏');
+      });
+      const pip = Boolean(document.pictureInPictureElement);
+      document.querySelectorAll('[data-control-id="pip"]').forEach(button => button.setAttribute('aria-pressed', String(pip)));
+    }
+
+    function renderControlLayoutEditor() {
+      const editor = document.querySelector('#controlLayoutEditor');
+      editor.replaceChildren();
+      Object.entries(layoutZones).forEach(([zone, config]) => {
+        const section = document.createElement('section');
+        section.className = 'layout-zone';
+        const selected = controlLayout[zone];
+        const available = Object.keys(controlCatalog).filter(id => !selected.includes(id));
+        section.innerHTML = `<div class="layout-zone-title"><strong>${config.label}</strong><span>${selected.length} / ${config.limit}</span></div><div class="layout-cards" data-layout-zone="${zone}">${selected.map(id => { const control = controlCatalog[id]; return `<div class="layout-card" draggable="true" data-layout-control="${id}"><i class="drag-handle ti ti-grip-vertical" aria-hidden="true"></i><i class="ti ${control.icon}"></i><span class="layout-card-name">${control.label}</span><button data-move="up" aria-label="向前移动"><i class="ti ti-chevron-up"></i></button><button data-move="down" aria-label="向后移动"><i class="ti ti-chevron-down"></i></button>${control.pinned ? '<span></span>' : '<button class="remove-control" data-remove-control aria-label="移除"><i class="ti ti-minus"></i></button>'}</div>`; }).join('') || '<div class="layout-empty">暂无快捷控件</div>'}</div><div class="layout-library">${available.map(id => `<button data-add-control="${id}" data-zone="${zone}" ${selected.length >= config.limit ? 'disabled' : ''}><i class="ti ti-plus"></i>${controlCatalog[id].label}</button>`).join('')}</div>`;
+        editor.append(section);
+      });
+    }
+
+    function updateControlLayout() {
+      renderControlSlots();
+      renderControlLayoutEditor();
+    }
 
     function notify(message) {
       toast.textContent = message;
@@ -969,12 +1117,56 @@
       });
       document.querySelector('#orderSettingValue').textContent = mode.detail;
       document.querySelectorAll('[data-order]').forEach(button => button.classList.toggle('active', button.dataset.order === mode.id));
+      syncDynamicControlStates();
       if (announce) notify(`已切换为${mode.detail}`);
     }
 
     function cyclePlaybackMode() {
       const index = playbackModes.findIndex(item => item.id === playbackMode);
       setPlaybackMode(playbackModes[(index + 1) % playbackModes.length].id);
+    }
+
+    function setRegularSpeed(index, announce = true) {
+      regularSpeedIndex = (index + regularSpeeds.length) % regularSpeeds.length;
+      const rate = regularSpeeds[regularSpeedIndex];
+      video.playbackRate = rate;
+      document.querySelectorAll('[data-rate]').forEach(button => button.classList.toggle('active', Number(button.dataset.rate) === rate));
+      document.querySelectorAll('[data-rate]').forEach(button => {
+        if (Number(button.dataset.rate) === rate) button.closest('.setting').querySelector('.setting-value').textContent = `${rate.toFixed(2).replace(/0$/, '')}x`;
+      });
+      syncDynamicControlStates();
+      if (announce) notify(`播放速度：${rate.toFixed(2).replace(/0$/, '')}x`);
+    }
+
+    function cycleRegularSpeed() {
+      setRegularSpeed(regularSpeedIndex + 1);
+    }
+
+    function cycleRegularRatio() {
+      regularRatioIndex = (regularRatioIndex + 1) % regularRatios.length;
+      const ratio = regularRatios[regularRatioIndex];
+      video.style.objectFit = ratio.fit;
+      notify(`画面比例：${ratio.label}`);
+    }
+
+    function runSlotControl(id) {
+      const control = controlCatalog[id];
+      if (!control) return;
+      if (control.toast) { notify(control.toast); return; }
+      switch (control.action) {
+        case 'playlist': openDrawer('playlist'); break;
+        case 'media-info': openMediaInfo(); break;
+        case 'order': cyclePlaybackMode(); break;
+        case 'speed': cycleRegularSpeed(); break;
+        case 'screenshot-mode': openScreenshotMode(); break;
+        case 'ab-mode': openAbMode(); break;
+        case 'pip': togglePictureInPicture(); break;
+        case 'rotate': setOrientation(!device.classList.contains('portrait')); break;
+        case 'ratio': cycleRegularRatio(); break;
+        case 'settings': openDrawer('settings'); break;
+        case 'fullscreen': toggleFullscreen(); break;
+        default: break;
+      }
     }
 
     async function setViewMode(mode, announce = true) {
@@ -1343,6 +1535,10 @@
     document.querySelectorAll('[data-action="rotate"]').forEach(button => button.addEventListener('click', () => setOrientation(!device.classList.contains('portrait'))));
     document.querySelectorAll('[data-action="fullscreen"]').forEach(button => button.addEventListener('click', toggleFullscreen));
     document.querySelectorAll('[data-action="media-info"]').forEach(button => button.addEventListener('click', openMediaInfo));
+    document.querySelectorAll('[data-action="control-layout"]').forEach(button => button.addEventListener('click', () => {
+      openDrawer('layout');
+      renderControlLayoutEditor();
+    }));
     document.querySelectorAll('[data-action="screenshot-mode"]').forEach(button => button.addEventListener('click', openScreenshotMode));
     document.querySelectorAll('[data-action="ab-mode"]').forEach(button => button.addEventListener('click', openAbMode));
     document.querySelector('[data-action="screenshot-prev"]').addEventListener('click', () => stepVideoFrame(-1));
@@ -1400,6 +1596,71 @@
     document.querySelectorAll('[data-action="close"]').forEach(button => button.addEventListener('click', closeDrawers));
     document.querySelectorAll('.playlist-item').forEach(button => button.addEventListener('click', () => loadTrack(Number(button.dataset.index))));
     document.querySelectorAll('[data-toast]').forEach(button => button.addEventListener('click', () => notify(button.dataset.toast)));
+    frame.addEventListener('click', event => {
+      const button = event.target.closest('[data-control-id]');
+      if (!button) return;
+      event.stopPropagation();
+      runSlotControl(button.dataset.controlId);
+    });
+    document.querySelector('[data-action="reset-control-layout"]').addEventListener('click', () => {
+      controlLayout = Object.fromEntries(Object.entries(defaultControlLayout).map(([zone, controls]) => [zone, [...controls]]));
+      updateControlLayout();
+      notify('已恢复推荐控件布局');
+    });
+    document.querySelector('#controlLayoutEditor').addEventListener('click', event => {
+      const add = event.target.closest('[data-add-control]');
+      if (add) {
+        const zone = add.dataset.zone;
+        if (controlLayout[zone].length >= layoutZones[zone].limit) return;
+        controlLayout[zone].push(add.dataset.addControl);
+        updateControlLayout();
+        return;
+      }
+      const card = event.target.closest('.layout-card');
+      if (!card) return;
+      const zone = card.closest('[data-layout-zone]').dataset.layoutZone;
+      const id = card.dataset.layoutControl;
+      const index = controlLayout[zone].indexOf(id);
+      if (event.target.closest('[data-remove-control]')) {
+        controlLayout[zone].splice(index, 1);
+        updateControlLayout();
+        return;
+      }
+      const move = event.target.closest('[data-move]');
+      if (!move) return;
+      const targetIndex = move.dataset.move === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= controlLayout[zone].length) return;
+      [controlLayout[zone][index], controlLayout[zone][targetIndex]] = [controlLayout[zone][targetIndex], controlLayout[zone][index]];
+      updateControlLayout();
+    });
+    document.querySelector('#controlLayoutEditor').addEventListener('dragstart', event => {
+      const card = event.target.closest('.layout-card');
+      if (!card) return;
+      layoutDrag = { zone: card.closest('[data-layout-zone]').dataset.layoutZone, id: card.dataset.layoutControl };
+      card.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+    });
+    document.querySelector('#controlLayoutEditor').addEventListener('dragend', event => {
+      event.target.closest('.layout-card')?.classList.remove('dragging');
+      layoutDrag = null;
+    });
+    document.querySelector('#controlLayoutEditor').addEventListener('dragover', event => {
+      if (layoutDrag && event.target.closest(`[data-layout-zone="${layoutDrag.zone}"]`)) event.preventDefault();
+    });
+    document.querySelector('#controlLayoutEditor').addEventListener('drop', event => {
+      if (!layoutDrag) return;
+      const zoneElement = event.target.closest('[data-layout-zone]');
+      const targetCard = event.target.closest('.layout-card');
+      if (!zoneElement || zoneElement.dataset.layoutZone !== layoutDrag.zone || !targetCard) return;
+      event.preventDefault();
+      const controls = controlLayout[layoutDrag.zone];
+      const sourceIndex = controls.indexOf(layoutDrag.id);
+      const targetIndex = controls.indexOf(targetCard.dataset.layoutControl);
+      if (sourceIndex === targetIndex) return;
+      controls.splice(sourceIndex, 1);
+      controls.splice(targetIndex, 0, layoutDrag.id);
+      updateControlLayout();
+    });
     rangeInputs.forEach(input => input.addEventListener('input', () => {
       video.currentTime = clampToAbRange(Number(input.value));
       updateTimeline();
@@ -1432,7 +1693,12 @@
       button.classList.add('active');
       if (button.dataset.order) setPlaybackMode(button.dataset.order);
       else {
-        if (button.dataset.rate) video.playbackRate = Number(button.dataset.rate);
+        if (button.dataset.rate) {
+          const selectedIndex = regularSpeeds.indexOf(Number(button.dataset.rate));
+          if (selectedIndex >= 0) regularSpeedIndex = selectedIndex;
+          video.playbackRate = Number(button.dataset.rate);
+          syncDynamicControlStates();
+        }
         button.closest('.setting').querySelector('.setting-value').textContent = button.textContent;
         notify(`已选择 ${button.textContent}`);
       }
@@ -1473,16 +1739,25 @@
       if (event.key === 'ArrowDown') { event.preventDefault(); playNextShort(); }
       if (event.key === 'ArrowUp') { event.preventDefault(); playPreviousShort(); }
     });
-    video.addEventListener('enterpictureinpicture', () => document.querySelectorAll('[data-action="pip"]').forEach(button => button.setAttribute('aria-pressed', 'true')));
-    video.addEventListener('leavepictureinpicture', () => document.querySelectorAll('[data-action="pip"]').forEach(button => button.setAttribute('aria-pressed', 'false')));
+    video.addEventListener('enterpictureinpicture', () => {
+      document.querySelectorAll('[data-action="pip"]').forEach(button => button.setAttribute('aria-pressed', 'true'));
+      syncDynamicControlStates();
+    });
+    video.addEventListener('leavepictureinpicture', () => {
+      document.querySelectorAll('[data-action="pip"]').forEach(button => button.setAttribute('aria-pressed', 'false'));
+      syncDynamicControlStates();
+    });
     document.addEventListener('fullscreenchange', () => {
       const isFullscreen = Boolean(document.fullscreenElement);
       document.querySelectorAll('[data-action="fullscreen"]').forEach(button => {
         button.querySelector('i').className = isFullscreen ? 'ti ti-minimize' : 'ti ti-maximize';
         button.setAttribute('aria-label', isFullscreen ? '退出全屏' : '全屏');
       });
+      syncDynamicControlStates();
       if (!isFullscreen && screen.orientation?.unlock) screen.orientation.unlock();
     });
+    renderControlSlots();
+    renderControlLayoutEditor();
     setPlaybackMode('sequence', false);
     renderShortsBlacklist();
     renderShortsFavorites();

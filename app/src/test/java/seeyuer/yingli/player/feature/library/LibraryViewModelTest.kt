@@ -96,6 +96,38 @@ class LibraryViewModelTest {
         assertEquals(7, state.folderTreeVideoCount)
     }
 
+    @Test
+    fun `all videos mode does not query folders`() = runTest {
+        val repository = FakeLibraryRepository()
+        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository(), FakeTrashRepository())
+        val collectJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.state.collect {} }
+        runCurrent()
+        repository.folderQueries.clear()
+
+        viewModel.setBrowseMode(LibraryBrowseMode.ALL_VIDEOS)
+        runCurrent()
+
+        assertEquals(emptyList<LibraryQuery>(), repository.folderQueries)
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `whitespace keyword still queries folders as empty search`() = runTest {
+        val repository = FakeLibraryRepository()
+        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository(), FakeTrashRepository())
+        val collectJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.state.collect {} }
+        runCurrent()
+        repository.folderQueries.clear()
+
+        viewModel.setKeyword("   ")
+        advanceTimeBy(250)
+        runCurrent()
+
+        assertEquals(1, repository.folderQueries.size)
+        assertEquals("", repository.folderQueries.single().normalizedKeyword)
+        collectJob.cancel()
+    }
+
     private class FakeLibraryRepository(
         private val firstPage: LibraryPage = LibraryPage(emptyList(), null, 0),
         private val folderTreeCount: Int = 0,
@@ -103,6 +135,7 @@ class LibraryViewModelTest {
         val pageQueries = mutableListOf<LibraryQuery>()
         val countQueries = mutableListOf<LibraryQuery>()
         val folderTreeCountPaths = mutableListOf<String>()
+        val folderQueries = mutableListOf<LibraryQuery>()
 
         override fun observe(query: LibraryQuery): Flow<LibraryResult<LibraryPage>> {
             return flowOf(LibraryResult.Success(firstPage))
@@ -123,7 +156,10 @@ class LibraryViewModelTest {
             return flowOf(folderTreeCount)
         }
         override fun observeInvalidations(): Flow<Unit> = emptyFlow()
-        override suspend fun folders(query: LibraryQuery): List<LibraryFolder> = emptyList()
+        override suspend fun folders(query: LibraryQuery): List<LibraryFolder> {
+            folderQueries += query
+            return emptyList()
+        }
         override suspend fun findByIds(ids: Set<MediaItemId>): List<LibraryMedia> = emptyList()
     }
 

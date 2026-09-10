@@ -1,7 +1,5 @@
 package seeyuer.yingli.player.engine.media3
 
-import android.app.Activity
-import android.app.PictureInPictureParams
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
@@ -9,7 +7,6 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
-import android.util.Rational
 import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.TextureView
@@ -21,23 +18,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import seeyuer.yingli.player.core.common.AppClock
 import seeyuer.yingli.player.core.common.AppDispatchers
-import seeyuer.yingli.player.domain.playback.PictureInPictureGateway
 import seeyuer.yingli.player.domain.playback.ScreenshotFailure
 import seeyuer.yingli.player.domain.playback.ScreenshotGateway
 import seeyuer.yingli.player.domain.playback.ScreenshotResult
 import kotlin.coroutines.resume
-
-class ActivityPictureInPictureGateway(private val activity: Activity) : PictureInPictureGateway {
-    override fun isAvailable(): Boolean = activity.packageManager.hasSystemFeature("android.software.picture_in_picture")
-
-    override fun enter(): Boolean {
-        if (!isAvailable()) return false
-        val parameters = PictureInPictureParams.Builder()
-            .setAspectRatio(Rational(16, 9))
-            .build()
-        return activity.enterPictureInPictureMode(parameters)
-    }
-}
 
 @OptIn(UnstableApi::class)
 class Media3ScreenshotGateway(

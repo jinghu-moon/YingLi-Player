@@ -14,7 +14,7 @@
 
 **【接口与契约定义】**
 
-- 根命名空间：`seeyuer.yingli.player`；依赖方向固定为 `Compose -> ViewModel -> UseCase（按需）-> Repository -> DataSource`。
+- 根命名空间：`seeyuer.yingli.player`；当前依赖方向固定为 `app -> feature -> domain -> core` 与 `app -> data/engine -> domain/core`。播放页另通过 `PlaybackSessionClient -> PlaybackSessionRuntime -> PlaybackEngine` 连接会话，不直接访问实现层。
 - 基础可替换契约：`AppDispatchers`、`AppClock`、`IdGenerator`、`AppLogger`、`SensitiveValueRedactor`。
 - 统一失败模型：`AppFailure` 为封闭类型，至少区分权限、存储、数据库、媒体格式、解码、任务取消和未知错误；不得以用户文案作为领域错误类型。
 - 依赖组装：`AppContainer` 仅暴露稳定接口；测试使用手写 Fake/Stub，禁止业务测试直接构造 Android Framework 对象。
@@ -33,7 +33,7 @@
   * **依赖**: 任务 1.1
   * **TDD 循环**: Red：写架构测试阻止 `core` 依赖 `feature`、Repository 依赖 Compose；Green：创建最小包结构；Refactor：删除无用占位抽象。
   * **测试预期**:
-    * 正常路径: `core/model`、`core/database`、`core/datastore`、`core/media`、`core/designsystem`、`domain`、`feature/*` 依赖方向合法。
+    * 正常路径: `core/*`、`domain`、`data/*`、`engine/*`、`feature/*`、`app/*` 依赖方向合法；`feature.player` 不直接依赖 `data`、`engine` 或 Media3。
     * 异常路径: UI 直接访问 DAO、文件 API 或 ExoPlayer 时架构测试失败；循环依赖被检测。
   * **DoD**: 架构规则自动化；没有为未来功能创建空 Gradle 模块；包职责写入工程结构文档；测试、Lint 全通过。
 * **任务 1.3: 建立 JVM 与协程测试夹具** `[并行]`

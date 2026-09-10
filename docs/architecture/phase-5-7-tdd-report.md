@@ -1,5 +1,7 @@
 # Phase 5-7 TDD 报告
 
+> 历史证据：本报告记录 Phase 5-7 当时的实现和测试结果；当前播放 UI/UX 与播放架构分别以 [`../16-player-ui-ux-interaction-implementation-spec.md`](../16-player-ui-ux-interaction-implementation-spec.md) 和 [`../17-playback-architecture-refactor-spec.md`](../17-playback-architecture-refactor-spec.md) 为准。
+
 ## 交付范围
 
 ### Phase 5：媒体库与安全文件操作
@@ -50,4 +52,3 @@
 - 多音轨/HDR/外挂字幕样本、旋转重组和主动/自动 PiP。
 - 来电音频焦点、蓝牙/有线耳机断开、通知权限拒绝。
 - 真实视频帧截图、磁盘空间不足及只读输出目录。
-

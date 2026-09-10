@@ -31,7 +31,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".app.YingLiPlaybackService"
+            android:name=".app.playback.YingLiPlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>

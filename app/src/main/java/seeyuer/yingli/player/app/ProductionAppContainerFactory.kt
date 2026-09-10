@@ -2,8 +2,6 @@ package seeyuer.yingli.player.app
 
 import android.content.Context
 import seeyuer.yingli.player.data.preferences.DataStoreThemeRepository
-import seeyuer.yingli.player.core.common.AppContainer
-import seeyuer.yingli.player.core.common.DefaultAppContainer
 import seeyuer.yingli.player.core.common.DefaultAppDispatchers
 import seeyuer.yingli.player.core.common.DefaultSensitiveValueRedactor
 import seeyuer.yingli.player.core.common.CompositeAppLogSink

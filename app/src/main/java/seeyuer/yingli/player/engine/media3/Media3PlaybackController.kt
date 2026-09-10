@@ -46,7 +46,6 @@ import seeyuer.yingli.player.domain.playback.PlaybackSourceContext
 import seeyuer.yingli.player.domain.playback.PlaybackSourceRepository
 import seeyuer.yingli.player.domain.playback.PlaybackState
 import seeyuer.yingli.player.domain.playback.PlaybackStateReducer
-import seeyuer.yingli.player.domain.playback.PlaybackTimeline
 import seeyuer.yingli.player.domain.playback.PlaybackTransition
 import seeyuer.yingli.player.domain.security.SecurePlaybackController
 import seeyuer.yingli.player.domain.security.VaultItemId
@@ -83,7 +82,7 @@ class Media3PlaybackController(
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            val mapped = DefaultPlaybackErrorMapper.map(error.toFailureSignal())
+            val mapped = error.toPlaybackError()
             mutableState.value = PlaybackState.Failed(
                 mutableState.value.request,
                 mutableState.value.timeline,
@@ -348,80 +347,26 @@ class Media3PlaybackController(
 
     private fun updateFromPlayer(player: Player) {
         val request = mutableState.value.request ?: requestFrom(player.currentMediaItem, player.currentPosition) ?: return
-        val timeline = PlaybackTimeline(
-            positionMillis = player.currentPosition.coerceAtLeast(0),
-            durationMillis = player.duration.takeUnless { it == C.TIME_UNSET || it < 0 },
-            bufferedPositionMillis = player.bufferedPosition.coerceAtLeast(0),
-        )
-        mutableState.value = when (player.playbackState) {
-            Player.STATE_IDLE -> mutableState.value
-            Player.STATE_BUFFERING -> PlaybackState.Preparing(request, timeline)
-            Player.STATE_READY -> when {
-                player.isPlaying -> PlaybackState.Playing(request, timeline)
-                mutableState.value is PlaybackState.Paused -> PlaybackState.Paused(request, timeline)
-                else -> PlaybackState.Ready(request, timeline)
-            }
-            Player.STATE_ENDED -> PlaybackState.Ended(request, timeline)
-            else -> mutableState.value
-        }
+        mutableState.value = mutableState.value.withPlayerState(player, request)
     }
 
     private var videoOutputEnabled = true
 
     private fun applyVideoOutputSelection(player: Player) {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoOutputEnabled)
+            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, !videoOutputEnabled)
             .build()
     }
 
     private fun updateTracks(player: Player) {
-        fun choices(type: Int, prefix: String): List<TrackChoice> = buildList {
-            player.currentTracks.groups.filter { it.type == type }.forEachIndexed { groupIndex, group ->
-                repeat(group.length) { trackIndex ->
-                    val format = group.getTrackFormat(trackIndex)
-                    add(TrackChoice(
-                        id = format.id ?: "$prefix-$groupIndex-$trackIndex",
-                        label = format.label ?: format.language ?: "$prefix ${size + 1}",
-                        language = format.language,
-                        selected = group.isTrackSelected(trackIndex),
-                    ))
-                }
-            }
-        }
-        mutableAudioTracks.value = choices(C.TRACK_TYPE_AUDIO, "Audio")
-        mutableSubtitleTracks.value = choices(C.TRACK_TYPE_TEXT, "Subtitle")
+        mutableAudioTracks.value = player.trackChoices(androidx.media3.common.C.TRACK_TYPE_AUDIO, "Audio")
+        mutableSubtitleTracks.value = player.trackChoices(androidx.media3.common.C.TRACK_TYPE_TEXT, "Subtitle")
         mutableSpeed.value = runCatching { PlaybackSpeed.of(player.playbackParameters.speed) }
             .getOrDefault(PlaybackSpeed.Normal)
     }
 
-    private fun requestFrom(mediaItem: MediaItem?, positionMillis: Long): PlaybackRequest? {
-        mediaItem ?: return null
-        val extras = mediaItem.mediaMetadata.extras ?: return null
-        val locationId = extras.getString(PlaybackMediaMetadata.LOCATION_ID) ?: return null
-        val sourceContext = extras.getString(PlaybackMediaMetadata.SOURCE_CONTEXT)
-            ?.let { value -> PlaybackSourceContext.entries.firstOrNull { it.name == value } }
-            ?: PlaybackSourceContext.HOME
-        return runCatching {
-            PlaybackRequest(
-                MediaItemId(mediaItem.mediaId),
-                MediaLocationId(locationId),
-                positionMillis.coerceAtLeast(0),
-                sourceContext,
-                extras.getBoolean(PlaybackMediaMetadata.INCOGNITO, false),
-            )
-        }.getOrNull()
-    }
-
-    private fun PlaybackException.toFailureSignal(): PlaybackFailureSignal = when (errorCode) {
-        PlaybackException.ERROR_CODE_IO_NO_PERMISSION -> PlaybackFailureSignal.ACCESS_DENIED
-        PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> PlaybackFailureSignal.NOT_FOUND
-        PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> PlaybackFailureSignal.CONTAINER_UNSUPPORTED
-        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
-        -> PlaybackFailureSignal.DECODER_UNAVAILABLE
-        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED -> PlaybackFailureSignal.MALFORMED_MEDIA
-        else -> PlaybackFailureSignal.OTHER
-    }
+    private fun requestFrom(mediaItem: MediaItem?, positionMillis: Long): PlaybackRequest? =
+        mediaItem?.toPlaybackRequest(positionMillis)
 
     private companion object {
         const val VAULT_SCHEME = "vault"

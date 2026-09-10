@@ -2,9 +2,11 @@
 
 > 文档性质：当前实现基线、长期架构原则与条件式演进规划
 >
-> 更新时间：2026-09-06
+> 更新时间：2026-09-11
 >
-> 适用范围：本地视频索引、媒体库、缩略图、Media3 播放、Compose UI 与后续媒体管理能力
+> 适用范围：本地视频索引、媒体库、缩略图、播放会话、Compose UI 与后续媒体管理能力
+
+> 播放专项的会话、后端、迁移阶段和前端接口以 [`17-playback-architecture-refactor-spec.md`](17-playback-architecture-refactor-spec.md) 为准；本文件只保留全局依赖方向和跨领域边界。
 
 ## 1. 文档来源与使用方式
 
@@ -50,19 +52,19 @@ YingLi-Player 是本地优先的视频播放器和媒体管理中心：
 4. UI 现代、可维护，Compose 不被平台实现细节污染。
 5. 对特殊格式提供可诊断的后备路径，而不是预先引入过重的万能内核。
 
-Media3/ExoPlayer 是项目当前和长期的播放主干；mpv-android、VLC、Next Player、Only Player 等仅作为能力和交互参考，不作为第二播放内核直接并入项目。
+Media3/ExoPlayer 是当前默认播放后端，但不是不可替换的长期架构边界。未来只有在真实媒体样本证明必要、且完成独立 Spike 与门禁后，才允许以 `PlaybackEngine` 实现的形式接入 libmpv。VLC、Next Player、Only Player 等仍只作为能力和交互参考，不直接并入项目。FFmpeg 属于独立的媒体处理后端，不作为完整播放器塞入播放链路。
 
 ## 3. 依赖方向与组合根
 
 项目当前保持单 `app` Gradle 模块，使用包边界和架构测试约束依赖方向：
 
 ```text
-feature (Compose UI / ViewModel)
+app (Android 入口、系统生命周期与组合根)
+        -> feature (Compose UI / ViewModel)
         -> domain (业务契约、状态、策略)
-        -> core (模型、数据库、媒体、设计系统、基础设施契约)
-
-app (Android/Media3/Room/DataStore 实现与组合根)
-        -> feature / domain / core
+        -> core (通用模型、设计系统和基础设施契约)
+app     -> data / engine (Room、DataStore、Android 与媒体实现)
+data / engine -> domain / core
 ```
 
 禁止反向依赖：
@@ -73,7 +75,7 @@ app (Android/Media3/Room/DataStore 实现与组合根)
 - feature 不直接访问 Room DAO、`ContentResolver`、`DocumentFile` 或 `ExoPlayer`。
 - UI 不直接调用播放器实例，必须通过领域控制器和 ViewModel。
 
-`YingLiApplication` 与 `ProductionMediaContainerFactory` 是当前组合根，负责构造数据库、Repository、扫描器、缩略图协调器、播放控制器、安全和处理能力。组合根只负责装配；业务规则留在 domain/core，页面行为留在 feature。
+`YingLiApplication`、`ProductionAppContainerFactory` 与 `ProductionMediaContainerFactory` 是当前组合根，负责构造数据库、Repository、扫描器、缩略图协调器、播放控制器、安全和处理能力。组合根只负责装配；业务规则留在 domain/core，页面行为留在 feature。
 
 ### 3.1 暂不拆分 Gradle 模块
 
@@ -89,9 +91,11 @@ v2 文档建议拆成 `player-contract`、`player-platform`、`player-render-api
 
 ```text
 app/src/main/java/seeyuer/yingli/player/
-├── app/       Android 入口、组合根、Room/Media3/系统实现
-├── core/      数据库、DataStore、媒体来源、缩略图、基础设施、设计系统
+├── app/       Android 入口、组合根、Service 与系统生命周期边界
+├── core/      通用模型、基础设施契约、日志、安全原语与设计系统
+├── data/      Room、DataStore、媒体来源及 Android 数据实现
 ├── domain/    媒体、库、播放、整理、处理、安全和设置契约/策略
+├── engine/    Media3 播放与缩略图等可替换媒体实现
 └── feature/   Compose 页面与 ViewModel
 ```
 
@@ -99,15 +103,16 @@ app/src/main/java/seeyuer/yingli/player/
 
 | 区域 | 当前职责 |
 | --- | --- |
-| `app` | `MainActivity`、Application、MediaContainer、MediaSessionService、平台 Gateway |
-| `core.database` | Room Entity、DAO、数据库迁移、数据库级查询 |
-| `core.media` | MediaStore/SAF 发现、权限、缩略图接口、Provider 与 FrameExtractor 实现 |
+| `app` | `MainActivity`、Application、组合根、系统 Service 与 Activity 级 Gateway |
+| `data.room` | Room Entity、DAO、数据库迁移、数据库级查询及 Repository 实现 |
+| `data.sources` | MediaStore/SAF 发现、权限和 Android 元数据读取 |
 | `core.model.media` | 媒体 ID、位置、候选、扫描、缩略图请求和缓存 key |
 | `domain.media` | 扫描协调、身份解析、权限状态机 |
 | `domain.library` | 查询、排序、过滤、Keyset cursor、分页契约 |
 | `feature.library` | PagingSource、Pager、LazyPagingItems、列表/网格和 loadState |
 | `domain.playback` | 播放请求、状态、错误、轨道、倍速、播放队列和持久化契约 |
-| `app.playback` | MediaController、MediaSessionService、PlayerView、进度写入和系统播放服务 |
+| `engine.media3` | 当前 Media3 控制器、状态映射、视频 Surface 和截图实现 |
+| `app.playback` | `YingLiPlaybackService` 与 Activity 级画中画 Gateway；后续承载会话 Runtime |
 | `feature.player` | 播放页面、控制层、手势入口、错误和设置面板 |
 | `feature.home` | 有限投影首页、统计、继续观看、最近添加、合集和维护提醒 |
 
@@ -232,9 +237,9 @@ ThumbnailRequest
 4. 使用 `Presentation` 在提取阶段降采样；
 5. 以统一 PNG 文件写入受限磁盘缓存。
 
-`FrameExtractor` 标记为 `@UnstableApi`，并隔离在 `core.media` 基础设施实现内。Extractor 实例只由单一 application thread 访问，不泄漏到 domain 或 UI。
+`FrameExtractor` 标记为 `@UnstableApi`，并隔离在 `engine.thumbnail.frame` 基础设施实现内。Extractor 实例只由单一 application thread 访问，不泄漏到 domain 或 UI。
 
-当前项目仍使用 Coil 读取已生成的本地缩略图并承担 Compose 图片显示；这不等于把 Coil 作为领域契约。Glide 只能在 benchmark 阶段作为候选实现，评估完成后删除落选调用链，不长期保留双轨。
+当前项目仍使用 Coil 读取已生成的本地缩略图并承担 Compose 图片显示；这不等于把 Coil 作为领域契约。Glide 只能在 benchmark 阶段作为候选实现，评估完成后删除落选调用链，不长期保留双轨。Media3 `FrameExtractor` 实现位于 `engine.thumbnail.frame`，不属于 `core.media`。
 
 ### 7.3 调度与内存
 
@@ -248,14 +253,15 @@ ThumbnailRequest
 
 ```text
 PlayerScreen / PlayerViewModel
-        -> PlaybackController
-        -> MediaController
-        -> YingLiPlaybackService
-        -> ExoPlayer / MediaSession
-        -> PlayerView / Surface
+        -> PlaybackSessionClient
+        -> PlaybackSessionRuntime (由 YingLiPlaybackService 持有)
+        -> PlaybackEngine
+             +--> Media3PlaybackEngine (当前默认实现)
+             +--> MpvPlaybackEngine (未来可选实现)
+        -> MediaSession / PlayerView / Surface
 ```
 
-播放服务拥有 ExoPlayer 和 MediaSession；Activity/Compose 只连接 Controller 和 Surface。Activity 销毁不应直接释放播放引擎，播放服务按 MediaSession 生命周期释放。
+播放服务拥有播放会话、活动后端和 MediaSession；当前活动后端是 Media3。Activity/Compose 只连接 `PlaybackSessionClient` 和 Surface lease，不直接依赖 ExoPlayer、MediaController 或未来的 libmpv。Activity 销毁只回收页面 Surface，播放服务按会话与 MediaSession 生命周期释放后端。
 
 ### 8.2 播放请求
 
@@ -285,18 +291,16 @@ PlayerScreen / PlayerViewModel
 
 ### 9.2 长期原则
 
-目标策略为条件式回退：
+目标策略为会话层统一编排、后端能力条件选择：
 
 ```text
-视频：MediaCodec 硬解
-        -> 已验证的 Media3 扩展
-        -> 有证据且合规的软解实现
-
-音频：MediaCodec
-        -> Media3 FFmpeg 音频扩展（如确有需要）
+媒体探测 + PlaybackCapabilities
+        -> BackendSelectionPolicy
+        -> Media3PlaybackEngine (默认)
+        -> MpvPlaybackEngine (仅在门禁满足时可选)
 ```
 
-视频和音频必须独立选择，允许“视频硬解 + 音频软解”，不能使用一个全局 DecoderBackend 覆盖两个轨道。
+后端内部可以分别选择视频和音频解码路径，允许“视频硬解 + 音频软解”；这一选择不得泄漏为 UI 或 domain 中的具体 decoder 类型。一次播放会话同一时刻只激活一个完整后端，不能由 UI 拼接两个播放器实例。
 
 ### 9.3 FFmpeg 引入条件
 
@@ -308,7 +312,7 @@ PlayerScreen / PlayerViewModel
 - 明确 FFmpeg 编译裁剪和 GPL/LGPL 合规方案；
 - 通过播放启动、持续播放、异常回退和 native 内存测试。
 
-FFmpeg 不得阻塞冷启动，不得在没有失败证据时成为默认路径，也不得为了“格式全”直接替换 Media3。
+FFmpeg 不得阻塞冷启动，不得在没有失败证据时成为默认播放路径，也不得为了“格式全”直接替换 Media3。需要转码、Remux、精确切片、字幕烧录或媒体探测时，应通过独立 `ProcessingEngine` 进入处理域；不要从播放页或 `PlayerViewModel` 直接调用 FFmpeg。
 
 ## 10. Android 系统服务
 
@@ -376,9 +380,10 @@ UI 设计继续遵守现有设计事实源：默认浅色模式、中性结构�
 只有真实失败样本达到阈值后增加：
 
 - 解码能力矩阵；
-- 解码失败注册和黑名单；
-- 已验证的扩展 renderer；
-- 必要时的 FFmpeg 音频或视频回退。
+- 后端能力与失败分类；
+- 独立 libmpv Spike；
+- Spike 和产品门禁通过后，将 libmpv 作为可选 `PlaybackEngine`；
+- 对转码、Remux、精确切片、字幕烧录等处理需求，独立评估 FFmpeg `ProcessingEngine`。
 
 ### M4：物理模块拆分
 
@@ -428,14 +433,24 @@ YingLi-Player 的稳定主线是：
 ```text
 Compose UI
     -> ViewModel / Domain Contracts
-    -> Room / Media Discovery / Playback Controller
-    -> MediaStore + SAF / Media3 ExoPlayer / Thumbnail Sources
+    -> PlaybackSessionClient
+    -> app 组合根装配的 data / engine implementations
+data / engine
+    -> Room / MediaStore + SAF / Thumbnail Sources
+
+Player UI
+    -> PlaybackSessionClient
+    -> PlaybackSessionRuntime
+    -> PlaybackEngine
+         +--> Media3 (当前默认)
+         +--> libmpv (未来可选)
 ```
 
 长期保持以下边界：
 
-- UI 不直接操作 Media3、Room、ContentResolver 或 FFmpeg；
-- Media3 负责播放主干，FFmpeg 只在证据充分时作为后备；
+- UI 不直接操作 Media3、libmpv、Room、ContentResolver 或 FFmpeg；
+- 播放会话不依赖具体后端；Media3 是当前默认实现，libmpv 只按证据和门禁接入；
+- FFmpeg 只作为独立处理后端评估，不承担完整播放会话；
 - 媒体索引、数据库分页、缩略图和播放运行时分别演进；
 - 所有高风险异步任务可取消，并丢弃过期结果；
 - 所有架构升级以真实测试和性能证据为准；

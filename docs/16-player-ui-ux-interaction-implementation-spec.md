@@ -2,8 +2,8 @@
 
 > 版本：Draft 02（实现导向）
 > 依据：`prototypes/views/04-player-demo.html`、`prototypes/views/04-player-Demo深度分析提示词.md`、`prototypes/views/影里播放页Demo详解文档.md`、`prototypes/design/*`、`prototypes/layout-typography-system.html`，以及当前 Android 源码。
-> 目标：Android 31+，Kotlin + Jetpack Compose + Media3。
-> 文档性质：开发实施规范。Demo 是交互和视觉事实源；Android 代码是能力和架构事实源。两者不一致时，按本文“目标实现”和“禁止照搬项”处理。
+> 目标：Android 31+，Kotlin + Jetpack Compose；Media3 是当前默认播放后端。
+> 文档性质：开发实施规范。Demo 是交互和视觉事实源；播放后端与会话边界以 [`17-playback-architecture-refactor-spec.md`](17-playback-architecture-refactor-spec.md) 为准。两者不一致时，按本文“目标实现”和“禁止照搬项”处理。
 
 ## 1. 结论先行
 
@@ -11,7 +11,7 @@
 
 横屏和竖屏是同一个常规 `PlayerRoute` 的两种响应式布局，必须共享播放状态、队列、Media3 会话、速度、比例、轨道、截图、AB 循环和播放器设置。它们不是两个播放器，也不是两个导航目的地。
 
-YLShorts 是特殊的沉浸式短视频浏览产品，计划作为与首页、视频页同级的一级页面。它不能作为常规播放器的第三个 orientation 值，不能复用常规播放器的底栏、自动隐藏策略或控件布局配置。可以复用 Media3 播放引擎、截图网关、PiP 网关和视频信息读取能力，但必须有独立的 `ShortsRoute`、`ShortsViewModel`、`ShortsUiState` 和手势状态机。
+YLShorts 是特殊的沉浸式短视频浏览产品，计划作为与首页、视频页同级的一级页面。它不能作为常规播放器的第三个 orientation 值，不能复用常规播放器的底栏、自动隐藏策略或控件布局配置。它通过 `PlaybackSessionClient` 复用底层播放会话和能力，不直接复用或访问 Media3、截图实现、PiP 实现；必须有独立的 `ShortsRoute`、`ShortsViewModel`、`ShortsUiState` 和手势状态机。
 
 ### 1.2 当前代码事实
 
@@ -19,10 +19,10 @@ YLShorts 是特殊的沉浸式短视频浏览产品，计划作为与首页、�
 |---|---|---|
 | `PlayerScreen` 已是状态驱动入口，消费 `PlayerUiState` 和命令回调 | [PlayerScreen.kt:49](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/feature/player/PlayerScreen.kt:49) | 保留无状态 Composable 方向，但要拆分覆盖层、面板和手势层 |
 | `PlayerUiState` 已包含播放、连接、标题、位置、轨道、速度、比例、Overlay、偏好、截图结果 | [PlayerViewModel.kt:50](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/feature/player/PlayerViewModel.kt:50) | 新状态应继续进入统一 UI state，不在 Composable 内复制事实状态 |
-| 播放器所有者是 Service，Activity/Compose 不创建 Player | `docs/architecture/phase-4-playback-contract.md` | 保持 `Media3PlaybackController` 作为唯一命令边界 |
+| 播放器所有者是 Service，Activity/Compose 不创建 Player | `docs/architecture/phase-4-playback-contract.md` | 当前通过 Controller 连接；目标由 `PlaybackSessionClient` 作为页面命令边界 |
 | Controller 已支持播放、暂停、Seek、速度、音轨、字幕、比例、重试 | [Media3PlaybackController.kt:54](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/engine/media3/Media3PlaybackController.kt:54) | UI 必须根据 `PlaybackCommandResult` 处理拒绝，不允许只改视觉 |
-| 截图已使用 Surface/Texture + PixelCopy，并写入 MediaStore | [AndroidPlaybackSystemGateways.kt:43](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/engine/media3/AndroidPlaybackSystemGateways.kt:43) | UI 截图预览是临时状态，不能把截图失败归因于“未播放” |
-| PiP 已有 Activity gateway；自动 PiP 由用户偏好控制 | [AndroidPlaybackSystemGateways.kt:30](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/engine/media3/AndroidPlaybackSystemGateways.kt:30)、[MainActivity.kt:181](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/app/MainActivity.kt:181) | 正式实现必须尊重设备能力和安全内容限制 |
+| 截图已使用 Surface/Texture + PixelCopy，并写入 MediaStore | [Media3ScreenshotGateway.kt:23](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/engine/media3/Media3ScreenshotGateway.kt:23) | UI 截图预览是临时状态，不能把截图失败归因于“未播放” |
+| PiP 已有 Activity gateway；自动 PiP 由用户偏好控制 | [ActivityPictureInPictureGateway.kt:8](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/app/playback/ActivityPictureInPictureGateway.kt:8)、[MainActivity.kt:181](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/app/MainActivity.kt:181) | 正式实现必须尊重设备能力和安全内容限制 |
 | 常规队列当前在 `MediaContainer` 使用内存仓储，且 `PlayerViewModel` 没有队列命令 | [MediaContainer.kt:316](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/app/MediaContainer.kt:316) | 播放顺序和上一项/下一项需要补充真实队列用例，不得把 Demo 数组复制到 App |
 | Demo 的音轨、字幕、解码器、后台播放、睡眠定时部分含 Toast 或视觉占位 | [04-player-demo.html:524](/D:/100_Projects/110_Daily/YingLi-Player/prototypes/views/04-player-demo.html:524) | 占位能力必须明确禁用、转为真实实现或删除，不得伪完成 |
 
@@ -486,9 +486,20 @@ domain/playback/
 ├── AbLoop.kt
 ├── ScreenshotContracts.kt
 └── PlaybackStateReducer.kt
+
+app/playback/
+├── YingLiPlaybackService.kt
+├── PlaybackSessionRuntime.kt
+└── ActivityPictureInPictureGateway.kt
+
+engine/media3/
+├── Media3PlaybackEngine.kt
+├── Media3PlaybackStateMapper.kt
+├── Media3TrackMapper.kt
+└── Media3VideoSurface.kt
 ```
 
-`PlayerScreen` 只编排组件和回调；ViewModel 负责业务状态、命令结果和计时；Media3 Controller 负责播放器事实；Gateway 负责 PiP、截图、方向和系统分享；Repository 负责队列、偏好、收藏/黑名单和进度持久化。Composable 不导入 Room、文件 API 或 ExoPlayer。
+`PlayerScreen` 只编排组件和回调；ViewModel 把 `PlaybackSessionClient` 投影为页面状态，负责页面 Overlay、面板互斥和一次性反馈；`PlaybackSessionRuntime` 负责长期会话；Media3 Engine 负责播放器事实；Activity Gateway 负责 PiP、方向和窗口状态；Repository 负责队列、偏好、收藏/黑名单和进度持久化。Composable 不导入 Room、文件 API、Media3 或具体 Engine。
 
 ### 11.2 State 与事件
 
@@ -518,7 +529,7 @@ sealed interface PlayerEvent {
 
 1. 将 `PlayerScreen.kt` 中 `settingsOpen` 拆为 `PlayerPanelState`，面板互斥由 reducer 管理。
 2. 将 `PlayerUiState.screenshotResult` 改为可消费的一次性事件或包含预览状态，避免截图成功后永久显示文本。
-3. 给 `PlayerViewModel` 注入 `PlaybackQueueRepository` 和队列导航用例，删除只有当前项播放能力的隐含假设。
+3. 给 Service 侧 `PlaybackSessionRuntime` 注入 `PlaybackQueueRepository` 和队列导航策略；`PlayerViewModel` 只通过 `PlaybackSessionClient` 发出上一项/下一项命令。
 4. 让 `MainActivity` 的方向状态从窗口回调同步回 UI，不要只用 `landscapeRequested` 翻转。
 5. 把音轨/字幕设置从当前 `AdvancedSettingsSheet` 细化为可测试列表组件；无轨道时显示空状态。
 6. 增加 `AbLoopLimiter` 和纯 Kotlin reducer；AB 不需要持久化。
@@ -614,8 +625,8 @@ git diff --check -- "docs/16-player-ui-ux-interaction-implementation-spec.md"
 
 ## 15. 实施顺序
 
-1. 以当前测试建立基线，补齐 `PlaybackOrder`、队列导航、AB reducer 和 Buffering 语义。
-2. 拆分 `PlayerScreen`，先实现横屏目标布局和真实状态映射。
+1. 以当前测试建立基线，先执行 `17` 的领域契约、Runtime 和 Media3 Engine 分层，补齐 `PlaybackOrder`、队列导航、AB reducer 和 Buffering 语义。
+2. 在前端只依赖 `PlaybackSessionClient` 后拆分 `PlayerScreen`，先实现横屏目标布局和真实状态映射。
 3. 复用同一 `PlayerUiState` 实现竖屏布局变体，接入 Insets、方向和全屏。
 4. 接入播放列表、视频信息、速度、比例、音轨、字幕、PiP 和锁定。
 5. 实现截图状态机和 MediaStore 结果预览，验证暂停状态截图。
@@ -630,7 +641,7 @@ git diff --check -- "docs/16-player-ui-ux-interaction-implementation-spec.md"
 - 不把浏览器 Fullscreen API、HTML `video.play()` 当作 Android 实现。
 - 不用 Toast 代替音轨、字幕、解码器、后台播放、睡眠定时、删除等真实能力。
 - 不把 YLShorts 塞进常规播放器 orientation/mode 分支。
-- 不在 UI 创建 ExoPlayer，不绕过 `PlaybackController`。
+- 不在 UI 创建 ExoPlayer，不绕过 `PlaybackSessionClient` 访问 Controller、MediaController 或 Engine。
 - 不使用内存 `Set` 保存 Shorts 收藏/黑名单，必须接入持久化仓储。
 - 不因兼容旧实现保留重复状态、过渡 Adapter 或无效接口；新设计验证通过后删除旧实现。
 

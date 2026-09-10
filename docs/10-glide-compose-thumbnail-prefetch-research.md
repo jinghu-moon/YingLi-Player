@@ -411,7 +411,7 @@ mediaItemId:locationId:width:height
 - `refer/glide-docs-cn-master/_posts/2017-05-10-recyclerview.md`
 - `app/src/main/java/seeyuer/yingli/player/feature/library/LibraryScreen.kt`
 - `app/src/main/java/seeyuer/yingli/player/app/library/RoomLibraryRepositories.kt`
-- `app/src/main/java/seeyuer/yingli/player/core/media/PriorityThumbnailRepository.kt`
+- `app/src/main/java/seeyuer/yingli/player/engine/thumbnail/PriorityThumbnailRepository.kt`
 - `app/src/main/java/seeyuer/yingli/player/core/model/media/MediaModels.kt`
 
 ### 官方网页

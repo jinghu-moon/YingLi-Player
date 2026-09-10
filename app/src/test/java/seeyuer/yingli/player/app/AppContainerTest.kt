@@ -1,4 +1,4 @@
-package seeyuer.yingli.player.core.common
+package seeyuer.yingli.player.app
 
 import seeyuer.yingli.player.testing.AppContainerFixtureBuilder
 import seeyuer.yingli.player.testing.FakeAppClock

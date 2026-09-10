@@ -1,7 +1,12 @@
-package seeyuer.yingli.player.core.common
+package seeyuer.yingli.player.app
 
 import seeyuer.yingli.player.data.preferences.ThemeRepository
 import seeyuer.yingli.player.core.model.AppFailureMapper
+import seeyuer.yingli.player.core.common.AppClock
+import seeyuer.yingli.player.core.common.AppDispatchers
+import seeyuer.yingli.player.core.common.AppLogger
+import seeyuer.yingli.player.core.common.DiagnosticLogStore
+import seeyuer.yingli.player.core.common.IdGenerator
 
 interface AppContainer {
     val dispatchers: AppDispatchers

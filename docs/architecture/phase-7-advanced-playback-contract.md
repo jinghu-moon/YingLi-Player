@@ -1,5 +1,7 @@
 # Phase 7 高级播放与系统集成契约
 
+> 历史状态：本文件记录 Phase 7 当时的交付契约。当前 UI/UX 以 [`../16-player-ui-ux-interaction-implementation-spec.md`](../16-player-ui-ux-interaction-implementation-spec.md) 为准，播放会话和后端边界以 [`../17-playback-architecture-refactor-spec.md`](../17-playback-architecture-refactor-spec.md) 为准。
+
 ## 控制布局
 
 ```text

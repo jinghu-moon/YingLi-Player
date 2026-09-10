@@ -541,13 +541,14 @@ M6 之后用 Macrobenchmark 覆盖启动、进入视频页、滚动、打开详�
 
 ```text
 app/
+  app/                         # Android 入口、组合根和系统生命周期
   core/model
-  core/database
-  core/datastore
-  core/media
-  core/designsystem
   core/common
-  domain/
+  core/security
+  core/designsystem
+  data/                        # Room、DataStore、MediaStore/SAF 和文件实现
+  domain/                      # 领域契约、状态和策略
+  engine/                      # Media3 播放/缩略图实现
   feature/home
   feature/library
   feature/organize
@@ -558,9 +559,14 @@ app/
 依赖方向固定为：
 
 ```text
-Compose UI -> ViewModel -> UseCase（仅复杂业务） -> Repository -> 数据源
-播放 UI -> MediaController -> MediaSessionService -> ExoPlayer
+app -> feature -> domain -> core
+app -> data / engine -> domain / core
+播放 UI -> PlaybackSessionClient -> PlaybackSessionRuntime
+         -> PlaybackEngine -> Media3（当前默认）
+                              -> libmpv（未来可选，需通过 17 号门禁）
 ```
+
+播放会话、后端选择、Surface lease、libmpv/FFmpeg 的阶段门禁不在本路线图重复定义，统一以 [`17-playback-architecture-refactor-spec.md`](17-playback-architecture-refactor-spec.md) 为准。
 
 只有当编译时间、依赖作用域或测试隔离出现真实问题时，才把稳定边界提取为 Gradle module。
 

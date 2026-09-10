@@ -2,7 +2,7 @@ package seeyuer.yingli.player.app
 
 import android.app.Application
 import android.content.ComponentName
-import seeyuer.yingli.player.core.common.AppContainer
+import seeyuer.yingli.player.app.playback.YingLiPlaybackService
 import seeyuer.yingli.player.engine.media3.Media3PlaybackController
 
 class YingLiApplication : Application() {

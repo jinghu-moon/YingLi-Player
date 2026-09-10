@@ -1,5 +1,7 @@
 # Phase 4 TDD 报告
 
+> 历史证据：用例数和架构描述只代表 Phase 4 完成时的结果，不代表当前测试总数或目标播放架构。当前重构规范见 [`../17-playback-architecture-refactor-spec.md`](../17-playback-architecture-refactor-spec.md)。
+
 ## 交付范围
 
 - 完成纯 Kotlin 播放请求、状态、命令、状态仓库和进度仓库契约。

@@ -12,7 +12,7 @@ class ArchitectureRulesTest {
         .toList()
 
     @Test
-    fun `dependencies only point from app to feature to domain to core`() {
+    fun `dependencies follow the current app feature implementation domain core order`() {
         val violations = sources.flatMap { source ->
             val sourceLayer = layerOf(source.packageName) ?: return@flatMap emptyList()
             source.imports.mapNotNull { imported ->
@@ -26,6 +26,27 @@ class ArchitectureRulesTest {
         }
 
         assertTrue("Illegal dependency direction:\n${violations.joinToString("\n")}", violations.isEmpty())
+    }
+
+    @Test
+    fun `player feature depends on contracts instead of implementations`() {
+        val forbiddenPrefixes = listOf(
+            "$ROOT_PACKAGE.data.",
+            "$ROOT_PACKAGE.engine.",
+            "androidx.media3.",
+        )
+        val violations = sources
+            .filter { it.packageName.startsWith("$ROOT_PACKAGE.feature.player") }
+            .flatMap { source ->
+                source.imports
+                    .filter { imported -> forbiddenPrefixes.any(imported::startsWith) }
+                    .map { imported -> "${source.relativePath} imports $imported" }
+            }
+
+        assertTrue(
+            "Player feature bypasses playback contracts:\n${violations.joinToString("\n")}",
+            violations.isEmpty(),
+        )
     }
 
     @Test
@@ -104,6 +125,7 @@ class ArchitectureRulesTest {
                 packageSources.flatMap(SourceFile::imports)
                     .mapNotNull(::ownedPackage)
                     .filterNot { it == packageName }
+                    .filter { dependency -> layerOf(packageName) != layerOf(dependency) }
                     .toSet()
             }
         val cycles = mutableListOf<String>()
@@ -143,6 +165,7 @@ class ArchitectureRulesTest {
         return when (packageName.removePrefix("$ROOT_PACKAGE.").substringBefore('.')) {
             "core" -> Layer.CORE
             "domain" -> Layer.DOMAIN
+            "data", "engine" -> Layer.IMPLEMENTATION
             "feature" -> Layer.FEATURE
             "app" -> Layer.APP
             else -> null
@@ -165,6 +188,7 @@ class ArchitectureRulesTest {
     private enum class Layer {
         CORE,
         DOMAIN,
+        IMPLEMENTATION,
         FEATURE,
         APP,
     }

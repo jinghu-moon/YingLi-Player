@@ -4,7 +4,7 @@
 
 ## 一、唯一目标
 
-以 [`docs/16-player-ui-ux-interaction-implementation-spec.md`](./16-player-ui-ux-interaction-implementation-spec.md) 为最高优先级实现规范，以项目当前代码和能力为辅助事实，以 [`prototypes/views/04-player-demo.html`](../prototypes/views/04-player-demo.html) 为视觉与交互参考，完整实现影里播放器的：
+以 [`docs/16-player-ui-ux-interaction-implementation-spec.md`](./16-player-ui-ux-interaction-implementation-spec.md) 定义 UI/UX 和交互，以 [`docs/17-playback-architecture-refactor-spec.md`](./17-playback-architecture-refactor-spec.md) 定义播放会话、后端和前端接口边界，以项目当前代码和能力为辅助事实，以 [`prototypes/views/04-player-demo.html`](../prototypes/views/04-player-demo.html) 为视觉与交互参考，完整实现影里播放器的：
 
 1. 常规播放页横屏形态；
 2. 常规播放页竖屏形态；
@@ -21,10 +21,12 @@
 发生冲突时严格按以下顺序裁决：
 
 ```text
-1. docs/16-player-ui-ux-interaction-implementation-spec.md
-2. 根目录 AGENTS.md 与当前可运行的领域/安全/播放架构契约
-3. prototypes/views/04-player-demo.html 的 UI、交互和动效
-4. 当前 PlayerScreen/PlayerViewModel 的历史实现
+1. 根目录 AGENTS.md
+2. docs/16-player-ui-ux-interaction-implementation-spec.md（UI/UX 和交互）
+3. docs/17-playback-architecture-refactor-spec.md（会话、后端、接口和迁移门禁）
+4. 当前可运行的领域/安全契约
+5. prototypes/views/04-player-demo.html 的 UI、交互和动效
+6. 当前 PlayerScreen/PlayerViewModel 的历史实现
 ```
 
 具体规则：
@@ -44,6 +46,7 @@
 ```text
 AGENTS.md
 docs/16-player-ui-ux-interaction-implementation-spec.md
+docs/17-playback-architecture-refactor-spec.md
 prototypes/views/04-player-demo.html
 prototypes/views/04-player-Demo深度分析提示词.md
 prototypes/views/影里播放页Demo详解文档.md
@@ -58,7 +61,7 @@ app/src/main/java/seeyuer/yingli/player/feature/player/
 app/src/main/java/seeyuer/yingli/player/domain/playback/
 app/src/main/java/seeyuer/yingli/player/engine/media3/
 app/src/main/java/seeyuer/yingli/player/app/MainActivity.kt
-app/src/main/java/seeyuer/yingli/player/app/YingLiPlaybackService.kt
+app/src/main/java/seeyuer/yingli/player/app/playback/YingLiPlaybackService.kt
 app/src/main/java/seeyuer/yingli/player/app/MediaContainer.kt
 app/src/main/java/seeyuer/yingli/player/data/preferences/
 app/src/main/java/seeyuer/yingli/player/core/designsystem/
@@ -78,7 +81,7 @@ app/src/androidTest/java/seeyuer/yingli/player/feature/player/
 - ExoPlayer/Media3 Player 由 `YingLiPlaybackService` 持有，Activity 和 Composable 不应创建第二个 Player。
 - `PlaybackController`/`Media3PlaybackController` 已承担基础播放命令，`AdvancedPlaybackController` 已包含部分速度、比例和轨道能力。
 - 已有 `ScreenshotGateway`、`PictureInPictureGateway`、播放器偏好、轨道偏好、播放状态 reducer 和安全播放契约。
-- 当前 `PlayerScreen.kt` 仍较集中，设置面板使用局部状态；`PlayerUiState.screenshotResult` 是持久文本式结果，这些需要按规范重构。
+- `PlayerScreen` 已按页面编排、顶部栏、交通控件、设置面板和状态 Overlay 拆分；设置面板仍使用局部状态，`PlayerUiState.screenshotResult` 仍是持久文本式结果，这些行为状态需要按规范继续重构。
 - 当前常规播放队列能力和 ViewModel 命令不完整，需要建立真实队列导航和四态播放顺序。
 - 当前尚无符合规范的独立 `feature/shorts` 完整页面。
 - 设计系统已有 Player Token；图标已迁移到本地 `compose-icons` Tabler 包，正式代码必须经 `YingLiIcon` 语义层使用 Tabler Outline/Filled 图标。
@@ -246,7 +249,7 @@ data/                 偏好、收藏、黑名单、队列和文件操作持久�
 core/designsystem/    Player Token、语义 Tabler 图标和通用控件
 ```
 
-`PlayerScreen` 和 `ShortsScreen` 应是状态驱动的展示组件；ViewModel 负责业务状态和事件编排；Controller 负责播放器事实；Gateway 负责系统能力；Repository 负责持久化。
+`PlayerScreen` 和 `ShortsScreen` 应是状态驱动的展示组件；ViewModel 负责页面状态投影和事件编排；`PlaybackSessionRuntime` 负责长期会话，Engine 负责播放器事实，Gateway 负责系统能力，Repository 负责持久化。UI 不得直接持有 Controller 或具体 Engine。
 
 ## 十五、强制实施流程
 

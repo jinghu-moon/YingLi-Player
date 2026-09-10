@@ -47,17 +47,17 @@ APK 按 `armeabi-v7a`、`arm64-v8a`、`x86`、`x86_64` 四种 ABI 分包，不�
 
 | 包 | 职责 |
 |---|---|
-| `app` | Android 入口、生产依赖组装、Framework 适配器 |
+| `app` | Android 入口、组合根、Service 与 Framework 适配器 |
 | `feature/*` | Compose 页面、ViewModel、UI state 与事件 |
 | `domain` | 按需存在的 UseCase 和纯业务规则 |
-| `core/model` | 不依赖 UI 的领域模型与统一失败类型 |
-| `core/database` | Room 数据源与 DAO，Phase 3 按需创建 |
-| `core/datastore` | 偏好数据源，Phase 2 按需创建 |
-| `core/media` | Media3 与平台媒体适配，Phase 3/4 按需创建 |
+| `core/model`、`core/common`、`core/security` | 不依赖 UI 的模型、通用契约和安全原语 |
+| `data/room`、`data/preferences` | Room 数据源、DAO、迁移和 DataStore 偏好实现 |
+| `data/sources`、`data/filesystem` | MediaStore/SAF、文件和 Android 数据实现 |
+| `engine/media3`、`engine/thumbnail` | 当前 Media3 播放、Surface、截图和缩略图实现 |
 | `core/designsystem` | Token 和基础 Compose 组件，Phase 2 按需创建 |
-| `core/foundation` | 时钟、调度器、ID、日志和容器等跨域契约 |
+| `app.playback`、`app.processing` | Android Service 生命周期和系统窗口边界 |
 
-依赖方向固定为 `Compose -> ViewModel -> UseCase（按需）-> Repository -> DataSource`，包层级只允许 `app -> feature -> domain -> core`。不存在职责的包不创建占位类型。
+依赖方向固定为 `app -> feature -> domain -> core` 与 `app -> data/engine -> domain/core`；播放页通过 `PlaybackSessionClient` 连接 `app.playback` 持有的会话，不直接访问 `engine.media3`。不存在职责的包不创建占位类型。
 
 `ArchitectureRulesTest` 自动检查以下边界：
 

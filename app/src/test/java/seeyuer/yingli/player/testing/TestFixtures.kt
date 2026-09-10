@@ -1,12 +1,12 @@
 package seeyuer.yingli.player.testing
 
 import seeyuer.yingli.player.core.common.AppClock
-import seeyuer.yingli.player.core.common.AppContainer
 import seeyuer.yingli.player.core.common.AppDispatchers
 import seeyuer.yingli.player.core.common.AppLogRecord
 import seeyuer.yingli.player.core.common.AppLogSink
 import seeyuer.yingli.player.core.common.AppLogger
-import seeyuer.yingli.player.core.common.DefaultAppContainer
+import seeyuer.yingli.player.app.AppContainer
+import seeyuer.yingli.player.app.DefaultAppContainer
 import seeyuer.yingli.player.core.common.RollingDiagnosticLogStore
 import seeyuer.yingli.player.core.common.IdGenerator
 import seeyuer.yingli.player.core.common.RedactingAppLogger

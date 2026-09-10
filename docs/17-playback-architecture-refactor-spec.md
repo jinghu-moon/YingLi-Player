@@ -4,7 +4,7 @@
 >
 > 状态：开发期执行规范，允许删除、重命名和替换现有播放实现
 >
-> 更新时间：2026-09-10
+> 更新时间：2026-09-11
 >
 > 适用范围：常规播放页的横屏、竖屏，以及未来独立的 YLShorts 页面；Media3、未来 libmpv 和 FFmpeg 的边界
 
@@ -14,7 +14,7 @@
 - [16-player-ui-ux-interaction-implementation-spec.md](16-player-ui-ux-interaction-implementation-spec.md)：播放页 UI/UX、交互状态和前端可见行为。
 - [architecture/phase-4-playback-contract.md](architecture/phase-4-playback-contract.md)：已经交付的基础播放契约和历史约束。
 - [architecture/phase-7-advanced-playback-contract.md](architecture/phase-7-advanced-playback-contract.md)：高级控件、截图、系统集成和测试范围。
-- [17-player-ui-implementation-agent-prompt.md](17-player-ui-implementation-agent-prompt.md)：给 UI 实现 Agent 的执行提示词，不定义后端架构。
+- [18-player-ui-implementation-agent-prompt.md](18-player-ui-implementation-agent-prompt.md)：给 UI 实现 Agent 的执行提示词，不定义后端架构。
 
 ---
 
@@ -65,13 +65,13 @@ ProcessingCoordinator          <- 与播放会话平行的处理域
 | Media3 Transformer | 当前处理默认实现 | 常规导出和简单转码 | 复杂 FFmpeg 专属场景的强行替代 |
 | Compose | 当前 UI | 横屏、竖屏、设置、截图、AB、YLShorts 投影 | 直接访问播放内核和文件系统 |
 
-### 1.3 需要立即修正的 `14` 结论
+### 1.3 与 `14` 的同步状态
 
-`14-local-android-phone-architecture.md` 当前仍写着“不长期并存第二播放内核、mpv 仅作参考”。这与已确定的未来 libmpv 计划冲突。本文件对播放域采用以下更新解释：
+`14-local-android-phone-architecture.md` 已同步本文件的播放边界：
 
 > Media3 是当前默认且唯一实际后端；未来允许接入 libmpv 作为可选播放后端。同一会话只激活一个后端，UI 和业务不依赖具体后端。FFmpeg 是独立媒体处理后端，不默认作为播放后端。
 
-在 `14` 直接修订前，本文件作为播放专项的补充决策；后续应在 `14` 的播放章节加入反向链接，避免两个文档长期漂移。
+`14` 继续负责全项目架构，本文件负责播放专项细节；两者已经建立双向链接。若后续调整播放后端策略，必须在同一次变更中同步两份文档。
 
 ---
 
@@ -121,7 +121,7 @@ ProcessingCoordinator          <- 与播放会话平行的处理域
 MainActivity
   -> YingLiApp / PlayerScreen
        -> PlayerViewModel
-            -> PlaybackController (Media3PlaybackController)
+            -> PlaybackSessionClient (当前实现仍由 Media3PlaybackController 适配)
                  -> MediaController
                       -> YingLiPlaybackService
                            -> ExoPlayer + MediaSession
@@ -131,11 +131,11 @@ MainActivity
 
 | 当前类 | 当前事实 | 重构去向 |
 | --- | --- | --- |
-| `app/YingLiPlaybackService.kt` | 创建 ExoPlayer、MediaSession；周期性写进度和历史 | 保留 Service 入口，内部改为持有 `PlaybackSessionRuntime` |
+| `app/playback/YingLiPlaybackService.kt` | 创建 ExoPlayer、MediaSession；周期性写进度和历史 | 保留 Service 入口，内部改为持有 `PlaybackSessionRuntime` |
 | `engine/media3/Media3PlaybackController.kt` | 应用级 MediaController；解析来源、映射状态、选择轨道、控制速度、绑定 PlayerView | 删除作为总控的职责，拆成 `Media3PlaybackEngine` + `Media3SessionAdapter` + 页面连接 |
 | `feature/player/PlayerViewModel.kt` | 解析来源、标题、命令、偏好恢复、截图、PiP、Overlay 和位置投影 | 只负责页面状态投影和 UI 事件；长期会话能力移出 |
-| `domain/playback/PlaybackModels.kt` | 基础状态、请求、来源仓储、Controller | 破坏性重构为会话、命令、事件和后端无关源句柄 |
-| `domain/playback/AdvancedPlaybackContracts.kt` | 速度、轨道、截图、PiP、队列和 Overlay 混合 | 拆成窄接口；Overlay 留在页面域，播放能力留在会话域 |
+| `domain/playback/PlaybackRequest.kt`、`PlaybackState.kt`、`PlaybackController.kt` | 已从 `PlaybackModels.kt` 按来源、状态和命令拆分 | 继续重构为会话、命令、事件和后端无关源句柄 |
+| `domain/playback/*Contracts.kt` | 轨道、队列、偏好、Overlay 和系统能力已从 `AdvancedPlaybackContracts.kt` 拆分 | 后续将 Overlay 移至 feature，将长期播放能力移入会话域 |
 | `data/preferences/InMemoryPlaybackQueueRepository` | 队列只在进程内存中存在 | 替换为 Room 会话队列；开发期删除内存实现 |
 | `engine/media3/Media3VideoSurface.kt` | 页面直接把 `PlayerView` 交给 Controller | 改为带 lease 的 `VideoSurfacePort`，Service/Engine 验证 token |
 | `MainActivity` | 参与视频输出开关、PiP、方向和配置变化 | 只管理系统窗口和页面连接，不管理内核所有权 |
@@ -1118,6 +1118,19 @@ enum class PlaybackErrorKind {
 ```text
 建立基线 -> 写失败测试/契约 -> 实施重构 -> 新行为测试 -> 相关旧行为回归 -> 记录证据
 ```
+
+当前实施检查点（2026-09-11）：
+
+| 项目 | 状态 | 说明 |
+| --- | --- | --- |
+| 修改前 JVM 基线 | 已完成 | `:app:testDebugUnitTest --rerun-tasks` 通过 |
+| Android 生命周期目录 | 已完成 | Service 和 PiP Gateway 已进入 `app.playback` |
+| 领域聚合文件拆分 | 已完成 | 类型名/包名不变，已按单一职责拆为多个文件 |
+| Player Compose 文件拆分 | 已完成 | 页面编排、顶部栏、交通控件、设置和状态 Overlay 分离 |
+| Media3 映射拆分 | 已完成 | 状态、时间线、轨道、请求和错误映射从 Controller 提取 |
+| 架构测试识别 data/engine | 已完成 | 播放 feature 已禁止直接依赖实现层 |
+| `PlaybackSessionRuntime` | 未开始 | 仍按 Phase 2 实施，不得把目录调整误报为会话重构完成 |
+| Room 队列、Surface lease、libmpv、FFmpeg | 未开始 | 分别按 Phase 4、3、8、9 的门槛推进 |
 
 ### Phase 0：基线和样本冻结
 

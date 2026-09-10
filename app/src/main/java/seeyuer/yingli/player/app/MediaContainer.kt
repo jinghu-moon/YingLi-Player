@@ -18,7 +18,6 @@ import seeyuer.yingli.player.data.room.RoomMediaSourceRepository
 import seeyuer.yingli.player.data.room.YingLiDatabase
 import seeyuer.yingli.player.data.preferences.DataStoreMediaOnboardingRepository
 import seeyuer.yingli.player.data.preferences.MediaOnboardingRepository
-import seeyuer.yingli.player.core.common.AppContainer
 import seeyuer.yingli.player.data.sources.*
 import seeyuer.yingli.player.engine.thumbnail.*
 import seeyuer.yingli.player.engine.thumbnail.frame.Media3FrameThumbnailSource

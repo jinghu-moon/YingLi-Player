@@ -1,27 +1,5 @@
 package seeyuer.yingli.player.domain.playback
 
-import kotlinx.coroutines.flow.StateFlow
-import seeyuer.yingli.player.core.model.media.MediaItemId
-import seeyuer.yingli.player.core.model.media.MediaLocationId
-
-enum class PlaybackSourceContext {
-    HOME,
-    LIBRARY,
-    DETAIL,
-}
-
-data class PlaybackRequest(
-    val mediaId: MediaItemId,
-    val locationId: MediaLocationId,
-    val startPositionMillis: Long,
-    val sourceContext: PlaybackSourceContext,
-    val incognito: Boolean = false,
-) {
-    init {
-        require(startPositionMillis >= 0)
-    }
-}
-
 data class PlaybackTimeline(
     val positionMillis: Long = 0,
     val durationMillis: Long? = null,
@@ -124,61 +102,4 @@ sealed interface PlaybackState {
             add(PlaybackAction.GO_BACK)
         }
     }
-}
-
-enum class PlaybackCommandRejection {
-    NOT_CONNECTED,
-    INVALID_STATE,
-    SOURCE_UNAVAILABLE,
-}
-
-enum class PlaybackConnectionState {
-    CONNECTING,
-    CONNECTED,
-    DISCONNECTED,
-    FAILED,
-}
-
-sealed interface PlaybackCommandResult {
-    data object Accepted : PlaybackCommandResult
-    data object AlreadyApplied : PlaybackCommandResult
-    data class Rejected(val reason: PlaybackCommandRejection) : PlaybackCommandResult
-}
-
-interface PlaybackStateRepository {
-    val state: StateFlow<PlaybackState>
-    val connectionState: StateFlow<PlaybackConnectionState>
-}
-
-interface PlaybackController : PlaybackStateRepository {
-    fun prepare(request: PlaybackRequest): PlaybackCommandResult
-    fun play(): PlaybackCommandResult
-    fun pause(): PlaybackCommandResult
-    fun seekTo(positionMillis: Long): PlaybackCommandResult
-    fun stop(): PlaybackCommandResult
-    fun retry(): PlaybackCommandResult
-}
-
-data class ResolvedPlaybackSource(
-    val request: PlaybackRequest,
-    val uri: String,
-    val title: String,
-)
-
-interface PlaybackSourceRepository {
-    suspend fun resolve(
-        mediaId: MediaItemId,
-        sourceContext: PlaybackSourceContext,
-        incognito: Boolean = false,
-    ): ResolvedPlaybackSource?
-
-    suspend fun resolve(request: PlaybackRequest): ResolvedPlaybackSource?
-}
-
-interface PlaybackProgressRepository {
-    suspend fun saveProgress(
-        mediaId: MediaItemId,
-        positionMillis: Long,
-        completed: Boolean,
-    )
 }

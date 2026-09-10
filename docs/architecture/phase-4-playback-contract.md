@@ -1,9 +1,11 @@
 # Phase 4 播放契约
 
+> 历史状态：本文件记录 Phase 4 当时已经交付的 Media3 契约，不再是播放目标架构。当前目标以 [`../17-playback-architecture-refactor-spec.md`](../17-playback-architecture-refactor-spec.md) 为准；其中 `Media3PlaybackController` 将被拆分，Service 将持有 `PlaybackSessionRuntime` 和活动 Engine。
+
 ## 架构边界
 
 - `domain.playback` 只包含 Kotlin 模型、状态归约器、续播策略、进度节流与错误分类，不依赖 Android 或 Media3。
-- `YingLiPlaybackService` 是唯一 `ExoPlayer` 与 `MediaSession` 所有者；Activity、ViewModel 和 Composable 均不创建 Player。
+- `app.playback.YingLiPlaybackService` 是唯一 `ExoPlayer` 与 `MediaSession` 所有者；Activity、ViewModel 和 Composable 均不创建 Player。
 - 应用级 `Media3PlaybackController` 连接 Service，将 Media3 事件映射为只读 `StateFlow<PlaybackState>`。断连时命令明确返回 `NOT_CONNECTED`。
 - `RoomPlaybackRepository` 负责逻辑媒体 ID 到可用位置 URI 的解析和进度落库。URI 不进入 `PlaybackRequest`，也不写日志。
 - `PlayerScreen` 只消费领域状态和命令回调；`Media3VideoSurface` 是隔离在 app 边界的 Surface 适配器。

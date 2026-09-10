@@ -1,4 +1,4 @@
-package seeyuer.yingli.player.app
+package seeyuer.yingli.player.app.playback
 
 import android.app.PendingIntent
 import android.content.Intent
@@ -20,10 +20,12 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import seeyuer.yingli.player.app.MainActivity
 import seeyuer.yingli.player.core.common.AppLogEvent
 import seeyuer.yingli.player.core.common.AppLogLevel
 import seeyuer.yingli.player.core.common.LogValue
 import seeyuer.yingli.player.core.model.media.MediaItemId
+import seeyuer.yingli.player.app.YingLiApplication
 import seeyuer.yingli.player.domain.playback.PlaybackProgressSample
 import seeyuer.yingli.player.domain.playback.PlaybackProgressWritePolicy
 import seeyuer.yingli.player.domain.playback.ProgressWriteDecision

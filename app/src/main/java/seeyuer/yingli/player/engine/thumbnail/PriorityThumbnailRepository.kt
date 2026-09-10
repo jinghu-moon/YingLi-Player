@@ -155,6 +155,7 @@ class PriorityThumbnailRepository(
     private val pending = PriorityQueue<Pending>(compareBy<Pending> { it.request.priority.rank }.thenBy { it.sequence })
     private val states = mutableMapOf<ThumbnailKey, MutableStateFlow<ThumbnailState>>()
     private val running = mutableMapOf<ThumbnailKey, Running>()
+    private val failedKeys = mutableSetOf<ThumbnailKey>()
     private val thumbnailCache: ThumbnailCache = cache ?: MemoryThumbnailCache(maxCachedKeys)
     private var sequence = 0L
 
@@ -169,6 +170,10 @@ class PriorityThumbnailRepository(
 
     @Synchronized
     override fun enqueue(request: ThumbnailRequest) {
+        if (request.key in failedKeys) {
+            state(request.key).value = ThumbnailState.Failed
+            return
+        }
         if (thumbnailCache.contains(request.key)) {
             state(request.key).value = ThumbnailState.Ready(request.key)
             return
@@ -273,11 +278,13 @@ class PriorityThumbnailRepository(
         synchronized(this) {
             running.remove(key)
             if (success) {
+                failedKeys.remove(key)
                 state(key).value = ThumbnailState.Ready(key)
             } else if (task.attempts < MAX_RETRIES) {
                 pending += task.copy(sequence = sequence++, attempts = task.attempts + 1)
                 state(key).value = ThumbnailState.Queued
             } else {
+                failedKeys += key
                 state(key).value = ThumbnailState.Failed
             }
             pump()

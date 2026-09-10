@@ -258,20 +258,30 @@
     .layout-zone-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
     .layout-zone-title strong { font-size: 13px; }
     .layout-zone-title span { color: var(--dim); font-size: 11px; }
-    .layout-cards { display: grid; gap: 6px; min-height: 44px; }
-    .layout-card { min-height: 44px; display: grid; grid-template-columns: 22px 24px minmax(0, 1fr) auto auto auto; align-items: center; gap: 7px; padding: 5px 5px 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-level-2); color: var(--text); }
+    .layout-cards, .layout-library { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; min-height: 44px; }
+    .layout-cards { padding: 10px; border-radius: 10px; background: var(--surface-level-2); }
+    .layout-card { position: relative; min-height: 84px; display: flex; align-items: center; justify-content: center; padding: 19px 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-level-3); color: var(--text); cursor: grab; }
     .layout-card.dragging { opacity: .42; border-color: var(--accent); }
-    .layout-card .drag-handle { color: var(--dim); cursor: grab; }
-    .layout-card > i { color: var(--muted); font-size: 18px; }
-    .layout-card-name { min-width: 0; overflow: hidden; font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
-    .layout-card button { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 5px; color: var(--muted); font-size: 15px; }
-    .layout-card button:hover { background: var(--surface-level-3); color: var(--text); }
-    .layout-card .remove-control:hover { background: color-mix(in srgb, var(--error) 14%, var(--surface-level-3)); color: var(--error); }
+    .layout-card-main { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-width: 0; text-align: center; }
+    .layout-card-main > i:not(.drag-handle) { color: var(--muted); font-size: 23px; }
+    .layout-card .drag-handle { position: absolute; top: 7px; left: 7px; color: var(--dim); font-size: 13px; cursor: grab; }
+    .layout-card-name { width: 100%; overflow: hidden; color: var(--text); font-size: 11px; line-height: 15px; white-space: normal; text-overflow: ellipsis; }
+    .layout-card .remove-control, .layout-library-card .add-control { position: absolute; right: -5px; bottom: -5px; width: 25px; height: 25px; display: grid; place-items: center; border: 2px solid var(--surface-level-2); border-radius: 50%; color: #fff; font-size: 17px; line-height: 1; box-shadow: 0 2px 5px rgb(0 0 0 / .25); align-items: center; justify-content: center;}
+    .layout-card .remove-control { background: var(--error); }
+    .layout-card .remove-control:hover { background: #ff817b; transform: scale(1.06); }
+    .layout-card-pinned { position: absolute; right: 8px; bottom: 7px; color: var(--dim); font-size: 12px; }
     .layout-empty { min-height: 44px; display: grid; place-items: center; border: 1px dashed var(--line-strong); border-radius: 6px; color: var(--dim); font-size: 11px; }
-    .layout-library { display: flex; flex-wrap: wrap; gap: 7px; }
-    .layout-library button { min-height: 32px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 11px; }
-    .layout-library button:hover { border-color: var(--accent); color: var(--accent); }
-    .layout-library button:disabled { cursor: not-allowed; opacity: .38; }
+    .layout-library-wrap { margin-top: 10px; padding: 10px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, var(--surface-level-2)); }
+    .layout-library-card { position: relative; min-height: 78px; display: flex; align-items: center; justify-content: center; padding: 10px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-level-1); color: var(--muted); text-align: center; }
+    .layout-library-card > span:not(.add-control) { display: block; max-width: 100%; overflow: hidden; font-size: 10px; line-height: 14px; white-space: normal; text-overflow: ellipsis; }
+    .layout-library-card > i { margin-bottom: 5px; color: var(--muted); font-size: 22px; }
+    .layout-library-card { flex-direction: column; gap: 3px; }
+    .layout-library-card .add-control { background: var(--info); color: #172832; }
+    .layout-library-card:hover { border-color: var(--accent); color: var(--accent); }
+    .layout-library-card:hover > i { color: var(--accent); }
+    .layout-library-card:disabled { cursor: not-allowed; opacity: .38; }
+    .layout-library-empty { grid-column: 1 / -1; padding: 12px 4px; color: var(--dim); font-size: 11px; text-align: center; }
+    .layout-library-title { margin: 0 0 8px 2px; color: var(--dim); font-size: 11px; }
     .setting { padding: 16px 0; border-top: 1px solid var(--line); }
     .setting:first-of-type { border-top: 0; }
     .setting-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 11px; color: var(--muted); font-size: 12px; }
@@ -653,7 +663,18 @@
         section.className = 'layout-zone';
         const selected = controlLayout[zone];
         const available = Object.keys(controlCatalog).filter(id => !selected.includes(id));
-        section.innerHTML = `<div class="layout-zone-title"><strong>${config.label}</strong><span>${selected.length} / ${config.limit}</span></div><div class="layout-cards" data-layout-zone="${zone}">${selected.map(id => { const control = controlCatalog[id]; return `<div class="layout-card" draggable="true" data-layout-control="${id}"><i class="drag-handle ti ti-grip-vertical" aria-hidden="true"></i><i class="ti ${control.icon}"></i><span class="layout-card-name">${control.label}</span><button data-move="up" aria-label="向前移动"><i class="ti ti-chevron-up"></i></button><button data-move="down" aria-label="向后移动"><i class="ti ti-chevron-down"></i></button>${control.pinned ? '<span></span>' : '<button class="remove-control" data-remove-control aria-label="移除"><i class="ti ti-minus"></i></button>'}</div>`; }).join('') || '<div class="layout-empty">暂无快捷控件</div>'}</div><div class="layout-library">${available.map(id => `<button data-add-control="${id}" data-zone="${zone}" ${selected.length >= config.limit ? 'disabled' : ''}><i class="ti ti-plus"></i>${controlCatalog[id].label}</button>`).join('')}</div>`;
+        const selectedMarkup = selected.map(id => {
+          const control = controlCatalog[id];
+          const remove = control.pinned
+            ? '<span class="layout-card-pinned" aria-label="始终保留"><i class="ti ti-lock" aria-hidden="true"></i></span>'
+            : '<button class="remove-control" data-remove-control aria-label="移除控件"><i class="ti ti-minus" aria-hidden="true"></i></button>';
+          return `<div class="layout-card" draggable="true" data-layout-control="${id}" aria-label="${control.label}"><i class="drag-handle ti ti-grip-vertical" aria-hidden="true"></i><div class="layout-card-main"><i class="ti ${control.icon}" aria-hidden="true"></i><span class="layout-card-name">${control.label}</span></div>${remove}</div>`;
+        }).join('') || '<div class="layout-empty">暂无快捷控件</div>';
+        const libraryMarkup = available.map(id => {
+          const control = controlCatalog[id];
+          return `<button class="layout-library-card" data-add-control="${id}" data-zone="${zone}" aria-label="添加${control.label}" ${selected.length >= config.limit ? 'disabled' : ''}><i class="ti ${control.icon}" aria-hidden="true"></i><span>${control.label}</span><span class="add-control" aria-hidden="true"><i class="ti ti-plus"></i></span></button>`;
+        }).join('') || '<div class="layout-library-empty">控件已全部添加</div>';
+        section.innerHTML = `<div class="layout-zone-title"><strong>${config.label}</strong><span>${selected.length} / ${config.limit}</span></div><div class="layout-cards" data-layout-zone="${zone}">${selectedMarkup}</div><div class="layout-library-wrap"><div class="layout-library-title">可添加控件</div><div class="layout-library">${libraryMarkup}</div></div>`;
         editor.append(section);
       });
     }
@@ -1626,12 +1647,6 @@
         updateControlLayout();
         return;
       }
-      const move = event.target.closest('[data-move]');
-      if (!move) return;
-      const targetIndex = move.dataset.move === 'up' ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= controlLayout[zone].length) return;
-      [controlLayout[zone][index], controlLayout[zone][targetIndex]] = [controlLayout[zone][targetIndex], controlLayout[zone][index]];
-      updateControlLayout();
     });
     document.querySelector('#controlLayoutEditor').addEventListener('dragstart', event => {
       const card = event.target.closest('.layout-card');

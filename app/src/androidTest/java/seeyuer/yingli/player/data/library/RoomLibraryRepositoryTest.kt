@@ -17,6 +17,7 @@ import seeyuer.yingli.player.data.room.MediaItemEntity
 import seeyuer.yingli.player.data.room.MediaItemLocationEntity
 import seeyuer.yingli.player.data.room.MediaLocationEntity
 import seeyuer.yingli.player.data.room.MediaSourceEntity
+import seeyuer.yingli.player.data.room.PlaybackHistoryEntity
 import seeyuer.yingli.player.data.room.YingLiDatabase
 import seeyuer.yingli.player.core.common.DefaultAppDispatchers
 import seeyuer.yingli.player.core.model.media.MediaItemId
@@ -223,6 +224,42 @@ class RoomLibraryRepositoryTest {
         assertEquals(listOf(MediaItemId("shared")), page.items.map { it.id })
         assertEquals("content://media/inside", page.items.single().uri.value)
         assertEquals(1, count)
+    }
+
+    @Test
+    fun folderAggregatesUseOneCurrentLocationPerMediaAndExposePresentationCounts() = runTest {
+        seedSource()
+        database.mediaCatalogDao().upsertItems(
+            listOf(
+                MediaItemEntity("new_unwatched", "新视频", 0, false),
+                MediaItemEntity("watched", "已观看", 5_000, true),
+            ),
+        )
+        database.mediaCatalogDao().insertLocations(
+            listOf(
+                location("new_old", "content://media/new-old", 1, 0, "Movies/old", 9_000).copy(durationMillis = 999_000),
+                location("new_current", "content://media/new-current", 2, 0, "Movies/Season 1", 2_000).copy(durationMillis = 60_000),
+                location("watched_location", "content://media/watched", 2, 0, "Movies/Season 1", 3_000).copy(durationMillis = 120_000),
+            ),
+        )
+        database.mediaCatalogDao().upsertLinks(
+            listOf(
+                MediaItemLocationEntity("new_unwatched", "new_old"),
+                MediaItemLocationEntity("new_unwatched", "new_current"),
+                MediaItemLocationEntity("watched", "watched_location"),
+            ),
+        )
+        database.organizeDao().upsertHistory(PlaybackHistoryEntity("watched", 1, 10, 5_000))
+
+        val folder = repository.folders(
+            LibraryQuery(browseMode = LibraryBrowseMode.FOLDER, currentPath = "Movies"),
+        ).single { it.path == "Movies/Season 1" }
+
+        assertEquals(2, folder.videoCount)
+        assertEquals(5_000L, folder.sizeBytes)
+        assertEquals(180_000L, folder.totalDurationMillis)
+        assertEquals(1, folder.unwatchedCount)
+        assertEquals(1, folder.newCount)
     }
 
     private suspend fun seedSource() {

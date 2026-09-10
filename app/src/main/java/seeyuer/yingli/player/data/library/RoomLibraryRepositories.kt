@@ -96,18 +96,35 @@ class RoomLibraryRepository(
 
     override suspend fun folders(query: LibraryQuery): List<LibraryFolder> {
         val sql = """
-            WITH child_locations AS (
+            WITH latest_location AS (
+                SELECT media_item_locations.mediaItemId, media_locations.id AS locationId,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY media_item_locations.mediaItemId
+                        ORDER BY CASE
+                            WHEN TRIM(media_locations.relativePath, '/') = ?
+                              OR substr(TRIM(media_locations.relativePath, '/'), 1, length(?) + 1) = ? || '/'
+                            THEN 0 ELSE 1 END,
+                            media_locations.lastSeenEpochMillis DESC, media_locations.id DESC
+                    ) AS rn
+                FROM media_item_locations
+                INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId
+                WHERE media_locations.missingScanCount = 0
+            ), child_locations AS (
                 SELECT CASE
                            WHEN ? = '' THEN trim(media_locations.relativePath, '/')
                            ELSE substr(trim(media_locations.relativePath, '/'), length(?) + 2)
                        END AS remainder,
-                       media_locations.sizeBytes
+                       media_locations.sizeBytes,
+                       COALESCE(media_locations.durationMillis, 0) AS durationMillis,
+                       media_items.completed,
+                       media_items.playbackPositionMillis,
+                       playback_history.mediaItemId AS historyMediaId
                 FROM media_items
-                INNER JOIN media_item_locations ON media_item_locations.mediaItemId = media_items.id
-                INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId
+                INNER JOIN latest_location ON latest_location.mediaItemId = media_items.id AND latest_location.rn = 1
+                INNER JOIN media_locations ON media_locations.id = latest_location.locationId
+                LEFT JOIN playback_history ON playback_history.mediaItemId = media_items.id
                 LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
                 WHERE trash_entries.mediaItemId IS NULL
-                  AND media_locations.missingScanCount = 0
                   AND COALESCE(media_locations.relativePath, '') <> ''
                   AND (
                       ? = '' OR
@@ -118,21 +135,37 @@ class RoomLibraryRepository(
                            WHEN instr(remainder, '/') > 0 THEN substr(remainder, 1, instr(remainder, '/') - 1)
                            ELSE remainder
                        END AS name,
-                       sizeBytes
+                       sizeBytes, durationMillis, completed, playbackPositionMillis, historyMediaId
                 FROM child_locations
             )
             SELECT CASE WHEN ? = '' THEN name ELSE ? || '/' || name END AS path,
                    name,
                    COUNT(*) AS videoCount,
-                   COALESCE(SUM(sizeBytes), 0) AS sizeBytes
+                   COALESCE(SUM(sizeBytes), 0) AS sizeBytes,
+                   COALESCE(SUM(durationMillis), 0) AS totalDurationMillis,
+                   COALESCE(SUM(CASE WHEN completed = 0 AND playbackPositionMillis = 0 THEN 1 ELSE 0 END), 0) AS unwatchedCount,
+                   COALESCE(SUM(CASE WHEN historyMediaId IS NULL THEN 1 ELSE 0 END), 0) AS newCount
             FROM folder_rows
             WHERE name <> ''
             GROUP BY path, name
             ORDER BY name COLLATE NOCASE
         """.trimIndent()
-        val args = Array<Any?>(7) { query.currentPath }
+        val args = arrayOf<Any?>(
+            query.currentPath, query.currentPath, query.currentPath,
+            query.currentPath, query.currentPath,
+            query.currentPath, query.currentPath, query.currentPath,
+            query.currentPath, query.currentPath,
+        )
         return libraryDao.folders(SimpleSQLiteQuery(sql, args)).map {
-            LibraryFolder(it.path, it.name, it.videoCount, it.sizeBytes)
+            LibraryFolder(
+                path = it.path,
+                name = it.name,
+                videoCount = it.videoCount,
+                sizeBytes = it.sizeBytes,
+                totalDurationMillis = it.totalDurationMillis,
+                unwatchedCount = it.unwatchedCount,
+                newCount = it.newCount,
+            )
         }
     }
 

@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -131,6 +134,7 @@ class PlayerViewModel(
             title.value = source.title
             sourceUnavailable.value = false
             controller.prepare(source.request)
+            restoreTrackPreference(id)
         }
     }
 
@@ -163,18 +167,48 @@ class PlayerViewModel(
             ?: PlaybackCommandResult.Rejected(seeyuer.yingli.player.domain.playback.PlaybackCommandRejection.INVALID_STATE)
         state.value.playback.request?.mediaId?.let { mediaId ->
             viewModelScope.launch {
-                trackPreferenceRepository?.setForMedia(mediaId, TrackPreference(speed = value, scaleMode = state.value.scaleMode))
+                val current = trackPreferenceRepository?.trackPreferences?.first()?.resolve(mediaId)
+                    ?: TrackPreference()
+                trackPreferenceRepository?.setForMedia(mediaId, current.copy(speed = value, scaleMode = state.value.scaleMode))
             }
         }
         return result
     }
 
-    fun setScaleMode(value: VideoScaleMode): PlaybackCommandResult = advancedController?.setScaleMode(value)
-        ?: PlaybackCommandResult.Rejected(seeyuer.yingli.player.domain.playback.PlaybackCommandRejection.INVALID_STATE)
-    fun selectAudioTrack(id: String): PlaybackCommandResult = advancedController?.selectAudioTrack(id)
-        ?: PlaybackCommandResult.Rejected(seeyuer.yingli.player.domain.playback.PlaybackCommandRejection.INVALID_STATE)
-    fun selectSubtitleTrack(id: String?): PlaybackCommandResult = advancedController?.selectSubtitleTrack(id)
-        ?: PlaybackCommandResult.Rejected(seeyuer.yingli.player.domain.playback.PlaybackCommandRejection.INVALID_STATE)
+    fun setScaleMode(value: VideoScaleMode): PlaybackCommandResult {
+        val result = advancedController?.setScaleMode(value)
+            ?: PlaybackCommandResult.Rejected(seeyuer.yingli.player.domain.playback.PlaybackCommandRejection.INVALID_STATE)
+        if (result == PlaybackCommandResult.Accepted) {
+            state.value.playback.request?.mediaId?.let { mediaId ->
+                persistTrackPreference(mediaId) { copy(scaleMode = value) }
+            }
+        }
+        return result
+    }
+    fun selectAudioTrack(id: String): PlaybackCommandResult {
+        val result = advancedController?.selectAudioTrack(id)
+            ?: PlaybackCommandResult.Rejected(seeyuer.yingli.player.domain.playback.PlaybackCommandRejection.INVALID_STATE)
+        if (result == PlaybackCommandResult.Accepted) {
+            state.value.playback.request?.mediaId?.let { mediaId ->
+                state.value.audioTracks.firstOrNull { it.id == id }?.language?.let { language ->
+                    persistTrackPreference(mediaId) { copy(audioLanguage = language) }
+                }
+            }
+        }
+        return result
+    }
+
+    fun selectSubtitleTrack(id: String?): PlaybackCommandResult {
+        val result = advancedController?.selectSubtitleTrack(id)
+            ?: PlaybackCommandResult.Rejected(seeyuer.yingli.player.domain.playback.PlaybackCommandRejection.INVALID_STATE)
+        if (result == PlaybackCommandResult.Accepted) {
+            state.value.playback.request?.mediaId?.let { mediaId ->
+                val language = id?.let { selected -> state.value.subtitleTracks.firstOrNull { it.id == selected }?.language }
+                persistTrackPreference(mediaId) { copy(subtitleLanguage = language, subtitlesEnabled = id != null) }
+            }
+        }
+        return result
+    }
 
     fun toggleOverlay() {
         overlay.value = PlayerOverlayReducer.reduce(overlay.value, PlayerOverlayEvent.Tap(0))
@@ -220,6 +254,38 @@ class PlayerViewModel(
         }
     }
 
+    private fun restoreTrackPreference(mediaId: MediaItemId) {
+        val repository = trackPreferenceRepository ?: return
+        val advanced = advancedController ?: return
+        viewModelScope.launch {
+            val preference = repository.trackPreferences.first().resolve(mediaId)
+            advanced.setSpeed(preference.speed)
+            advanced.setScaleMode(preference.scaleMode)
+            val loaded = withTimeoutOrNull(TRACK_LOAD_TIMEOUT_MILLIS) { state.filter {
+                it.playback.request?.mediaId == mediaId &&
+                    (it.audioTracks.isNotEmpty() || it.subtitleTracks.isNotEmpty())
+            }.first() } ?: return@launch
+            preference.audioLanguage?.let { language ->
+                loaded.audioTracks.firstOrNull { it.language == language }?.let { advanced.selectAudioTrack(it.id) }
+            }
+            if (!preference.subtitlesEnabled) {
+                advanced.selectSubtitleTrack(null)
+            } else {
+                preference.subtitleLanguage?.let { language ->
+                    loaded.subtitleTracks.firstOrNull { it.language == language }?.let { advanced.selectSubtitleTrack(it.id) }
+                }
+            }
+        }
+    }
+
+    private fun persistTrackPreference(mediaId: MediaItemId, update: TrackPreference.() -> TrackPreference) {
+        val repository = trackPreferenceRepository ?: return
+        viewModelScope.launch {
+            val current = repository.trackPreferences.first().resolve(mediaId)
+            repository.setForMedia(mediaId, update(current))
+        }
+    }
+
     private fun projectedPlayingState(state: PlaybackState.Playing): Flow<Pair<PlaybackState, Long>> = flow {
         var position = state.timeline.positionMillis
         emit(state to position)
@@ -236,6 +302,7 @@ class PlayerViewModel(
         private const val STOP_TIMEOUT = 5_000L
         private const val PROGRESS_TICK_MILLIS = 250L
         private const val SEEK_STEP_MILLIS = 10_000L
+        private const val TRACK_LOAD_TIMEOUT_MILLIS = 5_000L
 
         fun factory(
             controller: PlaybackController,

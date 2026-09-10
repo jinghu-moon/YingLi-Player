@@ -124,6 +124,7 @@ class Media3PlaybackController(
                         controller = connected
                         connected.addListener(playerListener)
                         mutableConnectionState.value = PlaybackConnectionState.CONNECTED
+                        applyVideoOutputSelection(connected)
                         updateFromPlayer(connected)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -306,9 +307,16 @@ class Media3PlaybackController(
 
     fun attachPlayerView(view: PlayerView?) {
         playerViewReference = WeakReference(view)
+        if (view != null) setVideoOutputEnabled(true)
     }
 
     fun attachedPlayerView(): PlayerView? = playerViewReference.get()
+
+    /** Disable only video track selection while background audio continues. */
+    fun setVideoOutputEnabled(enabled: Boolean) {
+        videoOutputEnabled = enabled
+        controller?.let(::applyVideoOutputSelection)
+    }
 
     override fun close() {
         controller?.removeListener(playerListener)
@@ -356,6 +364,14 @@ class Media3PlaybackController(
             Player.STATE_ENDED -> PlaybackState.Ended(request, timeline)
             else -> mutableState.value
         }
+    }
+
+    private var videoOutputEnabled = true
+
+    private fun applyVideoOutputSelection(player: Player) {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoOutputEnabled)
+            .build()
     }
 
     private fun updateTracks(player: Player) {

@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import seeyuer.yingli.player.data.preferences.MediaOnboardingRepository
 import seeyuer.yingli.player.core.model.media.*
 import seeyuer.yingli.player.domain.catalog.MediaScanner
+import seeyuer.yingli.player.domain.catalog.MediaScanCoordinator
 import seeyuer.yingli.player.domain.catalog.MediaCatalogRepository
 import seeyuer.yingli.player.domain.catalog.MediaPermissionGateway
 import seeyuer.yingli.player.domain.catalog.MediaSourceRepository
@@ -130,7 +131,7 @@ class MediaLibraryViewModel(
                 val source = deviceVideoSource()
                 sourceRepository.upsert(source)
                 onboardingRepository.setCompleted(true)
-                scan(setOf(source.id))
+                scan(setOf(source.id), force = true)
             } else {
                 effects.send(MediaLibraryEffect.RequestMediaReadPermission)
             }
@@ -143,7 +144,7 @@ class MediaLibraryViewModel(
             if (granted) {
                 val source = deviceVideoSource()
                 sourceRepository.upsert(source)
-                scan(setOf(source.id))
+                scan(setOf(source.id), force = true)
             } else {
                 notice.value = MediaLibraryNotice.PERMISSION_DENIED
             }
@@ -177,15 +178,16 @@ class MediaLibraryViewModel(
     fun rescan() {
         viewModelScope.launch {
             val sourceIds = state.value.sources.filter { it.accessState == MediaSourceAccessState.AVAILABLE }.map { it.id }.toSet()
-            if (sourceIds.isNotEmpty()) scan(sourceIds)
+            if (sourceIds.isNotEmpty()) scan(sourceIds, force = true)
         }
     }
 
-    private suspend fun scan(sourceIds: Set<MediaSourceId>) {
+    private suspend fun scan(sourceIds: Set<MediaSourceId>, force: Boolean = false) {
         scanning.value = true
         notice.value = null
         try {
-            val result = scanner.scan(ScanRequest(sourceIds))
+            val result = (scanner as? MediaScanCoordinator)?.scan(ScanRequest(sourceIds), force)
+                ?: scanner.scan(ScanRequest(sourceIds))
             notice.value = when {
                 result.failures.any { it.kind == ScanFailureKind.SOURCE_OFFLINE } -> MediaLibraryNotice.SOURCE_OFFLINE
                 result.failures.isNotEmpty() -> MediaLibraryNotice.SCAN_PARTIAL

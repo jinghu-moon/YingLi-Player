@@ -248,6 +248,9 @@ data class LibraryFolder(
     val name: String,
     val videoCount: Int,
     val sizeBytes: Long,
+    val totalDurationMillis: Long = 0L,
+    val unwatchedCount: Int = 0,
+    val newCount: Int = 0,
 )
 
 enum class LibraryPageDirection {

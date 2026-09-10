@@ -163,6 +163,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        (application as YingLiApplication).playbackController.setVideoOutputEnabled(true)
         (application as YingLiApplication).mediaContainer.appLockManager.onForeground()
     }
 
@@ -170,6 +171,7 @@ class MainActivity : ComponentActivity() {
         if (!isChangingConfigurations) {
             val app = application as YingLiApplication
             val manager = app.mediaContainer.appLockManager
+            if (!isInPictureInPictureMode) app.playbackController.setVideoOutputEnabled(false)
             app.playbackController.invalidateSecureSession()
             if (manager.machine.value.policy.mode != AppLockMode.OFF) setSecureContent(true)
             manager.onBackground()

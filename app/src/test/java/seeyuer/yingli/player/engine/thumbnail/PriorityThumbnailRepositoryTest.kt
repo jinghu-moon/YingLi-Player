@@ -120,6 +120,24 @@ class PriorityThumbnailRepositoryTest {
     }
 
     @Test
+    fun `terminal extraction failure is remembered for the same media version`() = runTest {
+        var calls = 0
+        val request = request("failed", ThumbnailPriority.VISIBLE)
+        val repository = PriorityThumbnailRepository(
+            scope = this,
+            extractor = ThumbnailExtractor { calls++; false },
+        )
+
+        repository.enqueue(request)
+        advanceUntilIdle()
+        repository.enqueue(request)
+        advanceUntilIdle()
+
+        assertEquals(2, calls)
+        assertEquals(ThumbnailState.Failed, repository.observe(request.key).first())
+    }
+
+    @Test
     fun `least recently used key is extracted again after cache eviction`() = runTest {
         var calls = 0
         val first = request("first", ThumbnailPriority.VISIBLE)

@@ -40,4 +40,7 @@ data class LibraryFolderRow(
     val name: String,
     val videoCount: Int,
     val sizeBytes: Long,
+    val totalDurationMillis: Long,
+    val unwatchedCount: Int,
+    val newCount: Int,
 )

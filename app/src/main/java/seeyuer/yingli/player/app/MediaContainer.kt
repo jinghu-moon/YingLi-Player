@@ -23,6 +23,7 @@ import seeyuer.yingli.player.data.sources.*
 import seeyuer.yingli.player.engine.thumbnail.*
 import seeyuer.yingli.player.engine.thumbnail.frame.Media3FrameThumbnailSource
 import seeyuer.yingli.player.engine.thumbnail.system.ContentResolverThumbnailSource
+import seeyuer.yingli.player.engine.thumbnail.system.ArtworkThumbnailSource
 import seeyuer.yingli.player.data.library.RoomLibraryRepository
 import seeyuer.yingli.player.data.library.DefaultLibraryMutationRepository
 import seeyuer.yingli.player.data.library.RoomTrashRepository
@@ -36,6 +37,7 @@ import seeyuer.yingli.player.domain.home.HomeLayoutRepository
 import seeyuer.yingli.player.domain.home.HomeRepository
 import seeyuer.yingli.player.domain.catalog.DefaultMediaIdentityResolver
 import seeyuer.yingli.player.domain.catalog.DefaultMediaScanner
+import seeyuer.yingli.player.domain.catalog.MediaScanCoordinator
 import seeyuer.yingli.player.domain.catalog.MediaCatalogRepository
 import seeyuer.yingli.player.domain.catalog.MediaPermissionGateway
 import seeyuer.yingli.player.domain.catalog.MediaScanner
@@ -144,7 +146,7 @@ object ProductionMediaContainerFactory {
             MediaStoreDiscoveryDataSource(context, foundation.dispatchers),
             SafTreeDiscoveryDataSource(context, foundation.dispatchers),
         )
-        val scanner = DefaultMediaScanner(
+        val scannerDelegate = DefaultMediaScanner(
             dataSources,
             sourceRepository,
             catalogRepository,
@@ -152,6 +154,12 @@ object ProductionMediaContainerFactory {
             AndroidMediaContentHasher(context, foundation.dispatchers),
             foundation.idGenerator,
             foundation.clock,
+        )
+        val scanner = MediaScanCoordinator(
+            delegate = scannerDelegate,
+            sourceRepository = sourceRepository,
+            clock = foundation.clock,
+            dispatcher = foundation.dispatchers.io,
         )
         val thumbnailScope = CoroutineScope(SupervisorJob() + foundation.dispatchers.io)
         val thumbnailImageLoader = ImageLoader.Builder(context.applicationContext)
@@ -274,8 +282,11 @@ object ProductionMediaContainerFactory {
             foundation.clock,
         )
         val thumbnailExtractor = FallbackThumbnailExtractor(
-            ContentResolverThumbnailSource(context),
-            Media3FrameThumbnailSource(context, foundation.dispatchers),
+            ArtworkThumbnailSource(context),
+            FallbackThumbnailExtractor(
+                ContentResolverThumbnailSource(context),
+                Media3FrameThumbnailSource(context, foundation.dispatchers),
+            ),
         )
         val thumbnailCache = LayeredThumbnailCache(
             memory = MemoryThumbnailCache(),

@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +47,7 @@ import seeyuer.yingli.player.domain.playback.PlaybackState
 import seeyuer.yingli.player.domain.playback.ScreenshotUiState
 import seeyuer.yingli.player.domain.playback.VideoScaleMode
 import seeyuer.yingli.player.domain.playback.VideoRotation
+import seeyuer.yingli.player.domain.playback.VideoMirror
 import seeyuer.yingli.player.domain.playback.PlaybackOrder
 import seeyuer.yingli.player.domain.playback.PlayerControlLayout
 import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
@@ -212,6 +214,11 @@ fun PlayerScreen(
             .testTag(PlayerTestTags.CANVAS),
     ) {
         val landscape = maxWidth > maxHeight
+        // 镜像翻转：与自由缩放一样只做视图层变换，不进播放管线。
+        // 按 mediaId 记忆：当前播放内保留，切换媒体即复位，与缩放等会话内状态同生命周期。
+        var mirror by androidx.compose.runtime.remember(state.playback.request?.mediaId) {
+            androidx.compose.runtime.mutableStateOf(VideoMirror.Default)
+        }
         // 自由缩放：只做视图层变换（缩放 + 平移），不进播放管线；倍数与平移都已按视口夹紧。
         // 手势进行中（真实手势边界）直接跟手；手势结束后的复位用动画过渡，避免"啪"地跳回去。
         val zoomGestureActive = zoomGestureInProgress.value
@@ -235,10 +242,23 @@ fun PlayerScreen(
             animationSpec = zoomSpec,
             label = "zoom-offset-y",
         ).value
+        // 镜像翻转动画：从 1f 动画到 -1f 必然经过 0，画面先压扁再朝另一侧展开，
+        // 视觉上就是"翻面"，无需额外做 3D 旋转；时长与缩放过渡一致，两者手感统一。
+        val mirrorScaleX by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (mirror.horizontal) -1f else 1f,
+            animationSpec = androidx.compose.animation.core.tween(ZOOM_TRANSITION_MILLIS),
+            label = "mirror-x",
+        )
+        val mirrorScaleY by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (mirror.vertical) -1f else 1f,
+            animationSpec = androidx.compose.animation.core.tween(ZOOM_TRANSITION_MILLIS),
+            label = "mirror-y",
+        )
         Box(
             modifier = Modifier.fillMaxSize().graphicsLayer {
-                scaleX = zoomScale
-                scaleY = zoomScale
+                // 镜像与缩放都是倍数，直接相乘；平移量不受翻转影响（翻转不改变画面中心所在位置）。
+                scaleX = zoomScale * mirrorScaleX
+                scaleY = zoomScale * mirrorScaleY
                 translationX = zoomOffsetX * size.width * zoomScale
                 translationY = -zoomOffsetY * size.height * zoomScale
             },
@@ -247,7 +267,10 @@ fun PlayerScreen(
                 rotation = state.rotation,
                 videoAspect = state.videoAspect(),
                 fillScreen = state.fillScreen,
-                zoomActive = state.zoom.isActive,
+                // 镜像与旋转/缩放一样只作用于视图层级：SurfaceView 的画面由 SurfaceFlinger 单独合成，
+                // 不会跟随父级 graphicsLayer 的负缩放，因此只要镜像生效就必须切到 TextureView 输出，
+                // 否则按钮状态变了、画面却纹丝不动。
+                zoomActive = state.zoom.isActive || mirror.isActive,
                 modifier = Modifier.fillMaxSize(),
                 mediaKey = state.playback.request?.mediaId?.value,
             ) { transformed ->
@@ -434,6 +457,9 @@ fun PlayerScreen(
                 onOpenVideoInfo = { onOpenPanel(PlayerPanel.VIDEO_INFO) },
                 onSelectAudioTrack = { if (state.audioTracks.isNotEmpty()) onOpenPanel(PlayerPanel.SETTINGS) },
                 onSelectSubtitleTrack = { onOpenPanel(PlayerPanel.SETTINGS) },
+                mirror = mirror,
+                onToggleMirrorHorizontal = { mirror = mirror.toggleHorizontal() },
+                onToggleMirrorVertical = { mirror = mirror.toggleVertical() },
                 onOpenSettings = { onOpenPanel(PlayerPanel.SETTINGS) },
                 controlLayout = state.controlLayout,
                 compact = !landscape,

@@ -25,6 +25,9 @@ enum class PlayerControlId(val fixed: Boolean = false) {
     SUBTITLE,
     SCREENSHOT,
     AB_LOOP,
+    /** 画面镜像翻转：左右 / 上下各一个，与截图、AB 循环同属低频工具。 */
+    MIRROR_HORIZONTAL,
+    MIRROR_VERTICAL,
     PLAYLIST,
     INFO,
     PIP,
@@ -103,7 +106,13 @@ data class PlayerControlLayout(
             PlayerControlSurface.LANDSCAPE_TOP_RIGHT to listOf(PlayerControlId.PLAYLIST, PlayerControlId.AUDIO, PlayerControlId.SUBTITLE, PlayerControlId.SETTINGS),
             PlayerControlSurface.LANDSCAPE_BOTTOM_LEFT to listOf(PlayerControlId.ORDER, PlayerControlId.SPEED),
             PlayerControlSurface.LANDSCAPE_BOTTOM_RIGHT to listOf(PlayerControlId.PIP, PlayerControlId.FULLSCREEN, PlayerControlId.LOCK),
-            PlayerControlSurface.TOOLS to listOf(PlayerControlId.SCREENSHOT, PlayerControlId.AB_LOOP, PlayerControlId.INFO),
+            PlayerControlSurface.TOOLS to listOf(
+                PlayerControlId.SCREENSHOT,
+                PlayerControlId.AB_LOOP,
+                PlayerControlId.MIRROR_HORIZONTAL,
+                PlayerControlId.MIRROR_VERTICAL,
+                PlayerControlId.INFO,
+            ),
             PlayerControlSurface.PORTRAIT_BOTTOM to listOf(
                 PlayerControlId.SPEED,
                 PlayerControlId.SCALE,

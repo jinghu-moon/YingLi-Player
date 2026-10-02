@@ -173,6 +173,10 @@ internal fun BottomPlaybackControls(
     onOpenVideoInfo: () -> Unit = {},
     onSelectAudioTrack: () -> Unit = {},
     onSelectSubtitleTrack: () -> Unit = {},
+    /** 当前会话的镜像翻转状态：按钮用它显示选中态。 */
+    mirror: seeyuer.yingli.player.domain.playback.VideoMirror = seeyuer.yingli.player.domain.playback.VideoMirror(),
+    onToggleMirrorHorizontal: () -> Unit = {},
+    onToggleMirrorVertical: () -> Unit = {},
     controlLayout: seeyuer.yingli.player.domain.playback.PlayerControlLayout = seeyuer.yingli.player.domain.playback.PlayerControlLayout(),
     modifier: Modifier,
     compact: Boolean = false,
@@ -333,6 +337,9 @@ internal fun BottomPlaybackControls(
                             onOpenVideoInfo = onOpenVideoInfo,
                             onSelectAudioTrack = onSelectAudioTrack,
                             onSelectSubtitleTrack = onSelectSubtitleTrack,
+                            mirror = mirror,
+                            onToggleMirrorHorizontal = onToggleMirrorHorizontal,
+                            onToggleMirrorVertical = onToggleMirrorVertical,
                         )
                     }
             }
@@ -411,6 +418,9 @@ internal fun BottomPlaybackControls(
                                 onOpenVideoInfo = onOpenVideoInfo,
                                 onSelectAudioTrack = onSelectAudioTrack,
                                 onSelectSubtitleTrack = onSelectSubtitleTrack,
+                                mirror = mirror,
+                                onToggleMirrorHorizontal = onToggleMirrorHorizontal,
+                                onToggleMirrorVertical = onToggleMirrorVertical,
                                 valueLabel = if (sliderActive && id == PlayerControlId.SPEED) {
                                     shownSpeed.displayLabel()
                                 } else {
@@ -481,6 +491,10 @@ private fun PlayerShortcut(
     onOpenVideoInfo: () -> Unit,
     onSelectAudioTrack: () -> Unit,
     onSelectSubtitleTrack: () -> Unit,
+    /** 会话内镜像状态：镜像按钮与锁定/全屏按钮一样，用"选中态"表达当前是否已翻转。 */
+    mirror: seeyuer.yingli.player.domain.playback.VideoMirror = seeyuer.yingli.player.domain.playback.VideoMirror(),
+    onToggleMirrorHorizontal: () -> Unit = {},
+    onToggleMirrorVertical: () -> Unit = {},
     valueLabel: String? = null,
 ) {
     val action: (() -> Unit)? = when (id) {
@@ -493,6 +507,8 @@ private fun PlayerShortcut(
         PlayerControlId.SCALE -> onCycleScaleMode
         PlayerControlId.SCREENSHOT -> onScreenshot
         PlayerControlId.AB_LOOP -> onOpenAbTool
+        PlayerControlId.MIRROR_HORIZONTAL -> onToggleMirrorHorizontal
+        PlayerControlId.MIRROR_VERTICAL -> onToggleMirrorVertical
         PlayerControlId.PLAYLIST -> onOpenPlaylist
         PlayerControlId.INFO -> onOpenVideoInfo
         PlayerControlId.PIP -> if (allowPictureInPicture) onPictureInPicture else null
@@ -513,6 +529,8 @@ private fun PlayerShortcut(
         PlayerControlId.SCALE -> videoScaleModeIcon(state.scaleMode)
         PlayerControlId.SCREENSHOT -> YingLiIcon.SCREENSHOT
         PlayerControlId.AB_LOOP -> YingLiIcon.REPLAY
+        PlayerControlId.MIRROR_HORIZONTAL -> YingLiIcon.FLIP_HORIZONTAL
+        PlayerControlId.MIRROR_VERTICAL -> YingLiIcon.FLIP_VERTICAL
         PlayerControlId.PLAYLIST -> YingLiIcon.PLAYLIST
         PlayerControlId.INFO -> YingLiIcon.DIAGNOSTICS
         PlayerControlId.PIP -> YingLiIcon.PICTURE_IN_PICTURE
@@ -539,6 +557,8 @@ private fun PlayerShortcut(
         )
         PlayerControlId.SCREENSHOT -> "截图"
         PlayerControlId.AB_LOOP -> "AB循环"
+        PlayerControlId.MIRROR_HORIZONTAL -> "水平翻转"
+        PlayerControlId.MIRROR_VERTICAL -> "垂直翻转"
         PlayerControlId.PLAYLIST -> "播放列表"
         PlayerControlId.INFO -> "视频信息"
         PlayerControlId.PIP -> "画中画"
@@ -561,6 +581,12 @@ private fun PlayerShortcut(
         contentDescription = label,
         onClick = action,
         size = PlayerChromeButtonSize,
+        // 镜像按钮是"开关"而非"动作"，翻转生效时用选中态表达；其余按钮保持原有外观。
+        filled = when (id) {
+            PlayerControlId.MIRROR_HORIZONTAL -> mirror.horizontal
+            PlayerControlId.MIRROR_VERTICAL -> mirror.vertical
+            else -> false
+        },
         valueLabel = valueLabel,
     )
 }

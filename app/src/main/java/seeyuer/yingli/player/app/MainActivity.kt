@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
             app.mediaContainer.libraryRepository,
             windowPlaybackGateway,
             ActivityDeviceControlGateway(this),
+            app.mediaContainer.seekPrecisionControl,
             ownsSessionClient = false,
         )
     }

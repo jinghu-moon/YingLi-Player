@@ -45,7 +45,6 @@ import androidx.paging.compose.LazyPagingItems
 import kotlinx.coroutines.delay
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
-import seeyuer.yingli.player.domain.playback.FrameCounterState
 import seeyuer.yingli.player.domain.playback.PlaybackRecoveryAction
 import seeyuer.yingli.player.domain.playback.PlayerPanel
 import seeyuer.yingli.player.domain.playback.AbPoint
@@ -57,7 +56,6 @@ import seeyuer.yingli.player.domain.playback.VideoRotation
 import seeyuer.yingli.player.domain.playback.VideoMirror
 import seeyuer.yingli.player.domain.playback.PlaybackOrder
 import seeyuer.yingli.player.domain.playback.PlayerControlLayout
-import seeyuer.yingli.player.domain.playback.frameCounterStateOf
 import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -531,9 +529,9 @@ fun PlayerScreen(
             enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
             exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
         ) {
-            // 帧率不可用时 state.frameCounter() 恒为 null → 整个胶囊不出现：
+            // 帧率与时长都不可用、也没有校准值时 state.frameCounter 恒为 null → 整个胶囊不出现：
             // 宁可不出这个胶囊，也不显示编造的帧号（口径与逐帧步进一致）。
-            state.frameCounter()?.let { counter -> FrameCounterCapsule(counter) }
+            state.frameCounter?.let { counter -> FrameCounterCapsule(counter) }
         }
         (state.screenshot as? ScreenshotUiState.Preview)?.let { preview ->
             ScreenshotPreview(
@@ -639,18 +637,6 @@ fun PlayerScreen(
         }
     }
 }
-
-/**
- * 帧数胶囊要显示的两个数：帧率取自媒体格式（Media3 `Format.frameRate`，经 `PlaybackMediaInfo` 冒泡到 UI），
- * 时长为时间轴总时长，位置用「当前显示位置」——拖动进度条时它跟手，帧号也就跟手。
- *
- * 计算本身是纯逻辑，放在域层 [frameCounterStateOf]；这里只负责把三份状态取出来。
- */
-private fun PlayerUiState.frameCounter(): FrameCounterState? = frameCounterStateOf(
-    positionMillis = displayedPositionMillis,
-    durationMillis = playback.timeline.durationMillis ?: mediaInfo?.durationMillis,
-    frameRate = mediaInfo?.frameRate,
-)
 
 private fun PlaybackState.hasTransportControls(): Boolean = when (this) {
     is PlaybackState.Ready, is PlaybackState.Playing, is PlaybackState.Paused -> true

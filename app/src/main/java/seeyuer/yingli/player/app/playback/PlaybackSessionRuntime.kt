@@ -24,6 +24,7 @@ import seeyuer.yingli.player.domain.playback.AbLoopReducer
 import seeyuer.yingli.player.domain.playback.BackendId
 import seeyuer.yingli.player.domain.playback.EngineState
 import seeyuer.yingli.player.domain.playback.ElapsedTimeSource
+import seeyuer.yingli.player.domain.playback.FrameCalibrationControl
 import seeyuer.yingli.player.domain.playback.FrameCaptureRequest
 import seeyuer.yingli.player.domain.playback.HistoryEligibilityPolicy
 import seeyuer.yingli.player.domain.playback.NavigationDecision
@@ -67,6 +68,16 @@ class PlaybackSessionRuntime(
     private val transformControl: VideoTransformControl? = null,
     private val speedControl: SpeedControl? = null,
     private val elapsedTimeSource: ElapsedTimeSource,
+    /**
+     * 帧号校准组件（可空：没有接入时帧号只显示估算值）。
+     * 校准结果随媒体切换复位，见 [PlaybackSessionSnapshot.frameCalibration]。
+     */
+    private val frameCalibrationControl: FrameCalibrationControl? = null,
+    /**
+     * 已解析来源的 URI 表。只用于"按当前媒体的真实 URI 做帧数校准"：
+     * [PlaybackSourceHandle] 本身只带 accessHandleId，URI 由注册表保管（与引擎同一份）。
+     */
+    private val sourceUriLookup: (String) -> String? = { null },
     private val vaultResolver: (suspend (VaultItemId, String) -> Result<seeyuer.yingli.player.domain.playback.PlaybackSourceHandle>)? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.main),
 ) : PlaybackSessionClient, AutoCloseable {
@@ -119,6 +130,16 @@ class PlaybackSessionRuntime(
                 }
             }
         }
+        frameCalibrationControl?.let { control ->
+            scope.launch {
+                control.result.collect { result ->
+                    commandMutex.withLock {
+                        mutableSnapshot.value = mutableSnapshot.value.copy(frameCalibration = result)
+                        emitState()
+                    }
+                }
+            }
+        }
     }
 
     override fun dispatch(command: PlaybackSessionCommand): PlaybackCommandHandle {
@@ -147,6 +168,27 @@ class PlaybackSessionRuntime(
         }
     }
 
+    /**
+     * 触发当前媒体的真实帧数校准（截图模式进入时调用）。
+     *
+     * 只在这里解析一次 URI：来源解析链本来就在会话这一层。媒体切换时 [open] 会取消在跑的校准，
+     * 因此这里不需要再判断"是不是还在同一个媒体"——解析出来的 URI 就是当前媒体自己的。
+     */
+    override fun calibrateFrames() {
+        val control = frameCalibrationControl
+        val request = activeRequest
+        if (control == null || request == null) return
+        scope.launch {
+            val resolved = runCatching { resolver.resolve(request) }.getOrNull()?.getOrNull() ?: return@launch
+            val uri = sourceUriLookup(resolved.accessHandleId.value) ?: return@launch
+            control.calibrate(uri, request.mediaId.value)
+        }
+    }
+
+    override fun stopFrameCalibration() {
+        frameCalibrationControl?.close()
+    }
+
     private suspend fun execute(id: PlaybackCommandId, command: PlaybackSessionCommand) {
         when (command) {
             is PlaybackSessionCommand.Open -> error("Open is resolved outside the command lock")
@@ -164,6 +206,8 @@ class PlaybackSessionRuntime(
             PlaybackSessionCommand.Stop -> {
                 openGeneration++
                 playWhenReady = false
+                // 会话结束：在跑的帧数校准既没有归属也没有意义，直接取消并清空结果。
+                frameCalibrationControl?.close()
                 engine.stop()
                 mutableSnapshot.value = mutableSnapshot.value.copy(
                     mediaId = null,
@@ -171,6 +215,7 @@ class PlaybackSessionRuntime(
                     phase = PlaybackPhase.Idle,
                     timeline = PlaybackTimeline(),
                     abLoop = abReducer.reduce(snapshot.value.abLoop, AbLoopEvent.Clear).state,
+                    frameCalibration = null,
                 )
                 emitState()
             }
@@ -246,12 +291,15 @@ class PlaybackSessionRuntime(
                 activeRequest = request
                 openGeneration += 1L
                 playWhenReady = true
+                // 新媒体的校准结果不能沿用上一个文件：取消在跑的任务并清空。
+                frameCalibrationControl?.close()
                 mutableSnapshot.value = snapshot.value.copy(
                     sessionId = request.sessionId,
                     mediaId = request.mediaId,
                     title = source.displayName,
                     phase = PlaybackPhase.Preparing(BackendId.MEDIA3),
                     timeline = PlaybackTimeline(),
+                    frameCalibration = null,
                     mediaInfo = PlaybackMediaInfo(
                         title = source.displayName,
                         durationMillis = source.durationMillis,
@@ -271,6 +319,8 @@ class PlaybackSessionRuntime(
     private suspend fun open(id: PlaybackCommandId, request: PlaybackOpenRequest) {
         val generation = commandMutex.withLock {
             openGeneration++
+            // 切媒体就把在跑的校准取消掉：旧文件的帧数对新文件是错的。
+            frameCalibrationControl?.close()
             mutableSnapshot.value = snapshot.value.copy(
                 sessionId = request.sessionId,
                 mediaId = request.mediaId,
@@ -278,6 +328,7 @@ class PlaybackSessionRuntime(
                 phase = PlaybackPhase.Resolving(id),
                 timeline = PlaybackTimeline(request.startPositionMillis),
                 abLoop = abReducer.reduce(snapshot.value.abLoop, AbLoopEvent.MediaChanged).state,
+                frameCalibration = null,
             )
             emitState()
             activeRequest = request
@@ -403,6 +454,7 @@ class PlaybackSessionRuntime(
 
     override fun close() {
         commandJob?.cancel()
+        frameCalibrationControl?.close()
         engine.release()
         scope.cancel()
     }

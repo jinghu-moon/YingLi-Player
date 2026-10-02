@@ -94,7 +94,14 @@ class YingLiPlaybackService : MediaSessionService() {
             it.addListener(listener)
         }
         val sourceRegistry = SourceHandleRegistry()
-        sessionEngine = ServicePlaybackEngine(player, sourceRegistry)
+        // 跳转精度开关由播放页写、这里读：同一个进程内共享同一个实例，所以"只改策略不打断播放"，
+        // 不需要为一条控制指令重建媒体或接管 MediaSession 的 onConnect。
+        sessionEngine = ServicePlaybackEngine(
+            player,
+            sourceRegistry,
+            application.container.dispatchers,
+            application.mediaContainer.seekPrecisionControl,
+        )
         val resolver = PlaybackSourceResolver { request: PlaybackOpenRequest ->
             runCatching {
                 sourceRegistry.resolvePending(request)?.let { return@runCatching Result.success(it) }
@@ -130,6 +137,8 @@ class YingLiPlaybackService : MediaSessionService() {
             speedControl = sessionEngine,
             transformControl = sessionEngine,
             elapsedTimeSource = ElapsedTimeSource(android.os.SystemClock::elapsedRealtime),
+            frameCalibrationControl = application.mediaContainer.frameCalibrationControl,
+            sourceUriLookup = sourceRegistry::resolve,
             vaultResolver = { itemId: VaultItemId, displayTitle: String ->
                 val mediaId = MediaItemId("vault-${itemId.value}")
                 val accessId = "${sessionRuntimeId()}:${mediaId.value}"

@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import seeyuer.yingli.player.core.common.AppDispatchers
 import seeyuer.yingli.player.core.model.media.MediaItemId
+import seeyuer.yingli.player.domain.playback.FrameCalibrationControl
+import seeyuer.yingli.player.domain.playback.NoOpFrameCalibrationControl
 
 /**
  * Application-owned connection to the service session. The player feature only sees the
@@ -25,6 +27,10 @@ class PlaybackSessionClientBridge(
     private val queueRepository: PlaybackQueueRepository? = null,
     private val sessionId: PlaybackSessionId = PlaybackSessionId("activity-session"),
     shufflePicker: ShufflePicker = ShufflePicker { candidates, _ -> candidates.random() },
+    /**
+     * 帧号校准组件。默认的 NoOp 实现让"没接校准"的宿主行为与改造前完全一致（只显示估算值）。
+     */
+    private val frameCalibrationControl: FrameCalibrationControl = NoOpFrameCalibrationControl,
 ) : PlaybackSessionClient, AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + dispatchers.main)
     private val commandSequence = AtomicLong(0)
@@ -35,6 +41,8 @@ class PlaybackSessionClientBridge(
     private var queue: PlaybackQueue? = null
     private var abLoop = AbLoopState()
     private var currentTitle: String? = null
+    /** 最近一次打开用的来源场景：帧数校准要按同一场景重新解析 URI。 */
+    private var currentSourceContext = PlaybackSourceContext.HOME
     private val queueNavigator = QueueNavigator(shufflePicker)
 
     override val snapshot: StateFlow<PlaybackSessionSnapshot> = mutableSnapshot.asStateFlow()
@@ -60,6 +68,29 @@ class PlaybackSessionClientBridge(
         queueRepository?.let { repository ->
             scope.launch { repository.queue.collect { queue = it; publishQueue() } }
         }
+        scope.launch {
+            frameCalibrationControl.result.collect { result ->
+                mutableSnapshot.value = mutableSnapshot.value.copy(frameCalibration = result)
+            }
+        }
+    }
+
+    /**
+     * 触发当前媒体的真实帧数校准。这里解析一次 URI：来源解析链本来就在这一层，
+     * 校准组件只接受 URI，不需要知道媒体库的任何概念。
+     */
+    override fun calibrateFrames() {
+        val mediaId = snapshot.value.mediaId ?: return
+        val sourceContext = currentSourceContext
+        scope.launch {
+            val resolved = runCatching { sourceRepository.resolve(mediaId, sourceContext, incognito = false) }
+                .getOrNull() ?: return@launch
+            frameCalibrationControl.calibrate(resolved.uri, mediaId.value)
+        }
+    }
+
+    override fun stopFrameCalibration() {
+        frameCalibrationControl.close()
     }
 
     override fun dispatch(command: PlaybackSessionCommand): PlaybackCommandHandle {
@@ -108,11 +139,15 @@ class PlaybackSessionClientBridge(
             feedback(PlaybackCommandRejection.SOURCE_UNAVAILABLE.name)
             return
         }
+        currentSourceContext = request.sourceContext
+        // 切媒体就把在跑的校准取消掉并清空：旧文件的帧数对新文件是错的。
+        frameCalibrationControl.close()
         val startPosition = request.startPositionMillis.takeIf { it > 0 } ?: resolved.request.startPositionMillis
         controller.prepare(resolved.copy(request = resolved.request.copy(startPositionMillis = startPosition)))
         currentTitle = resolved.title
         mutableSnapshot.value = mutableSnapshot.value.copy(
             title = resolved.title,
+            frameCalibration = null,
             mediaInfo = PlaybackMediaInfo(
                 title = resolved.title,
                 durationMillis = resolved.durationMillis,
@@ -137,6 +172,8 @@ class PlaybackSessionClientBridge(
             title = displayTitle,
             phase = PlaybackPhase.Preparing(BackendId.MEDIA3),
             mediaInfo = PlaybackMediaInfo(title = displayTitle),
+            // 保险库媒体不校准（来源是加密管道，不是可直接扫描的本地文件）。
+            frameCalibration = null,
         )
         publishQueue()
     }

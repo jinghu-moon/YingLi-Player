@@ -327,6 +327,11 @@ data class PlaybackSessionSnapshot(
     val scaleMode: VideoScaleMode = VideoScaleMode.FIT,
     val connectionState: PlaybackConnectionState = PlaybackConnectionState.CONNECTING,
     val mediaInfo: PlaybackMediaInfo? = null,
+    /**
+     * 当前媒体的帧号校准状态（截图模式用）。随会话/媒体切换复位：
+     * 它描述的是"这一段媒体"，换成另一个文件就必须重新校准，绝不能让旧值跟着走。
+     */
+    val frameCalibration: FrameCalibrationResult? = null,
 )
 
 data class PlaybackMediaInfo(
@@ -442,6 +447,18 @@ interface PlaybackSessionClient {
     val snapshot: StateFlow<PlaybackSessionSnapshot>
     val events: Flow<PlaybackSessionEvent>
     fun dispatch(command: PlaybackSessionCommand): PlaybackCommandHandle
+
+    /**
+     * 触发"当前媒体真实总帧数"的后台校准（结果回流到 [snapshot] 的 `frameCalibration`）。
+     *
+     * 由会话负责这件事，是因为**只有会话知道当前媒体的真实来源**（URI 解析在会话这一层）。
+     * 让 UI 层自己再解析一次 URI 会多一条重复的解析链，还会绕过会话对媒体切换的判定。
+     * 实现必须：只在本地源上真的去扫、在后台线程、可取消。
+     */
+    fun calibrateFrames() = Unit
+
+    /** 退出截图模式/销毁：取消在跑的校准并清空结果。 */
+    fun stopFrameCalibration() = Unit
 }
 
 data class PlaybackCommandHandle(val id: PlaybackCommandId)

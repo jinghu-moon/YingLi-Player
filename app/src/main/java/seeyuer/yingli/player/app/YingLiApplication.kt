@@ -32,6 +32,7 @@ class YingLiApplication : Application() {
             mediaContainer.playbackSourceRepository,
             container.dispatchers,
             mediaContainer.playbackQueueRepository,
+            frameCalibrationControl = mediaContainer.frameCalibrationControl,
         )
     }
 

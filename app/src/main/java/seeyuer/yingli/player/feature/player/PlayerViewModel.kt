@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -30,6 +32,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import seeyuer.yingli.player.core.common.AppDispatchers
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.R
@@ -37,6 +40,16 @@ import seeyuer.yingli.player.domain.playback.ScreenshotDeleteFailure
 import seeyuer.yingli.player.domain.playback.PlaybackCommandResult
 import seeyuer.yingli.player.domain.playback.PlaybackConnectionState
 import seeyuer.yingli.player.domain.playback.DeviceControlGateway
+import seeyuer.yingli.player.domain.playback.FrameCalibration
+import seeyuer.yingli.player.domain.playback.FrameCalibrationResult
+import seeyuer.yingli.player.domain.playback.FrameCounterState
+import seeyuer.yingli.player.domain.playback.SeekPrecision
+import seeyuer.yingli.player.domain.playback.SeekPrecisionControl
+import seeyuer.yingli.player.domain.playback.defaultSeekPrecision
+import seeyuer.yingli.player.domain.playback.effectiveFrameRate
+import seeyuer.yingli.player.domain.playback.frameDurationMillisOf
+import seeyuer.yingli.player.domain.playback.frameStepTargetMillis
+import seeyuer.yingli.player.domain.playback.DEFAULT_FRAME_STEP_MILLIS
 import seeyuer.yingli.player.domain.playback.PlaybackSessionClient
 import seeyuer.yingli.player.domain.playback.PlaybackSessionCommand
 import seeyuer.yingli.player.domain.playback.PlaybackSessionId
@@ -78,6 +91,8 @@ import seeyuer.yingli.player.domain.playback.VideoScaleMode
 import seeyuer.yingli.player.domain.playback.VideoZoom
 import seeyuer.yingli.player.domain.playback.VideoRotation
 import seeyuer.yingli.player.domain.playback.FullscreenPolicy
+import seeyuer.yingli.player.domain.playback.PlaybackAction
+import seeyuer.yingli.player.domain.playback.frameCounterStateOf
 import seeyuer.yingli.player.domain.playback.RequestedOrientation
 import seeyuer.yingli.player.domain.playback.WindowPlaybackGateway
 import seeyuer.yingli.player.domain.library.LibraryMedia
@@ -115,7 +130,23 @@ data class PlayerUiState(
     val zoom: VideoZoom = VideoZoom.Default,
     /** 长按临时倍速进行中：UI 显示"快进中"，且绝不写入媒体偏好。 */
     val isTemporarySpeed: Boolean = false,
+    /**
+     * 当前帧号（截图模式的帧数胶囊）。null = 不显示胶囊：帧率与时长都不可用、也没有校准值时
+     * 宁可不出这个胶囊，也不显示编造的帧号。
+     */
+    val frameCounter: FrameCounterState? = null,
+    /** 帧号校准状态（截图模式）：Calibrating 时显示估算值，Calibrated 后切换为精确值。 */
+    val frameCalibration: FrameCalibrationResult? = null,
+    /**
+     * 已校准的实测帧率。**步进与帧号都必须用它**（优先于容器 `Format.frameRate`）：
+     * 它是从真实样本时间轴派生的，和帧号同源，否则帧号与步长会互相漂移。
+     */
+    val measuredFrameRate: Float? = null,
 )
+
+/** 截图工具是否处于"逐帧检查"阶段：Armed/Capturing 都算，Idle/Preview/Failed 不算。 */
+internal fun ScreenshotUiState.isFrameSteppingActive(): Boolean =
+    this is ScreenshotUiState.Armed || this is ScreenshotUiState.Capturing
 
 /** 视频宽高比；宽高缺失或非法时返回 null，调用方按“形状未知”处理。 */
 internal fun PlayerUiState.videoAspect(): Float? {
@@ -149,6 +180,12 @@ class PlayerViewModel(
     private val libraryRepository: LibraryPagingRepository? = null,
     private val windowPlaybackGateway: WindowPlaybackGateway? = null,
     private val deviceControlGateway: DeviceControlGateway? = null,
+    /**
+     * 截图模式的跳转精度开关。必须是**跨进程内共享**的那个实例（见 MediaContainer）：
+     * 写它的是这里，读它并真正调用 `setSeekParameters` 的是 service 里的引擎。
+     * 传 null（单测/预览）时行为与改造前一致：不改变跳转精度。
+     */
+    private val seekPrecisionControl: SeekPrecisionControl? = null,
     private val ownsSessionClient: Boolean = true,
 ) : ViewModel() {
     private val events = Channel<PlayerUiEvent>(Channel.BUFFERED)
@@ -185,7 +222,20 @@ class PlayerViewModel(
     private var queueBuildJob: Job? = null
     private var activeQueueSource: PlaybackQueueSource? = null
 
+    /**
+     * 逐帧步进的"本步落点"锚点。
+     *
+     * 为什么需要它：seek 下发到位置被状态回报有延迟，连续点"下一帧"时若每次都从
+     * [PlayerUiState.displayedPositionMillis] 重新计算，第二次就会拿旧位置算出同一目标，
+     * 表现为"点两下只前进一帧"。锚点只在与回报位置相差不超过一帧时才被信任；
+     * 用户手动拖动进度条或换媒体后会自然失配，从而回落到真实位置（规则见 [resolveFrameStepAnchor]）。
+     */
+    private var frameStepAnchorMillis: Long? = null
+
     override fun onCleared() {
+        // 页面销毁：截图模式不再存在，既没有理由继续精确跳转，也没有理由让校准继续扫文件。
+        seekPrecisionControl?.setPrecision(SeekPrecision.CLOSEST_SYNC)
+        sessionClient.stopFrameCalibration()
         if (ownsSessionClient) (sessionClient as? AutoCloseable)?.close()
         super.onCleared()
     }
@@ -241,6 +291,11 @@ class PlayerViewModel(
     }
     private val fullscreenPolicy = FullscreenPolicy()
 
+    /** 校准状态进 UI 的通道：Calibrating 期间仍显示估算值，Calibrated 后切成精确值。 */
+    private val screenshotFrameCalibration: Flow<FrameCalibrationResult?> = sessionClient.snapshot
+        .map { it.frameCalibration }
+        .distinctUntilChanged()
+
     private val screenshotLayoutAndRotation = combine(
         screenshot,
         controlLayoutRepository?.layout ?: flowOf(PlayerControlLayout()),
@@ -251,9 +306,17 @@ class PlayerViewModel(
         PlayerSurfaceState(currentScreenshot, currentLayout, currentRotation, fullscreen, fill)
     }
 
+    /**
+     * 帧号校准状态进 UI 的通道。单独合成一层（而不是塞进上面那个 combine），
+     * 是因为"帧数校准"和"截图工具 UI"是两件独立的事：校准结果变化不该带动布局/旋转那一路。
+     */
+    private val surfaceAndCalibration = combine(screenshotLayoutAndRotation, screenshotFrameCalibration) { surface, result ->
+        surface.copy(frameCalibration = result)
+    }
+
     /** 手势相关子状态：单独合成一层，避免外层 combine 超过 5 个参数。 */
     private val surfaceAndGesture = combine(
-        screenshotLayoutAndRotation,
+        surfaceAndCalibration,
         gestureHud,
         zoom,
         isTemporarySpeed,
@@ -271,7 +334,9 @@ class PlayerViewModel(
         val (currentOverlay, currentPanel, currentAb, currentAbToolOpen, currentQueue) = overlayPanelAbAndQueueState
         val (currentPreferences, _) = preferencesAndQueueState
         val surfaceState = gestureSurface.surface
-        base.copy(
+        val calibrationResult = surfaceState.frameCalibration
+        val calibration = (calibrationResult as? FrameCalibrationResult.Calibrated)?.calibration
+        val next = base.copy(
             audioTracks = advanced.audioTracks,
             subtitleTracks = advanced.subtitleTracks,
             speed = advanced.speed,
@@ -290,6 +355,18 @@ class PlayerViewModel(
             gestureHud = gestureSurface.hud,
             zoom = gestureSurface.zoom,
             isTemporarySpeed = gestureSurface.temporarySpeed,
+            frameCalibration = calibrationResult,
+            measuredFrameRate = calibration?.measuredFrameRate,
+        )
+        // 帧号只在这里算一次：位置/时长/帧率/校准值全部来自同一份合并结果，
+        // UI 层因此不需要（也不应该）自己再取一次这些字段。
+        next.copy(
+            frameCounter = frameCounterStateOf(
+                positionMillis = next.displayedPositionMillis,
+                durationMillis = next.playback.timeline.durationMillis ?: next.mediaInfo?.durationMillis,
+                frameRate = next.mediaInfo?.frameRate,
+                calibration = calibration,
+            ),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), PlayerUiState())
 
@@ -616,7 +693,6 @@ class PlayerViewModel(
         screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.Arm)
         registerInteraction()
     }
-
     fun captureScreenshot() {
         val gateway = screenshotGateway ?: return
         if (screenshot.value != ScreenshotUiState.Armed) return
@@ -636,10 +712,27 @@ class PlayerViewModel(
     }
 
     fun stepScreenshotFrame(forward: Boolean) {
-        if (screenshot.value != ScreenshotUiState.Armed) return
+        val current = state.value
+        if (screenshot.value != ScreenshotUiState.Armed || !current.canSeek()) return
+        // 步进必须与播放互斥：播放中位置每 250ms 才回报一次，而一帧只有 33ms（30fps），
+        // 正在播放时"当前帧"没有稳定含义，seek 也会立刻被播放推进覆盖。
+        // 因此这里先暂停，由用户按播放键恢复——逐帧检查本来就是暂停态下的交互。
         dispatchResult(PlaybackSessionCommand.Pause)
-        val offset = if (forward) FRAME_STEP_FALLBACK_MILLIS else -FRAME_STEP_FALLBACK_MILLIS
-        dispatchResult(PlaybackSessionCommand.SeekBy(offset))
+        val frameRate = effectiveFrameRate(current.mediaInfo?.frameRate, current.measuredFrameRate)
+        val baseMillis = resolveFrameStepAnchor(
+            positionMillis = current.displayedPositionMillis,
+            anchorMillis = frameStepAnchorMillis,
+            frameDurationMillis = frameDurationMillisOf(frameRate),
+        )
+        val target = frameStepTargetMillis(
+            positionMillis = baseMillis,
+            frameRate = frameRate,
+            durationMillis = current.playback.timeline.durationMillis ?: current.mediaInfo?.durationMillis,
+            forward = forward,
+        )
+        // 锚点记的是"本次落点"，下一次步进从它起算，避免连续步进拿着尚未回报的旧位置原地打转。
+        frameStepAnchorMillis = target
+        dispatchResult(PlaybackSessionCommand.Seek(target))
         registerInteraction()
     }
 
@@ -656,6 +749,23 @@ class PlayerViewModel(
         scheduleOverlayHide()
     }
 
+    /**
+     * 截图工具激活状态发生了变化：切换跳转精度并触发/取消帧数校准。
+     *
+     * 退出时一律恢复"按时长选择"的默认策略——恢复成哪个值由 [defaultSeekPrecision] 与
+     * 引擎手里的媒体时长决定，UI 不需要知道当前媒体多长。
+     */
+    private fun applyFrameCaptureSession(active: Boolean) {
+        if (active) {
+            // 会话层解析当前媒体的真实 URI 后交给校准组件（网络源会被跳过，保持估算显示）。
+            sessionClient.calibrateFrames()
+            seekPrecisionControl?.setPrecision(SeekPrecision.FRAME_ACCURATE)
+        } else {
+            sessionClient.stopFrameCalibration()
+            seekPrecisionControl?.setPrecision(defaultSeekPrecision(state.value.playback.timeline.durationMillis))
+            frameStepAnchorMillis = null
+        }
+    }
     fun deleteScreenshot() {
         val preview = screenshot.value as? ScreenshotUiState.Preview ?: run {
             return
@@ -1040,6 +1150,20 @@ class PlayerViewModel(
                 }
             }
         }
+        /*
+         * 截图工具进出时切换跳转精度并触发/取消帧数校准。
+         *
+         * 用 observe 而不是在 arm/close 各处直接调用：进入与退出有多条路径
+         *（关闭按钮、返回键、切媒体、切面板、锁定、页面销毁），任何一条漏掉都会留下
+         * "一直在精确跳转"或"一直在扫文件"的残留状态；订阅唯一的状态源就不会漏。
+         */
+        viewModelScope.launch {
+            screenshot
+                .map { state -> state.isFrameSteppingActive() }
+                .drop(1)
+                .distinctUntilChanged()
+                .collect(::applyFrameCaptureSession)
+        }
         // 全屏以系统事实为准：镜像窗口网关的状态，而不是点击后就假设成功。
         viewModelScope.launch {
             windowPlaybackGateway?.state?.collect { windowState ->
@@ -1058,6 +1182,8 @@ class PlayerViewModel(
         val rotation: VideoRotation,
         val isFullscreen: Boolean,
         val fillScreen: Boolean,
+        /** 校准状态：Calibrating 期间仍按估算显示，Calibrated 才切精确值。 */
+        val frameCalibration: FrameCalibrationResult? = null,
     )
 
     /** 手势层子状态。 */
@@ -1077,7 +1203,6 @@ class PlayerViewModel(
          */
         private const val GESTURE_VALUE_GAIN = 2f
         private const val TRACK_LOAD_TIMEOUT_MILLIS = 5_000L
-        private const val FRAME_STEP_FALLBACK_MILLIS = 34L
         private const val SCREENSHOT_EXPIRY_TICK_MILLIS = 100L
         private const val PLAYLIST_PAGE_SIZE = 60
         private const val PLAYLIST_PREFETCH_DISTANCE = 12
@@ -1095,6 +1220,7 @@ class PlayerViewModel(
             libraryRepository: LibraryPagingRepository? = null,
             windowPlaybackGateway: WindowPlaybackGateway? = null,
             deviceControlGateway: DeviceControlGateway? = null,
+            seekPrecisionControl: SeekPrecisionControl? = null,
             ownsSessionClient: Boolean = true,
         ) = viewModelFactory {
             initializer {
@@ -1110,6 +1236,7 @@ class PlayerViewModel(
                     libraryRepository,
                     windowPlaybackGateway,
                     deviceControlGateway,
+                    seekPrecisionControl,
                     ownsSessionClient,
                 )
             }
@@ -1167,3 +1294,20 @@ private fun TrackChoice.toFingerprint() = seeyuer.yingli.player.domain.playback.
 
 private fun PlaybackState.supportsScreenshot(): Boolean =
     this is PlaybackState.Ready || this is PlaybackState.Playing || this is PlaybackState.Paused
+
+/** 帧步进需要"可跳转"：队列未就绪/失败时按钮不该算数。 */
+private fun PlayerUiState.canSeek(): Boolean = PlaybackAction.SEEK in playback.availableActions
+
+/**
+ * 步进起点：优先用上一次步进的落点（seek 回报有延迟），但只在它与回报位置相差不超过一帧时才算数。
+ * 差距超过一帧说明用户拖过进度条或换了媒体，锚点已失效，必须回到真实位置。
+ */
+internal fun resolveFrameStepAnchor(
+    positionMillis: Long,
+    anchorMillis: Long?,
+    frameDurationMillis: Long?,
+): Long {
+    val anchor = anchorMillis ?: return positionMillis
+    val tolerance = (frameDurationMillis ?: DEFAULT_FRAME_STEP_MILLIS).coerceAtLeast(1L)
+    return if (abs(positionMillis - anchor) <= tolerance) anchor else positionMillis
+}

@@ -44,6 +44,11 @@ import seeyuer.yingli.player.domain.catalog.MediaSourceRepository
 import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
 import seeyuer.yingli.player.domain.playback.PlaybackProgressRepository
 import seeyuer.yingli.player.domain.playback.PlaybackSourceRepository
+import seeyuer.yingli.player.domain.playback.FrameCalibrationControl
+import seeyuer.yingli.player.domain.playback.MutableSeekPrecisionControl
+import seeyuer.yingli.player.domain.playback.SeekPrecisionControl
+import seeyuer.yingli.player.engine.media3.frame.AndroidFrameCountProbe
+import seeyuer.yingli.player.engine.media3.frame.LocalMediaFrameCounter
 import seeyuer.yingli.player.domain.library.LibraryMutationRepository
 import seeyuer.yingli.player.domain.library.LibraryPreferenceRepository
 import seeyuer.yingli.player.domain.library.LibraryRepository
@@ -127,6 +132,14 @@ data class MediaContainer(
     val vaultRepository: VaultRepository,
     val securePlaybackSource: SecurePlaybackSource,
     val shortsPreferenceRepository: ShortsPreferenceRepository,
+    /**
+     * 截图模式的跳转精度开关。放在容器里是因为要**跨宿主共享同一个实例**：
+     * 写它的是播放页（Activity 进程里的 ViewModel），读它的是真正执行 seek 的 service 引擎
+     *（见 ServicePlaybackEngine），两者必须在同一份状态上。
+     */
+    val seekPrecisionControl: SeekPrecisionControl,
+    /** 帧号后台校准组件（MediaExtractor 统计视频 sample 数）；也同样要跨宿主共享。 */
+    val frameCalibrationControl: FrameCalibrationControl,
 )
 
 object ProductionMediaContainerFactory {
@@ -299,6 +312,13 @@ object ProductionMediaContainerFactory {
             memory = MemoryThumbnailCache(),
             disk = DiskThumbnailCache(context.cacheDir.resolve(ThumbnailStorage.DIRECTORY_NAME)),
         )
+        val playbackScope = CoroutineScope(SupervisorJob() + foundation.dispatchers.main)
+        // 帧数校准：MediaExtractor 只读容器、不解码（样本计数），所以它不该和缩略图/转码抢同一个作用域。
+        val frameCalibrationControl = LocalMediaFrameCounter(
+            probe = AndroidFrameCountProbe(context),
+            dispatchers = foundation.dispatchers,
+            scope = playbackScope,
+        )
         return MediaContainer(
             sourceRepository,
             catalogRepository,
@@ -346,6 +366,8 @@ object ProductionMediaContainerFactory {
             vaultRepository,
             vaultRepository,
             shortsPreferences,
+            MutableSeekPrecisionControl(),
+            frameCalibrationControl,
         )
     }
 

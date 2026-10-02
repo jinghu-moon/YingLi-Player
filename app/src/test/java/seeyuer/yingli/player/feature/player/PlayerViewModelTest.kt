@@ -20,6 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.Rule
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import seeyuer.yingli.player.core.common.AppDispatchers
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
@@ -50,6 +51,14 @@ import seeyuer.yingli.player.domain.playback.ScreenshotGateway
 import seeyuer.yingli.player.domain.playback.ScreenshotFileGateway
 import seeyuer.yingli.player.domain.playback.ScreenshotResult
 import seeyuer.yingli.player.domain.playback.ScreenshotUiState
+import seeyuer.yingli.player.domain.playback.FrameCalibration
+import seeyuer.yingli.player.domain.playback.FrameCalibrationControl
+import seeyuer.yingli.player.domain.playback.FrameCalibrationResult
+import seeyuer.yingli.player.domain.playback.FrameCounterState
+import seeyuer.yingli.player.domain.playback.PlaybackMediaInfo
+import seeyuer.yingli.player.domain.playback.MutableSeekPrecisionControl
+import seeyuer.yingli.player.domain.playback.SeekPrecision
+import seeyuer.yingli.player.domain.playback.PlaybackTimeline
 import seeyuer.yingli.player.domain.playback.AbPoint
 import seeyuer.yingli.player.domain.playback.TrackChoice
 import seeyuer.yingli.player.domain.playback.TrackPreference
@@ -936,6 +945,224 @@ class PlayerViewModelTest {
         stateCollector.cancel()
     }
 
+    // ---- 截图模式第 2 步：帧精确跳转 + 逐帧步进 + 帧号校准 ----
+
+    @Test
+    fun `screenshot tool switches to frame accurate seeking and restores the duration rule on exit`() = runTest {
+        // 长视频（>120s）的默认策略是关键帧跳转：进入截图工具后才允许改成精确跳转。
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(2_000, 600_000)))
+        val control = MutableSeekPrecisionControl()
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg")),
+            seekPrecisionControl = control,
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        assertEquals(SeekPrecision.CLOSEST_SYNC, control.precision.value)
+
+        viewModel.armScreenshot()
+        runCurrent()
+        assertEquals(SeekPrecision.FRAME_ACCURATE, control.precision.value)
+
+        viewModel.closeScreenshot()
+        runCurrent()
+        // 退出后按时长还原（600s → 关键帧跳转），而不是无条件回到某一个固定档。
+        assertEquals(SeekPrecision.CLOSEST_SYNC, control.precision.value)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `leaving a short media screenshot session restores frame accurate seeking`() = runTest {
+        // 短视频（≤120s）的默认策略本身就是精确跳转：还原要按同一规则算，不能一律写成关键帧。
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(1_000, 10_000)))
+        val control = MutableSeekPrecisionControl(SeekPrecision.CLOSEST_SYNC)
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg")),
+            seekPrecisionControl = control,
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        runCurrent()
+        viewModel.closeScreenshot()
+        runCurrent()
+
+        assertEquals(SeekPrecision.FRAME_ACCURATE, control.precision.value)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `stepping one frame seeks by a single frame duration and pauses`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(1_000, 10_000)))
+        controller.setMediaInfo(PlaybackMediaInfo(title = "影片", durationMillis = 10_000, frameRate = 30f))
+        val control = MutableSeekPrecisionControl()
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg")),
+            seekPrecisionControl = control,
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        runCurrent()
+        viewModel.stepScreenshotFrame(forward = true)
+        runCurrent()
+
+        // 30fps → 一帧 33ms；步进必须走精确 seek 的目标位置，而不是固定 34ms 的估算偏移。
+        assertEquals(1_033L, controller.lastSeekPosition)
+        assertEquals(1, controller.pauseCount)
+        // 退出截图模式后步进必须无效（工具没打开时不该动播放位置）。
+        viewModel.closeScreenshot()
+        runCurrent()
+        val positionAfterClose = controller.lastSeekPosition
+        viewModel.stepScreenshotFrame(forward = true)
+        runCurrent()
+        assertEquals(positionAfterClose, controller.lastSeekPosition)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `stepping anchors on the previous target while the position report lags`() = runTest {
+        // seek 回报延迟时连续步进仍要每次前进一帧（否则会"点两下只走一帧"）。
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(1_000, 10_000)))
+        controller.setMediaInfo(PlaybackMediaInfo(title = "影片", durationMillis = 10_000, frameRate = 30f))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg")),
+            seekPrecisionControl = MutableSeekPrecisionControl(),
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        runCurrent()
+        viewModel.stepScreenshotFrame(forward = true)
+        runCurrent()
+        viewModel.stepScreenshotFrame(forward = true)
+        runCurrent()
+
+        // 控制器没有回报新位置（假控制器不更新 state），但锚点让第二步仍然从 1033 走到 1066。
+        assertEquals(1_066L, controller.lastSeekPosition)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `step target is clamped at the end of the media`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(9_990, 10_000)))
+        controller.setMediaInfo(PlaybackMediaInfo(title = "影片", durationMillis = 10_000, frameRate = 30f))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg")),
+            seekPrecisionControl = MutableSeekPrecisionControl(),
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        runCurrent()
+        viewModel.stepScreenshotFrame(forward = true)
+        runCurrent()
+
+        assertEquals(10_000L, controller.lastSeekPosition)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `calibrated frame count replaces the estimate in the ui state`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(0, 10_000)))
+        controller.setMediaInfo(PlaybackMediaInfo(title = "影片", durationMillis = 10_000, frameRate = 30f))
+        val calibration = MutableFrameCalibrationControlFake()
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(
+                controller,
+                sourceRepository,
+                dispatchers,
+                frameCalibrationControl = calibration,
+            ),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg")),
+            seekPrecisionControl = MutableSeekPrecisionControl(),
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        viewModel.armScreenshot()
+        runCurrent()
+
+        // 进入截图模式就发起后台校准（估算值此时仍在显示）。
+        assertEquals(1, calibration.calibrateCalls)
+        // 估算：10 秒 @30fps = 300 帧。
+        assertEquals(FrameCounterState(1, 300), viewModel.state.value.frameCounter)
+
+        // 后台校准完成：总帧数换成真实 sample 数，实测帧率也一起暴露给 UI（步进优先用它）。
+        calibration.emit(FrameCalibrationResult.Calibrated(FrameCalibration(frameCount = 301, measuredFrameRate = 29.97f)))
+        runCurrent()
+
+        assertEquals(FrameCounterState(1, 301), viewModel.state.value.frameCounter)
+        assertEquals(29.97f, viewModel.state.value.measuredFrameRate ?: 0f, 0.001f)
+
+        // 退出截图模式：取消在跑的校准并回到估算口径（胶囊隐藏或退回估算，不再用旧媒体的精确值）。
+        viewModel.closeScreenshot()
+        runCurrent()
+        assertEquals(1, calibration.closeCalls)
+        assertNull(viewModel.state.value.measuredFrameRate)
+        assertEquals(FrameCounterState(1, 300), viewModel.state.value.frameCounter)
+        stateCollector.cancel()
+    }
+
+    /** 可注入的校准结果源：用来驱动"估算 → 精确"的升级路径。 */
+    private class MutableFrameCalibrationControlFake : FrameCalibrationControl {
+        private val mutableResult = MutableStateFlow<FrameCalibrationResult?>(null)
+        override val result: StateFlow<FrameCalibrationResult?> = mutableResult
+        var calibrateCalls = 0
+        var closeCalls = 0
+
+        fun emit(value: FrameCalibrationResult) {
+            mutableResult.value = value
+        }
+
+        override fun calibrate(uri: String, mediaId: String) {
+            calibrateCalls++
+        }
+
+        override fun close() {
+            closeCalls++
+            mutableResult.value = null
+        }
+    }
+
     private class TestDispatchers(private val dispatcher: CoroutineDispatcher) : AppDispatchers {
         override val main = dispatcher
         override val io = dispatcher
@@ -955,16 +1182,24 @@ class PlayerViewModelTest {
     }
 
     private class FakePlaybackController : PlaybackController,
-        seeyuer.yingli.player.domain.security.SecurePlaybackController {
+        seeyuer.yingli.player.domain.security.SecurePlaybackController,
+        seeyuer.yingli.player.domain.playback.PlaybackMediaInfoProvider {
         private val mutableState = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
         override val state: StateFlow<PlaybackState> = mutableState
         override val connectionState = MutableStateFlow(PlaybackConnectionState.CONNECTED)
+        private val mutableMediaInfo = MutableStateFlow<seeyuer.yingli.player.domain.playback.PlaybackMediaInfo?>(null)
+        override val mediaInfo: StateFlow<seeyuer.yingli.player.domain.playback.PlaybackMediaInfo?> = mutableMediaInfo
         var preparedRequest: PlaybackRequest? = null
         var lastSeekPosition: Long? = null
+        var pauseCount = 0
         var vaultPrepared: seeyuer.yingli.player.domain.security.VaultItemId? = null
 
         fun setState(value: PlaybackState) {
             mutableState.value = value
+        }
+
+        fun setMediaInfo(value: seeyuer.yingli.player.domain.playback.PlaybackMediaInfo) {
+            mutableMediaInfo.value = value
         }
 
         override fun prepare(request: PlaybackRequest): PlaybackCommandResult {
@@ -974,7 +1209,10 @@ class PlayerViewModelTest {
         }
 
         override fun play() = PlaybackCommandResult.Accepted
-        override fun pause() = PlaybackCommandResult.Accepted
+        override fun pause(): PlaybackCommandResult {
+            pauseCount++
+            return PlaybackCommandResult.Accepted
+        }
         override fun seekTo(positionMillis: Long): PlaybackCommandResult {
             lastSeekPosition = positionMillis
             return PlaybackCommandResult.Accepted

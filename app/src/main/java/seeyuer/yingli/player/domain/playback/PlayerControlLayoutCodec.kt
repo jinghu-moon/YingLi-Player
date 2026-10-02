@@ -15,19 +15,20 @@ package seeyuer.yingli.player.domain.playback
  * 1. 在 [BACKFILLED_CONTROLS_BY_VERSION] 里为它所属的**新版本号**登记这些 id；
  * 2. 把 [CURRENT_LAYOUT_VERSION] 提到那个版本号。
  *
- * 只做第 1 步：控件虽然能被补进老用户的布局，但 [encode] 仍写旧版本号，
- * 它就一直停留在"比数据版本更新"的那一代——用户一旦移除，下次读取又会被补回来。
- * 只做第 2 步：那个版本号上没有任何登记，回填自然补不出东西。
+ * 回填只认"引入版本落在 `(dataVersion, currentVersion]` 区间内"的代，
+ * 所以漏做第 2 步只会让这一代控件补不进来（新按钮不出现，开发者一眼就能发现），
+ * 不会把用户移除过的按钮复活；只做第 2 步：那个版本号上没有任何登记，回填自然补不出东西。
  *
  * **为什么是"按版本分代"，而不是"一个累积列表"：**
  * 累积列表只有"数据版本 < 当前版本"这一个判据，于是版本号每提升一次，
  * 所有老用户都会被重新补上历史上每一代的新控件——包括他们此前主动移除过的那些，
- * "永久移除"便只在同一个版本内成立。分代登记后判据变成"这一代比数据版本新"：
+ * "永久移除"便只在同一个版本内成立。分代登记后判据变成"这一代比数据版本新、且不超过当前版本"：
  * 已经写进用户数据的旧代控件，不会因为后续版本提升而复活，移除才是永久的。
  */
 internal object PlayerControlLayoutCodec {
     /**
-     * 当前布局格式版本。[encode] 把它写进数据，[migrate] 用它判定"比本实现更新的数据不要动"；
+     * 当前布局格式版本。[encode] 把它写进数据，[migrate] 用它判定"比本实现更新的数据不要动"，
+     * 同时用它给回填划定上界（只回填不超过它的代次）；
      * 每次在 [BACKFILLED_CONTROLS_BY_VERSION] 里登记一代新控件，就要把它提到那一代。
      */
     const val CURRENT_LAYOUT_VERSION = 4
@@ -35,10 +36,10 @@ internal object PlayerControlLayoutCodec {
     /**
      * 分代回填登记表：key = 引入这些控件的布局版本，value = 该版本新增的控件（按此顺序补进"工具托盘"）。
      *
-     * 只回填"比数据版本更新"的那几代，所以一个控件登记在哪一代，就决定了哪一代之前的用户会收到它。
-     * 约定：key 不得大于 [CURRENT_LAYOUT_VERSION]（见上面的两步规则）。
-     * 一旦登记了比当前版本还新的代，补进去的控件会跟着旧版本号写回，
-     * 用户的移除又会被复活，分代回填就失去意义。
+     * 只回填"引入版本比数据版本新、且不超过 [CURRENT_LAYOUT_VERSION]"的那几代，
+     * 所以一个控件登记在哪一代，就决定了哪一代之前的用户会收到它。
+     * 登记了比当前版本还新的代不会造成任何回填（[migrate] 把它挡在上界之外）：
+     * 忘记提版本号时表现为"新按钮不出现"，而不是"用户的移除被复活"。
      */
     val BACKFILLED_CONTROLS_BY_VERSION: Map<Int, List<PlayerControlId>> = mapOf(
         4 to listOf(
@@ -74,11 +75,16 @@ internal object PlayerControlLayoutCodec {
     }
 
     /**
-     * 把 [backfill] 里所有"引入版本比 [dataVersion] 新"的代，按引入版本升序逐代补进"工具托盘"。
+     * 把 [backfill] 里所有"引入版本落在 `(dataVersion, currentVersion]` 区间内"的代，
+     * 按引入版本升序逐代补进"工具托盘"。
      *
-     * - [dataVersion] 等于当前版本：没有哪一代比它新 → 原样返回，用户移除过的控件不会复活（移除是永久的）；
+     * 上界（`it.key <= currentVersion`）是结构性保证：登记了比当前版本还新的代一律不参与回填。
+     * 于是"登记了控件却忘了提 [CURRENT_LAYOUT_VERSION]"的后果只是这一代补不进来（功能缺失，立刻可见），
+     * 而不会把它补进数据、[encode] 却仍写旧版本号，导致用户移除后每次读取又被复活（静默错误）。
+     *
+     * - [dataVersion] 等于当前版本：没有哪一代落在区间内 → 原样返回，用户移除过的控件不会复活（移除是永久的）；
      * - [dataVersion] 比当前版本还新（例如从更高版本备份恢复）：不认识的数据一律不动；
-     * - legacy（版本 0）：所有代都比它新，按升序全部回填。
+     * - legacy（版本 0）：登记表里所有不超过当前版本的代都比它新，按升序全部回填。
      *
      * [backfill] 可注入：测试用虚构登记表（例如 `mapOf(4 to listOf(A), 5 to listOf(B))`）
      * 就能验证"跨代只补新代"，无需真的提升 [CURRENT_LAYOUT_VERSION]。
@@ -92,7 +98,7 @@ internal object PlayerControlLayoutCodec {
     ): PlayerControlLayout {
         if (dataVersion > currentVersion) return layout
         return backfill.entries
-            .filter { it.key > dataVersion }
+            .filter { it.key > dataVersion && it.key <= currentVersion }
             .sortedBy { it.key }
             .fold(layout) { migrated, generation ->
                 migrated.ensureControls(PlayerControlSurface.TOOLS, generation.value)

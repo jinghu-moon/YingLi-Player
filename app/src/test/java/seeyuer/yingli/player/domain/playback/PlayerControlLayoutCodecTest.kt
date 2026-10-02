@@ -7,8 +7,9 @@ import org.junit.Test
 
 /**
  * 布局编解码与"按版本分代回填"的契约：
- * 老数据（无版本前缀，或版本号小于当前值）只补齐"比它新"的那几代回填按钮；
- * 数据版本等于当前版本时原样返回，用户移除过的旧代按钮不会复活。
+ * 老数据（无版本前缀，或版本号小于当前值）只补齐"比它新、且不超过当前版本"的那几代回填按钮；
+ * 登记表里超出当前版本的代一律不参与回填；数据版本等于当前版本时原样返回，
+ * 用户移除过的旧代按钮不会复活。
  */
 class PlayerControlLayoutCodecTest {
     @Test
@@ -188,7 +189,7 @@ class PlayerControlLayoutCodecTest {
     @Test
     fun `migration only backfills the generations newer than the stored data version`() {
         // 虚构登记表：第 4 代是本版本登记的控件，第 5 代相当于"将来"新增的控件。
-        // currentVersion 仍取当前版本：回填只看"登记代 vs 数据版本"，与这个数字无关。
+        // currentVersion 提到 5，模拟将来真的把版本号提上去了：这一代才允许回填。
         val generations = mapOf(
             4 to listOf(
                 PlayerControlId.MIRROR_HORIZONTAL,
@@ -207,7 +208,7 @@ class PlayerControlLayoutCodecTest {
         val migrated = PlayerControlLayoutCodec.migrate(
             stored,
             dataVersion = 4,
-            currentVersion = PlayerControlLayoutCodec.CURRENT_LAYOUT_VERSION,
+            currentVersion = 5,
             backfill = generations,
         )
 
@@ -220,6 +221,59 @@ class PlayerControlLayoutCodecTest {
         assertFalse(PlayerControlId.MIRROR_HORIZONTAL in migrated.controls(PlayerControlSurface.TOOLS))
         assertFalse(PlayerControlId.MIRROR_VERTICAL in migrated.controls(PlayerControlSurface.TOOLS))
         assertFalse(PlayerControlId.BACKGROUND_PLAYBACK in migrated.controls(PlayerControlSurface.TOOLS))
+    }
+
+    /**
+     * 结构性保证：登记表里存在比 [PlayerControlLayoutCodec.CURRENT_LAYOUT_VERSION] 更新的代
+     * （开发时只登记、忘了提版本号）时，该代被上界挡在回填之外——
+     * 后果是"新按钮不出现"，而不是"补进旧版本数据、[PlayerControlLayoutCodec.encode] 又写回旧版本号，
+     * 于是用户的移除被复活"这种静默错误。
+     */
+    @Test
+    fun `migration skips generations registered beyond the current version`() {
+        val generations = mapOf(
+            4 to listOf(
+                PlayerControlId.MIRROR_HORIZONTAL,
+                PlayerControlId.MIRROR_VERTICAL,
+                PlayerControlId.BACKGROUND_PLAYBACK,
+            ),
+            5 to listOf(PlayerControlId.SCREENSHOT),
+        )
+        // v4 用户：第 4 代三个按钮与截图都被他移除了。
+        val stored = PlayerControlLayout()
+            .remove(PlayerControlId.MIRROR_HORIZONTAL)
+            .remove(PlayerControlId.MIRROR_VERTICAL)
+            .remove(PlayerControlId.BACKGROUND_PLAYBACK)
+            .remove(PlayerControlId.SCREENSHOT)
+
+        val migrated = PlayerControlLayoutCodec.migrate(
+            stored,
+            dataVersion = 4,
+            currentVersion = 4,
+            backfill = generations,
+        )
+
+        // 第 5 代超出当前版本 → 完全不回填，用户的移除保持有效。
+        assertEquals(stored, migrated)
+    }
+
+    /** 上界只排除超出当前版本的代，不误伤恰好等于当前版本的那一代。 */
+    @Test
+    fun `migration still backfills the generation equal to the current version`() {
+        val generations = mapOf(
+            4 to listOf(PlayerControlId.MIRROR_HORIZONTAL),
+            6 to listOf(PlayerControlId.SCREENSHOT),
+        )
+        val stored = PlayerControlLayout(PlayerControlSurface.entries.associateWith { emptyList() })
+
+        val migrated = PlayerControlLayoutCodec.migrate(
+            stored,
+            dataVersion = 0,
+            currentVersion = 4,
+            backfill = generations,
+        )
+
+        assertEquals(listOf(PlayerControlId.MIRROR_HORIZONTAL), migrated.controls(PlayerControlSurface.TOOLS))
     }
 
     /** 数据版本就是当前版本、登记表里没有更新的代：完全不回填，保持"当前版本原样返回"的既有语义。 */

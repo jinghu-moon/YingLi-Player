@@ -30,6 +30,7 @@ import composeicons.tabler.outline.FlipHorizontal
 import composeicons.tabler.outline.FlipVertical
 import composeicons.tabler.outline.Ban
 import composeicons.tabler.outline.GripVertical
+import composeicons.tabler.outline.Headphones
 import composeicons.tabler.outline.Home
 import composeicons.tabler.outline.LayoutGrid
 import composeicons.tabler.outline.List
@@ -117,6 +118,8 @@ enum class YingLiIcon(
     SHARE(IconProvider.TABLER),
     DELETE(IconProvider.TABLER),
     PICTURE_IN_PICTURE(IconProvider.TABLER),
+    /** 后台播放：耳机字形表达"画面看不见了，声音还在继续"。 */
+    BACKGROUND_PLAYBACK(IconProvider.TABLER),
     CAST(IconProvider.TABLER),
     VOLUME(IconProvider.TABLER),
     FULLSCREEN(IconProvider.TABLER),
@@ -184,6 +187,7 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.SHARE -> TablerIcons.Outline.Share
         YingLiIcon.DELETE -> TablerIcons.Outline.Trash
         YingLiIcon.PICTURE_IN_PICTURE -> TablerIcons.Outline.PictureInPicture
+        YingLiIcon.BACKGROUND_PLAYBACK -> TablerIcons.Outline.Headphones
         YingLiIcon.CAST -> TablerIcons.Outline.Cast
         YingLiIcon.VOLUME -> TablerIcons.Outline.Volume
         YingLiIcon.FULLSCREEN -> TablerIcons.Outline.ArrowsMaximize

@@ -136,6 +136,9 @@ class PlayerGestureHintTest {
         override suspend fun setPreviousRestartsCurrentItem(enabled: Boolean) =
             update { it.copy(previousRestartsCurrentItem = enabled) }
 
+        override suspend fun setBackgroundPlaybackEnabled(enabled: Boolean) =
+            update { it.copy(backgroundPlaybackEnabled = enabled) }
+
         private fun update(transform: (PlayerPreferences) -> PlayerPreferences) {
             mutablePreferences.value = transform(mutablePreferences.value)
         }

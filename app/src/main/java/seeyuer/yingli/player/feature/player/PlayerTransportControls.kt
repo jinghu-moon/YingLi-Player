@@ -177,6 +177,9 @@ internal fun BottomPlaybackControls(
     mirror: seeyuer.yingli.player.domain.playback.VideoMirror = seeyuer.yingli.player.domain.playback.VideoMirror(),
     onToggleMirrorHorizontal: () -> Unit = {},
     onToggleMirrorVertical: () -> Unit = {},
+    /** 后台播放开关的当前值：托盘按钮用它显示选中态（开 = 实心）。 */
+    backgroundPlaybackEnabled: Boolean = true,
+    onToggleBackgroundPlayback: () -> Unit = {},
     controlLayout: seeyuer.yingli.player.domain.playback.PlayerControlLayout = seeyuer.yingli.player.domain.playback.PlayerControlLayout(),
     modifier: Modifier,
     compact: Boolean = false,
@@ -340,6 +343,8 @@ internal fun BottomPlaybackControls(
                             mirror = mirror,
                             onToggleMirrorHorizontal = onToggleMirrorHorizontal,
                             onToggleMirrorVertical = onToggleMirrorVertical,
+                            backgroundPlaybackEnabled = backgroundPlaybackEnabled,
+                            onToggleBackgroundPlayback = onToggleBackgroundPlayback,
                         )
                     }
             }
@@ -421,6 +426,8 @@ internal fun BottomPlaybackControls(
                                 mirror = mirror,
                                 onToggleMirrorHorizontal = onToggleMirrorHorizontal,
                                 onToggleMirrorVertical = onToggleMirrorVertical,
+                                backgroundPlaybackEnabled = backgroundPlaybackEnabled,
+                                onToggleBackgroundPlayback = onToggleBackgroundPlayback,
                                 valueLabel = if (sliderActive && id == PlayerControlId.SPEED) {
                                     shownSpeed.displayLabel()
                                 } else {
@@ -495,6 +502,9 @@ private fun PlayerShortcut(
     mirror: seeyuer.yingli.player.domain.playback.VideoMirror = seeyuer.yingli.player.domain.playback.VideoMirror(),
     onToggleMirrorHorizontal: () -> Unit = {},
     onToggleMirrorVertical: () -> Unit = {},
+    /** 会话内后台播放开关状态：与镜像按钮一样，用"选中态"表达开关当前是否开启。 */
+    backgroundPlaybackEnabled: Boolean = true,
+    onToggleBackgroundPlayback: () -> Unit = {},
     valueLabel: String? = null,
 ) {
     val action: (() -> Unit)? = when (id) {
@@ -509,6 +519,7 @@ private fun PlayerShortcut(
         PlayerControlId.AB_LOOP -> onOpenAbTool
         PlayerControlId.MIRROR_HORIZONTAL -> onToggleMirrorHorizontal
         PlayerControlId.MIRROR_VERTICAL -> onToggleMirrorVertical
+        PlayerControlId.BACKGROUND_PLAYBACK -> onToggleBackgroundPlayback
         PlayerControlId.PLAYLIST -> onOpenPlaylist
         PlayerControlId.INFO -> onOpenVideoInfo
         PlayerControlId.PIP -> if (allowPictureInPicture) onPictureInPicture else null
@@ -531,6 +542,8 @@ private fun PlayerShortcut(
         PlayerControlId.AB_LOOP -> YingLiIcon.REPLAY
         PlayerControlId.MIRROR_HORIZONTAL -> YingLiIcon.FLIP_HORIZONTAL
         PlayerControlId.MIRROR_VERTICAL -> YingLiIcon.FLIP_VERTICAL
+        // 后台播放是"声音继续、画面不可见"，用耳机字形表达比用齿轮/扬声器更直观。
+        PlayerControlId.BACKGROUND_PLAYBACK -> YingLiIcon.BACKGROUND_PLAYBACK
         PlayerControlId.PLAYLIST -> YingLiIcon.PLAYLIST
         PlayerControlId.INFO -> YingLiIcon.DIAGNOSTICS
         PlayerControlId.PIP -> YingLiIcon.PICTURE_IN_PICTURE
@@ -559,6 +572,7 @@ private fun PlayerShortcut(
         PlayerControlId.AB_LOOP -> "AB循环"
         PlayerControlId.MIRROR_HORIZONTAL -> "水平翻转"
         PlayerControlId.MIRROR_VERTICAL -> "垂直翻转"
+        PlayerControlId.BACKGROUND_PLAYBACK -> "后台播放"
         PlayerControlId.PLAYLIST -> "播放列表"
         PlayerControlId.INFO -> "视频信息"
         PlayerControlId.PIP -> "画中画"
@@ -581,10 +595,11 @@ private fun PlayerShortcut(
         contentDescription = label,
         onClick = action,
         size = PlayerChromeButtonSize,
-        // 镜像按钮是"开关"而非"动作"，翻转生效时用选中态表达；其余按钮保持原有外观。
+        // 镜像与后台播放都是"开关"而非"动作"，生效时用选中态表达；其余按钮保持原有外观。
         filled = when (id) {
             PlayerControlId.MIRROR_HORIZONTAL -> mirror.horizontal
             PlayerControlId.MIRROR_VERTICAL -> mirror.vertical
+            PlayerControlId.BACKGROUND_PLAYBACK -> backgroundPlaybackEnabled
             else -> false
         },
         valueLabel = valueLabel,

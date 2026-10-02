@@ -21,6 +21,15 @@ data class PlayerPreferences(
     val gestureSwipeDownToExitEnabled: Boolean = false,
     /** 常规播放页的一次性手势提示是否已展示过（规格 §5.15 / §19.3）。 */
     val gestureHintShown: Boolean = false,
+
+    /**
+     * 后台播放：true（默认）= 退到后台后继续播放（前台服务照常出声，与开关存在之前的行为一致）；
+     * false = 退到后台立即暂停。
+     *
+     * 默认 true 是刻意的：这个开关是"允许用户关掉后台出声"，不是"要求用户主动打开后台播放"，
+     * 默认值一旦反过来，升级后所有老用户的后台播放都会突然消失。
+     */
+    val backgroundPlaybackEnabled: Boolean = true,
 ) {
     companion object {
         /**
@@ -60,4 +69,7 @@ interface PlayerPreferenceRepository {
     suspend fun setGestureSwipeDownToExitEnabled(enabled: Boolean)
     suspend fun setGestureHintShown(shown: Boolean)
     suspend fun setGestureLongPressSpeed(speed: PlaybackSpeed)
+
+    /** 见 [PlayerPreferences.backgroundPlaybackEnabled]。 */
+    suspend fun setBackgroundPlaybackEnabled(enabled: Boolean)
 }

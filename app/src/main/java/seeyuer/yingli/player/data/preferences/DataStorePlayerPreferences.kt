@@ -94,6 +94,10 @@ class DataStorePlayerPreferenceRepository(
         userPreferences.update { it.copy(gestureLongPressSpeed = safeSpeed.value) }
     }
 
+    override suspend fun setBackgroundPlaybackEnabled(enabled: Boolean) {
+        userPreferences.update { it.copy(backgroundPlaybackEnabled = enabled) }
+    }
+
     override suspend fun setGlobal(preference: TrackPreference) {
         dataStore.edit { it[GLOBAL_TRACK] = preference.serialize() }
     }
@@ -136,6 +140,7 @@ internal fun UserPreferences.toPlayerPreferences(): PlayerPreferences = PlayerPr
     gestureSwipeDownToExitEnabled = gestureSwipeDownToExitEnabled,
     gestureHintShown = gestureHintShown,
     previousRestartsCurrentItem = previousRestartsCurrentItem,
+    backgroundPlaybackEnabled = backgroundPlaybackEnabled,
 )
 
 /**

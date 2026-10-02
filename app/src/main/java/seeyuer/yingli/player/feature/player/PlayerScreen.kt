@@ -99,6 +99,8 @@ fun PlayerScreen(
     onClosePanel: () -> Unit = {},
     onSetPlaybackOrder: (PlaybackOrder) -> Unit = {},
     onSetControlLayout: (PlayerControlLayout) -> Unit = {},
+    /** 后台播放开关（托盘里的状态型按钮）：true = 退到后台继续播放。 */
+    onSetBackgroundPlayback: (Boolean) -> Unit = {},
     onOpenPlaylist: () -> Unit = {},
     onSelectPlaylistItem: (Int) -> Unit = {},
     playlistItems: LazyPagingItems<PlaylistMediaItem>? = null,
@@ -460,6 +462,10 @@ fun PlayerScreen(
                 mirror = mirror,
                 onToggleMirrorHorizontal = { mirror = mirror.toggleHorizontal() },
                 onToggleMirrorVertical = { mirror = mirror.toggleVertical() },
+                backgroundPlaybackEnabled = state.preferences.backgroundPlaybackEnabled,
+                onToggleBackgroundPlayback = {
+                    onSetBackgroundPlayback(!state.preferences.backgroundPlaybackEnabled)
+                },
                 onOpenSettings = { onOpenPanel(PlayerPanel.SETTINGS) },
                 controlLayout = state.controlLayout,
                 compact = !landscape,

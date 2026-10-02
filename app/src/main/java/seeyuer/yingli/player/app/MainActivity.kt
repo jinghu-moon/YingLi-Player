@@ -200,6 +200,18 @@ class MainActivity : ComponentActivity() {
         if (!isChangingConfigurations) {
             val app = application as YingLiApplication
             val manager = app.mediaContainer.appLockManager
+            // 后台播放开关：关掉后一离开前台就暂停（画中画例外 —— 画面仍可见，暂停等于把 PiP 变成静态图）。
+            // 放在 super.onStop() 之前读状态：此刻 collectAsStateWithLifecycle 的订阅还没停，
+            // state.value 里是用户刚看到的那份偏好，而不是 StateFlow 的初始默认值。
+            // 这里刻意不在 onStart 里恢复播放：回到前台要不要继续由用户决定，播放器不该替他按播放键。
+            if (
+                seeyuer.yingli.player.domain.playback.shouldPauseInBackground(
+                    backgroundPlaybackEnabled = playerViewModel.state.value.preferences.backgroundPlaybackEnabled,
+                    inPictureInPicture = isInPictureInPictureMode,
+                )
+            ) {
+                playerViewModel.pause()
+            }
             if (!isInPictureInPictureMode) app.playbackController.setVideoOutputEnabled(false)
             app.playbackController.invalidateSecureSession()
             if (manager.machine.value.policy.mode != AppLockMode.OFF) setSecureContent(true)

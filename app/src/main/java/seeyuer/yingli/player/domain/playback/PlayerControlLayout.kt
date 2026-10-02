@@ -28,6 +28,9 @@ enum class PlayerControlId(val fixed: Boolean = false) {
     /** 画面镜像翻转：左右 / 上下各一个，与截图、AB 循环同属低频工具。 */
     MIRROR_HORIZONTAL,
     MIRROR_VERTICAL,
+
+    /** 后台播放开关（状态型）：开启时退到后台继续播放，关闭时退到后台暂停。 */
+    BACKGROUND_PLAYBACK,
     PLAYLIST,
     INFO,
     PIP,
@@ -122,6 +125,7 @@ data class PlayerControlLayout(
                 PlayerControlId.MIRROR_HORIZONTAL,
                 PlayerControlId.MIRROR_VERTICAL,
                 PlayerControlId.INFO,
+                PlayerControlId.BACKGROUND_PLAYBACK,
             ),
             PlayerControlSurface.PORTRAIT_BOTTOM to listOf(
                 PlayerControlId.SPEED,

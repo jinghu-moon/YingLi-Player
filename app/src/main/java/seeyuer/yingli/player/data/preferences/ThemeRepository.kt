@@ -65,6 +65,8 @@ data class UserPreferences(
     val gestureDoubleTapSeekMillis: Int = PlayerPreferences.DEFAULT_DOUBLE_TAP_SEEK_MILLIS,
     val gestureSwipeDownToExitEnabled: Boolean = false,
     val gestureHintShown: Boolean = false,
+    /** 后台播放开关：true（默认）= 退到后台继续出声；false = 退到后台暂停。 */
+    val backgroundPlaybackEnabled: Boolean = true,
     val gestureLongPressSpeed: Float = PlayerPreferences.DEFAULT_LONG_PRESS_SPEED.value,
     val exportDirectory: ExportDirectoryPreference = ExportDirectoryPreference.YINGLI_OUTPUT,
     val customExportTreeUri: String? = null,
@@ -111,6 +113,7 @@ data class UserPreferences(
             gestureSwipeDownToExitEnabled: Boolean? = null,
             gestureHintShown: Boolean? = null,
             gestureLongPressSpeed: Float? = null,
+            backgroundPlaybackEnabled: Boolean? = null,
             exportDirectory: String?,
             customExportTreeUri: String?,
         ): UserPreferences {
@@ -139,6 +142,7 @@ data class UserPreferences(
                 gestureSwipeDownToExitEnabled = gestureSwipeDownToExitEnabled ?: false,
                 gestureHintShown = gestureHintShown ?: false,
                 gestureLongPressSpeed = PlayerPreferences.longPressSpeedOrDefault(gestureLongPressSpeed).value,
+                backgroundPlaybackEnabled = backgroundPlaybackEnabled ?: true,
                 exportDirectory = if (safeDirectory == ExportDirectoryPreference.USER_SELECTED && safeUri == null) {
                     ExportDirectoryPreference.YINGLI_OUTPUT
                 } else {
@@ -199,6 +203,7 @@ internal fun Preferences.readUserPreferences(): UserPreferences = UserPreference
     gestureSwipeDownToExitEnabled = this[GESTURE_SWIPE_DOWN_TO_EXIT_ENABLED],
     gestureHintShown = this[GESTURE_HINT_SHOWN],
     gestureLongPressSpeed = this[GESTURE_LONG_PRESS_SPEED],
+    backgroundPlaybackEnabled = this[BACKGROUND_PLAYBACK_ENABLED],
     exportDirectory = this[EXPORT_DIRECTORY],
     customExportTreeUri = this[CUSTOM_EXPORT_TREE_URI],
 )
@@ -226,6 +231,7 @@ internal fun MutablePreferences.writeUserPreferences(value: UserPreferences) {
     this[GESTURE_SWIPE_DOWN_TO_EXIT_ENABLED] = value.gestureSwipeDownToExitEnabled
     this[GESTURE_HINT_SHOWN] = value.gestureHintShown
     this[GESTURE_LONG_PRESS_SPEED] = value.gestureLongPressSpeed
+    this[BACKGROUND_PLAYBACK_ENABLED] = value.backgroundPlaybackEnabled
     this[EXPORT_DIRECTORY] = value.exportDirectory.name
     value.customExportTreeUri?.let { this[CUSTOM_EXPORT_TREE_URI] = it }
         ?: remove(CUSTOM_EXPORT_TREE_URI)
@@ -252,6 +258,7 @@ private val GESTURE_DOUBLE_TAP_SEEK_MILLIS = intPreferencesKey("gesture_double_t
 private val GESTURE_SWIPE_DOWN_TO_EXIT_ENABLED = booleanPreferencesKey("gesture_swipe_down_to_exit_enabled")
 private val GESTURE_HINT_SHOWN = booleanPreferencesKey("gesture_hint_shown")
 private val GESTURE_LONG_PRESS_SPEED = floatPreferencesKey("gesture_long_press_speed")
+private val BACKGROUND_PLAYBACK_ENABLED = booleanPreferencesKey("background_playback_enabled")
 private val EXPORT_DIRECTORY = stringPreferencesKey("export_directory")
 private val CUSTOM_EXPORT_TREE_URI = stringPreferencesKey("custom_export_tree_uri")
 

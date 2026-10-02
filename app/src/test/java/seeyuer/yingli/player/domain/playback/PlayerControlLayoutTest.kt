@@ -31,6 +31,12 @@ class PlayerControlLayoutTest {
         assertTrue(controls.size <= PlayerControlSurface.PORTRAIT_BOTTOM.capacity)
     }
 
+    @Test fun `tools tray carries the background playback switch by default`() {
+        val controls = PlayerControlLayout().controls(PlayerControlSurface.TOOLS)
+        assertTrue(PlayerControlId.BACKGROUND_PLAYBACK in controls)
+        assertTrue(controls.size <= PlayerControlSurface.TOOLS.capacity)
+    }
+
     @Test fun `move reorders within a slot and can move between slots`() {
         val defaults = PlayerControlLayout()
         val surface = PlayerControlSurface.LANDSCAPE_BOTTOM_LEFT

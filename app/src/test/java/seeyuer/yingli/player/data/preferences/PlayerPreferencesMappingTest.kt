@@ -39,6 +39,14 @@ class PlayerPreferencesMappingTest {
     }
 
     @Test
+    fun `background playback defaults to on and maps its stored value`() {
+        assertTrue(UserPreferences().toPlayerPreferences().backgroundPlaybackEnabled)
+        assertFalse(
+            UserPreferences(backgroundPlaybackEnabled = false).toPlayerPreferences().backgroundPlaybackEnabled,
+        )
+    }
+
+    @Test
     fun `every supported long press speed maps back to its playback speed`() {
         PlayerPreferences.LONG_PRESS_SPEEDS.forEach { speed ->
             assertEquals(

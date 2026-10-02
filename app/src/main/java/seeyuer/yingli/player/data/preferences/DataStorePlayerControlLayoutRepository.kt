@@ -59,6 +59,7 @@ class DataStorePlayerControlLayoutRepository(context: Context) : PlayerControlLa
         val BACKFILLED_CONTROLS = listOf(
             PlayerControlId.MIRROR_HORIZONTAL,
             PlayerControlId.MIRROR_VERTICAL,
+            PlayerControlId.BACKGROUND_PLAYBACK,
         )
     }
 }

@@ -894,6 +894,14 @@ class PlayerViewModel(
         viewModelScope.launch { playerPreferenceRepository?.setGestureLongPressSpeed(speed) }
     }
 
+    /**
+     * 后台播放开关（托盘里的状态型按钮）：true = 退到后台继续播放，false = 退到后台暂停。
+     * 暂停动作本身由宿主 Activity 在 onStop 里按 [seeyuer.yingli.player.domain.playback.shouldPauseInBackground] 决定。
+     */
+    fun setBackgroundPlaybackEnabled(enabled: Boolean) {
+        viewModelScope.launch { playerPreferenceRepository?.setBackgroundPlaybackEnabled(enabled) }
+    }
+
     private fun scheduleOverlayHide() {
         overlayHideJob?.cancel()
         if (

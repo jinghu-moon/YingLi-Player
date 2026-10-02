@@ -58,6 +58,16 @@ data class PlayerControlLayout(
 
     fun contains(id: PlayerControlId): Boolean = slots.values.any { id in it }
 
+    /**
+     * 确保 [ids] 都出现在 [surface] 槽位里（缺失的按给定顺序追加，已在任何槽位的不重复添加）。
+     *
+     * 用途：**持久化布局的一次性迁移**。新增按钮后，老用户存下来的布局里没有它们，
+     * 用这个方法把新按钮补进默认槽位，同时完全不改动用户对其余按钮的排布。
+     */
+    fun ensureControls(surface: PlayerControlSurface, ids: List<PlayerControlId>): PlayerControlLayout =
+        ids.fold(this) { layout, id -> if (layout.contains(id)) layout else layout.add(surface, id) }
+
+
     fun canAdd(surface: PlayerControlSurface, id: PlayerControlId): Boolean =
         id !in controls(surface) &&
             PlayerControlSurface.entries.none { it.landscape == surface.landscape && id in controls(it) } &&

@@ -45,4 +45,33 @@ class PlayerControlLayoutTest {
         assertFalse(PlayerControlId.SPEED in relocated.controls(surface))
         assertTrue(PlayerControlId.SPEED in relocated.controls(PlayerControlSurface.LANDSCAPE_BOTTOM_RIGHT))
     }
+
+    /** 老布局迁移：只补进托盘里缺少的新按钮，不动用户已有的排布，也不重复添加。 */
+    @Test fun `ensureControls backfills only the missing ids`() {
+        val stored = PlayerControlLayout(
+            slots = PlayerControlLayout.defaultSlots() + (
+                PlayerControlSurface.TOOLS to listOf(PlayerControlId.SCREENSHOT)
+                ),
+        )
+        val migrated = stored.ensureControls(
+            PlayerControlSurface.TOOLS,
+            listOf(PlayerControlId.MIRROR_HORIZONTAL, PlayerControlId.MIRROR_VERTICAL),
+        )
+
+        assertEquals(
+            listOf(PlayerControlId.SCREENSHOT, PlayerControlId.MIRROR_HORIZONTAL, PlayerControlId.MIRROR_VERTICAL),
+            migrated.controls(PlayerControlSurface.TOOLS),
+        )
+        // 其余槽位保持原样。
+        assertEquals(stored.controls(PlayerControlSurface.PORTRAIT_BOTTOM), migrated.controls(PlayerControlSurface.PORTRAIT_BOTTOM))
+
+        // 幂等：再次回填不产生重复项。
+        assertEquals(
+            migrated.controls(PlayerControlSurface.TOOLS),
+            migrated.ensureControls(
+                PlayerControlSurface.TOOLS,
+                listOf(PlayerControlId.MIRROR_HORIZONTAL, PlayerControlId.MIRROR_VERTICAL),
+            ).controls(PlayerControlSurface.TOOLS),
+        )
+    }
 }

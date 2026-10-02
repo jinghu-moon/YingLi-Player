@@ -74,6 +74,16 @@ internal val PlayerLandscapeBarVerticalPadding = 12.dp
 /** 竖屏进度行与按钮行之间的间距。 */
 private val PlayerPortraitControlsSpacing = 16.dp
 
+/**
+ * 竖屏主按钮行在"只显示截图胶囊"时的占位高度 = **按钮带本身的高度** + 与上一段之间的间距。
+ *
+ * 尺寸常量取 [PlayerChromeButtonSize]（48dp，`PlayerTopBar.kt` 里定义）：竖屏底栏按钮就是
+ * 用它渲染的（[PlayerShortcut] 的 `size = PlayerChromeButtonSize`），所以这里指的就是底栏按钮
+ * 的真实尺寸，不是另外估的数值；`spreadAcrossRow` 那套只压缩按钮之间的间距、不改变按钮圆径，
+ * 因此这个高度与按钮实际占用的竖直空间一致（按钮行高度 = 按钮圆径，行内没有竖直内边距）。
+ */
+private val PlayerScreenshotButtonRowReservedHeight = PlayerChromeButtonSize + PlayerPortraitControlsSpacing
+
 /** 时间文本最小宽度，保证播放中进度条长度不随时长位数跳动。 */
 private val PlayerTimeLabelMinWidth = 42.dp
 
@@ -388,6 +398,16 @@ internal fun BottomPlaybackControls(
         // 截图胶囊占用托盘行的位置：因此从右滑入即从截图按钮（托盘最右项）滑出并停在这一行中间。
         // 可见性用 isCapsuleVisible()（Armed / Capturing），与上面托盘行的让位条件（任何截图态）
         // 互补——托盘不会在 Preview 期间冒出来，胶囊也不会在 Preview / Idle 期间残留。
+        //
+        // **为什么必须保留主按钮行的高度**：这个 Column 整体贴在底栏（`Alignment.BottomCenter`），
+        // 三段收起后若"主按钮行也不占空间"，作为最后可见子项的胶囊会被底对齐一路推到最下面，
+        // 落在原来"主按钮行"的竖直带上（真机截图证实）。要让它停在"工具托盘行"那一格，
+        // 就必须让下面的按钮行仍然占住与普通模式相同的高度——留着这段空白，底对齐的参照点才不变。
+        // 视觉上三段内容全部消失、只剩空白，胶囊正好落在普通模式托盘行的那条竖直带上。
+        // 请勿把这段占位"优化"掉：它不产生任何画面，却是胶囊落点的唯一依据。
+        if (screenshotActive) {
+            Box(Modifier.fillMaxWidth().height(PlayerScreenshotButtonRowReservedHeight))
+        }
         AnimatedVisibility(
             visible = state.screenshot.isCapsuleVisible(),
             enter = slideInHorizontally(
@@ -400,7 +420,7 @@ internal fun BottomPlaybackControls(
             ) + fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
         ) {
             // 这一行本身是 fillMaxWidth：胶囊滑入后停在行中间；下内边距与托盘行一致，
-            // 保证它落在托盘行原有的那一条垂直位置上，而不是贴着按钮行。
+            // 保证它落在托盘行原有的那一条垂直位置上，而不是贴着下面保留的按钮行空位。
             Box(
                 modifier = Modifier.fillMaxWidth().padding(bottom = PlayerPortraitControlsSpacing),
                 contentAlignment = Alignment.Center,

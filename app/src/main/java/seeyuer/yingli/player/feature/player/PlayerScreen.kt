@@ -31,13 +31,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -502,34 +502,38 @@ fun PlayerScreen(
                     .testTag(if (landscape) PlayerTestTags.LANDSCAPE_CONTROLS else PlayerTestTags.PORTRAIT_CONTROLS),
             )
         }
-        // 帧数胶囊占用顶部标题胶囊的位置：截图模式期间标题让位（PlayerTopBar 内隐藏标题段），
-        // 二者生命周期完全一致，不会同时出现（设计稿 §3.2 不允许浮层叠浮层）。
+        // 帧数胶囊**下移到顶栏下方**：顶栏右侧那排快捷按钮（音轨/字幕/设置）在竖屏下占满右上角，
+        // 帧数文本一长（`488912 / 802008` 这种）按整屏居中后右端就会被压住（真机截图证实）。
+        // 下沉之后它与顶栏所有按钮既不共享水平带、也不再共享点击区域，从根上避开重叠；
+        // 顶栏标题因此不必再为它让位。
+        //
+        // 顶部内边距 = 状态栏 inset（胶囊自己的 `windowInsetsPadding(safeDrawing)` 已经加过一次）
+        // + 顶栏自身高度（PlayerTopBar 的上下内边距 + 按钮圆径）
+        // + PlayerFrameCounterTopGap（顶栏底边到胶囊的间距）。
+        // 横竖屏用的是同一个公式：顶栏高度只由按钮尺寸与内边距决定，与方向无关，
+        // 所以横屏下取到的值完全相同（区别只是状态栏 inset 通常为 0）。
         // 它跟截图胶囊一样不受控件自动隐藏影响：截图工具本身就是浮层，隐藏控件不应把工具一起藏掉。
         val screenshotActive = state.isScreenshotToolActive()
-        val liveFrameCounter = state.frameCounter()
-        // 淡出期间要留住最后一个非空值：退出截图模式的那几百毫秒里 state.mediaInfo 可能已被清空
-        // （切集/停播），直接读实时值会让淡出中的文本闪一下 `null / null`。
-        var lastFrameCounter by remember { mutableStateOf<FrameCounterState?>(null) }
-        lastFrameCounter = liveFrameCounter ?: lastFrameCounter.takeIf { screenshotActive }
-        // 实时值已消失、且截图模式也结束了，就彻底忘掉旧值，
-        // 否则下次进截图模式会先闪一下上一次的帧号。
-        LaunchedEffect(screenshotActive, liveFrameCounter) {
-            if (!screenshotActive) lastFrameCounter = null
-        }
+        val density = LocalDensity.current
+        val frameCounterTopPadding = PlayerTopBarContentHeight +
+            with(density) { WindowInsets.safeDrawing.getTop(density).toDp() } +
+            PlayerFrameCounterTopGap
         AnimatedVisibility(
             // 可见性只由「截图工具是否打开」决定：三段收起与它同步，自动隐藏不参与。
             visible = screenshotActive,
             modifier = Modifier.align(Alignment.TopCenter)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                // 与顶栏标题同一水平位置：顶栏上下内边距 8dp + 标题行中心，视觉上正好顶替原标题胶囊。
-                .padding(top = 20.dp)
+                .padding(top = frameCounterTopPadding)
+                // 宽度兜底：上限取整屏宽度的八成。帧数胶囊本身按内容取宽（通常 150~210dp），
+                // 这个上限只在极窄屏 / 最大字体下才会生效，避免它横向铺满整屏压到别的浮层。
+                .widthIn(max = maxWidth * PlayerFrameCounterMaxWidthFraction)
                 .testTag(PlayerTestTags.FRAME_COUNTER),
             enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
             exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
         ) {
-            // 帧率不可用时 lastFrameCounter 恒为 null → 整个胶囊不出现：
-            // 宁可不出这个胶囊，也不显示编造的帧号（口径与下一步的逐帧步进一致）。
-            lastFrameCounter?.let { counter -> FrameCounterCapsule(counter) }
+            // 帧率不可用时 state.frameCounter() 恒为 null → 整个胶囊不出现：
+            // 宁可不出这个胶囊，也不显示编造的帧号（口径与逐帧步进一致）。
+            state.frameCounter()?.let { counter -> FrameCounterCapsule(counter) }
         }
         (state.screenshot as? ScreenshotUiState.Preview)?.let { preview ->
             ScreenshotPreview(
@@ -721,3 +725,12 @@ object PlayerTestTags {
     const val LANDSCAPE_PLAYLIST = "player.playlist.landscape"
     const val PORTRAIT_PLAYLIST = "player.playlist.portrait"
 }
+
+/**
+ * 帧数胶囊的宽度上限占整屏宽度的比例。
+ *
+ * 帧数胶囊本身按内容取宽（`488912 / 802008` 这种约 150dp），正常机型根本碰不到这个上限；
+ * 它只是**兜底**：防止极端字号/极窄屏下胶囊横向铺满整屏、压到别的浮层。
+ * 真正的避让靠"下移到顶栏下方"完成，不靠这个比例。
+ */
+private const val PlayerFrameCounterMaxWidthFraction = 0.8f

@@ -65,7 +65,12 @@ internal fun PlayerTopBar(
     Row(
         modifier = modifier.fillMaxWidth()
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            .padding(
+                start = PlayerTopBarStartPadding,
+                end = PlayerTopBarEndPadding,
+                top = PlayerTopBarVerticalPadding,
+                bottom = PlayerTopBarVerticalPadding,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PlayerChromeIconButton(
@@ -74,29 +79,29 @@ internal fun PlayerTopBar(
             onClick = onBack,
         )
         androidx.compose.foundation.layout.Column(
-            modifier = Modifier.weight(1f).padding(start = 12.dp, end = 8.dp),
+            modifier = Modifier.weight(1f).padding(
+                start = PlayerTopBarTitleStartPadding,
+                end = PlayerTopBarTitleEndPadding,
+            ),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
         ) {
-            // 截图模式下标题胶囊让位给帧数胶囊（设计稿 §4.1 的标题位 → §3.2「浮层不允许叠浮层」）：
-            // 两者位置相同，同时显示会互相压住，所以这里整段标题（主标题 + 元信息副标题）收起，
-            // 由 Screen 层的帧数胶囊顶替这个位置，且两者生命周期完全一致（只在截图工具打开期间互换）。
-            if (!state.isScreenshotToolActive()) {
+            // 截图模式下标题不再让位：帧数胶囊已经下移到顶栏下方（见 PlayerScreen 里
+            // 以 PlayerTopBarContentHeight 算出的顶部内边距），与标题不再争同一个槽位，两者可同时在场。
+            Text(
+                text = state.title.ifBlank { "未知视频" },
+                color = YingLiTheme.player.controlPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+            )
+            state.playerSubtitle()?.let { subtitle ->
                 Text(
-                    text = state.title.ifBlank { "未知视频" },
-                    color = YingLiTheme.player.controlPrimary,
+                    text = subtitle,
+                    color = YingLiTheme.player.controlSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                 )
-                state.playerSubtitle()?.let { subtitle ->
-                    Text(
-                        text = subtitle,
-                        color = YingLiTheme.player.controlSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                    )
-                }
             }
         }
         controlLayout.controls(PlayerControlSurface.LANDSCAPE_TOP_RIGHT)
@@ -169,6 +174,39 @@ internal fun PlayerTopBar(
  * 否则同一屏上的按钮圆径不一致。
  */
 internal val PlayerChromeButtonSize = 48.dp
+
+/**
+ * 顶栏的水平内边距与标题槽两侧留白（都是渲染顶栏本身用的字面量）。
+ *
+ * 之所以抽成常量而不是留在 `padding(...)` 里：顶栏高度（[PlayerTopBarContentHeight]）要由这些
+ * 数字算出来给帧数胶囊定位，写死字面量就会变成"改一处忘一处"，胶囊又会贴回顶栏按钮上。
+ */
+private val PlayerTopBarStartPadding = 16.dp
+private val PlayerTopBarEndPadding = 12.dp
+
+/** 顶栏上下内边距：与按钮尺寸一起决定顶栏的占用高度。 */
+private val PlayerTopBarVerticalPadding = 8.dp
+
+/** 标题槽与左侧返回按钮、右侧快捷按钮之间的留白。 */
+private val PlayerTopBarTitleStartPadding = 12.dp
+private val PlayerTopBarTitleEndPadding = 8.dp
+
+/**
+ * 帧数胶囊贴在顶栏下方时，与顶栏底边之间留出的间距（下移量 = 顶栏高度 + 它）。
+ *
+ * 取 12dp：与项目里既有的 8/12/16dp 一档间距一致（[PlayerShortcutSpacing] 8dp、
+ * 顶栏右侧内边距 12dp）。这个间距同时也是"胶囊与顶栏按钮彻底分开"的视觉保险。
+ */
+internal val PlayerFrameCounterTopGap = 12.dp
+
+/**
+ * 顶栏**自身**占用的高度（不含状态栏内边距）：上下内边距 + 一枚快捷按钮的圆径。
+ *
+ * 顶栏是一个 `Row`，行高由最高子项决定，而子项里最高的就是 [PlayerChromeButtonSize] 的圆按钮
+ * （标题那段是两行文本，在竖屏标题较短时也不会超过 48dp 的按钮）。所以这里就是顶栏的真实高度，
+ * 而不是估出来的数字。
+ */
+internal val PlayerTopBarContentHeight = PlayerTopBarVerticalPadding * 2 + PlayerChromeButtonSize
 
 /**
  * 底栏按钮的材质（底色 / 描边 / 形状）。截图胶囊与帧数胶囊必须与底栏按钮**同源**：
@@ -285,7 +323,7 @@ private fun menuItem(
 /**
  * 截图工具是否正在**占用**播放页（Armed / Capturing / Preview 三段）。
  *
- * 这三段的界面差别只是胶囊内容，对「谁占着标题位、底栏要不要收起」而言是同一件事，
+ * 这三段的界面差别只是胶囊内容，对「底栏三段要不要收起让位、帧数胶囊要不要在场」而言是同一件事，
  * 所以判定集中在这里，避免各调用点各写一遍状态枚举、日后新增状态时漏改一处。
  */
 internal fun PlayerUiState.isScreenshotToolActive(): Boolean = when (screenshot) {

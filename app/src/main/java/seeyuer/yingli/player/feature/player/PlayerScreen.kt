@@ -138,7 +138,21 @@ fun PlayerScreen(
             if (latestZoomActive) latestGestureCallbacks.onResetZoom() else action()
         }
     }
+    // 缩放手势是否"真的在进行"，用于区分跟手与复位动画。
+    // 不能用 HUD 是否显示来判断：缩放浮岛会停留 1 秒，用户在 1 秒内双击复位时会被误判成
+    // 手势进行中（走 snap 分支），复位也就没有动画了。
+    val zoomGestureInProgress = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
     val canvasGestureCallbacks = gestureCallbacks.copy(
+        onZoomBegin = {
+            zoomGestureInProgress.value = true
+            gestureCallbacks.onZoomBegin()
+        },
+        onZoomEnd = {
+            zoomGestureInProgress.value = false
+            gestureCallbacks.onZoomEnd()
+        },
         onTap = onToggleOverlay,
         onDoubleTapBackward = { canvasDoubleTap(onSeekBackward) },
         onDoubleTapForward = { canvasDoubleTap(onSeekForward) },
@@ -199,8 +213,8 @@ fun PlayerScreen(
     ) {
         val landscape = maxWidth > maxHeight
         // 自由缩放：只做视图层变换（缩放 + 平移），不进播放管线；倍数与平移都已按视口夹紧。
-        // 手势进行中（HUD 为缩放态）直接跟手；手势结束后的复位用动画过渡，避免"啪"地跳回去。
-        val zoomGestureActive = state.gestureHud is PlayerGestureHud.Zoom
+        // 手势进行中（真实手势边界）直接跟手；手势结束后的复位用动画过渡，避免"啪"地跳回去。
+        val zoomGestureActive = zoomGestureInProgress.value
         val zoomSpec: androidx.compose.animation.core.AnimationSpec<Float> = if (zoomGestureActive) {
             androidx.compose.animation.core.snap()
         } else {

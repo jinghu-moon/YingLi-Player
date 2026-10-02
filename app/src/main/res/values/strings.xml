@@ -210,11 +210,15 @@
     <string name="player_unlock">解锁屏幕</string>
     <string name="player_locked">已锁定屏幕</string>
     <string name="player_unlocked">已解锁屏幕</string>
-    <string name="player_screenshot">保存当前帧</string>
+    <string name="player_screenshot">进入截图模式</string>
+    <string name="player_screenshot_capture">保存当前帧</string>
+    <string name="player_screenshot_saved_to">已保存到 %1$s</string>
     <string name="player_screenshot_failed">截图失败，播放未受影响</string>
     <string name="player_screenshot_deleted">截图已删除</string>
     <string name="player_screenshot_delete_permission_denied">没有删除截图的权限</string>
     <string name="player_screenshot_delete_failed">删除截图失败</string>
+    <string name="player_screenshot_expand">放大预览截图</string>
+    <string name="player_screenshot_collapse">关闭放大预览</string>
     <string name="player_previous_frame">上一帧</string>
     <string name="player_next_frame">下一帧</string>
     <string name="player_ab_clear">清除 AB</string>

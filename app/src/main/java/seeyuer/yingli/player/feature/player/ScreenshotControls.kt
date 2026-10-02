@@ -1,38 +1,68 @@
 package seeyuer.yingli.player.feature.player
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import coil3.compose.AsyncImage
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 import seeyuer.yingli.player.R
-import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
+import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.playback.FrameCounterState
+import seeyuer.yingli.player.domain.playback.ScreenshotPreviewSize
+import seeyuer.yingli.player.domain.playback.ScreenshotPreviewSpec
 import seeyuer.yingli.player.domain.playback.ScreenshotUiState
+import seeyuer.yingli.player.domain.playback.screenshotPreviewEnterScale
+import seeyuer.yingli.player.domain.playback.screenshotPreviewEnterTranslation
+import seeyuer.yingli.player.domain.playback.screenshotPreviewTrack
 
 /**
  * 截图工具胶囊是否在场：Armed 与 Capturing 都算「工具打开」——捕获中胶囊要保持在场
@@ -46,6 +76,19 @@ internal fun ScreenshotUiState.isCapsuleVisible(): Boolean =
     this is ScreenshotUiState.Armed || this is ScreenshotUiState.Capturing
 
 /**
+ * 画面中央的「上一个 / 播放暂停 / 下一个」三连要不要出现。
+ *
+ * 截图模式激活期间（Armed / Capturing）它**不出现**：这一刻用户在做的是"定位到某一帧"，
+ * 中央三连与这个目标无关，还会正好压住用户要看的画面；退出截图模式后恢复。
+ * `Preview` 不算激活——那时截图胶囊已经收掉、用户看的是左上角那张小卡，中央三连照常在场。
+ *
+ * 注意这里只加"截图模式下不出现"这一条：横竖屏、锁定、控件自动隐藏等既有条件仍由调用方
+ * （`overlay.controlsVisible`、`overlay.locked`）判断，不能在这里重复实现。
+ */
+internal fun ScreenshotUiState.hidesCenterTransportControls(): Boolean =
+    this is ScreenshotUiState.Armed || this is ScreenshotUiState.Capturing
+
+/**
  * 截图工具胶囊的**内容**，出入场动画由外层负责（见 `BottomPlaybackControls` 的
  * `screenshotTool` 插槽）：它占用竖屏「更多」工具托盘行的位置，从右向左滑入并停在这一行中间。
  *
@@ -54,6 +97,10 @@ internal fun ScreenshotUiState.isCapsuleVisible(): Boolean =
  * 若改成从底部滑入，起点与刚才点的按钮毫无关系，动效会显得凭空出现。
  *
  * 动画不放在这里：内外两层位移会叠加成一段突兀的加速，而且可见性只有一处说了算。
+ *
+ * 捕获按钮是**唯一的强调色实心按钮**（设计稿 §4.10「中间强调色圆角按钮」），
+ * 其余三个是非实心的图标按钮；捕获中它切"等待态"（见 [ScreenshotCaptureButton]）。
+ * [onCapturePositioned] 把捕获按钮在根布局里的中心点报给上层：预览卡要从它那里飞出去。
  */
 @Composable
 internal fun ScreenshotToolCapsule(
@@ -62,43 +109,79 @@ internal fun ScreenshotToolCapsule(
     onCapture: () -> Unit,
     onNextFrame: () -> Unit,
     onClose: () -> Unit,
+    onCapturePositioned: (Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val armed = state is ScreenshotUiState.Armed
     ScreenshotCapsuleSurface(modifier.height(PlayerChromeButtonSize)) {
         Row(
             modifier = Modifier.padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            YingLiIconButton(
-                YingLiIcon.SEEK_BACKWARD,
-                stringResource(R.string.player_previous_frame),
-                onPreviousFrame,
-                enabled = state is ScreenshotUiState.Armed,
+            PlayerChromeIconButton(
+                icon = YingLiIcon.SEEK_BACKWARD,
+                contentDescription = stringResource(R.string.player_previous_frame),
+                onClick = onPreviousFrame,
+                enabled = armed,
                 tint = YingLiTheme.player.controlPrimary,
+                size = ScreenshotCapsuleButtonSize,
             )
-            YingLiIconButton(
-                YingLiIcon.SCREENSHOT,
-                stringResource(R.string.player_screenshot),
-                onCapture,
-                enabled = state is ScreenshotUiState.Armed,
-                tint = YingLiTheme.player.controlPrimary,
+            ScreenshotCaptureButton(
+                capturing = state is ScreenshotUiState.Capturing,
+                onCapture = onCapture,
+                onPositioned = onCapturePositioned,
             )
-            YingLiIconButton(
-                YingLiIcon.SEEK_FORWARD,
-                stringResource(R.string.player_next_frame),
-                onNextFrame,
-                enabled = state is ScreenshotUiState.Armed,
+            PlayerChromeIconButton(
+                icon = YingLiIcon.SEEK_FORWARD,
+                contentDescription = stringResource(R.string.player_next_frame),
+                onClick = onNextFrame,
+                enabled = armed,
                 tint = YingLiTheme.player.controlPrimary,
+                size = ScreenshotCapsuleButtonSize,
             )
-            YingLiIconButton(
-                YingLiIcon.CLOSE,
-                stringResource(R.string.action_cancel),
-                onClose,
+            PlayerChromeIconButton(
+                icon = YingLiIcon.CLOSE,
+                contentDescription = stringResource(R.string.action_cancel),
+                onClick = onClose,
                 tint = YingLiTheme.player.controlPrimary,
+                size = ScreenshotCapsuleButtonSize,
             )
         }
     }
+}
+
+/**
+ * 捕获按钮：捕获中切"等待态"（设计稿 §4.10）。
+ *
+ * 等待态直接落在 `enabled = false` 上，而不是另做一套颜色：那正是"现在按不动"的语义
+ * （等待期间重复点击本来也该被忽略），并且与项目里其余禁用按钮共用同一份视觉语言。
+ * 颜色/描边仍来自 [PlayerChromeIconButton] 的 `filled` 分支，不在这里写第二份强调色。
+ */
+@Composable
+private fun ScreenshotCaptureButton(
+    capturing: Boolean,
+    onCapture: () -> Unit,
+    onPositioned: (Offset) -> Unit,
+) {
+    PlayerChromeIconButton(
+        icon = YingLiIcon.SCREENSHOT_CAPTURE,
+        contentDescription = stringResource(R.string.player_screenshot_capture),
+        onClick = onCapture,
+        enabled = !capturing,
+        filled = true,
+        size = ScreenshotCapsuleButtonSize + PlayerChromeButtonSize / 4,
+        modifier = Modifier.onGloballyPositioned { coordinates ->
+            val position = coordinates.positionInRoot()
+            val size = coordinates.size
+            onPositioned(
+                Offset(
+                    x = position.x + size.width / 2f,
+                    y = position.y + size.height / 2f,
+                ),
+            )
+        },
+    )
 }
 
 /**
@@ -205,62 +288,257 @@ internal fun playerFrameCounterFontSizeSp(
     return fitted.value.coerceIn(PlayerFrameCounterMinFontSize.value, baseFontSize.value).sp
 }
 
+/**
+ * 截图预览卡：捕获成功后从捕获按钮处**飞入页面左上角**的小卡（设计稿 §4.10 / §6）。
+ *
+ * - 出现：`scale(2.4) → 1` + 位移，0.42s（[ScreenshotPreviewSpec]）；
+ * - 尺寸：116dp 宽、16:10、白色描边；
+ * - 下沿一条 3 秒读条，匀速缩短（余量由 ViewModel 的会话给，这里只画比例）；
+ * - 点击卡片 → 展开大图预览（[ScreenshotPreviewOverlay]）。
+ *
+ * 展开态下**不画这张卡**：大图预览是它放大后的形态，两者同时在场只会看到一厚一薄两张同图。
+ *
+ * [captureButtonCenter] 是捕获按钮在根布局里的中心点（未测量到时为 null），飞行起点由它决定。
+ */
 @Composable
-internal fun ScreenshotPreview(
+internal fun ScreenshotPreviewCard(
     state: ScreenshotUiState.Preview,
-    onTogglePause: () -> Unit,
-    onClose: () -> Unit,
+    captureButtonCenter: Offset?,
+    onExpand: () -> Unit,
     modifier: Modifier = Modifier,
-    onDelete: () -> Unit = onClose,
 ) {
-    Surface(
-        onClick = onTogglePause,
-        modifier = modifier.width(220.dp),
-        shape = YingLiTheme.components.componentCorner,
-        color = YingLiTheme.colors.surfaceComponent,
-        tonalElevation = 6.dp,
-    ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Box(Modifier.fillMaxWidth().height(72.5.dp)) {
-                if (state.uri.isNotBlank()) {
-                    AsyncImage(
-                        model = state.uri,
-                        contentDescription = "截图预览",
-                        modifier = Modifier.width(116.dp).aspectRatio(1.6f),
+    if (state.expanded) return
+    // 卡片静止时的左上角（根布局坐标系）。**量在无变换的外层上**：
+    // 内层带着 scale/translation，若量它就会把动画中的形变量算进"目标位置"，
+    // 目标一帧一变，位移公式的输入自己就在动（"先反向移动再回来"的成因之一）。
+    var targetTopLeft by remember { mutableStateOf(Offset.Zero) }
+    val density = LocalDensity.current
+    // 只有捕获按钮与卡片几何都量到了才让 [entered] 变 true：动画**等几何到位再开始**，
+    // 而不是先跑起来再纠正起点。首帧没坐标就多停一帧，用户看不到任何突变。
+    var geometryReady by remember(state.uri) { mutableStateOf(false) }
+    var entered by remember(state.uri) { mutableStateOf(false) }
+    LaunchedEffect(state.uri, captureButtonCenter, targetTopLeft) {
+        if (captureButtonCenter != null && targetTopLeft != Offset.Zero) geometryReady = true
+    }
+    LaunchedEffect(state.uri, geometryReady) {
+        if (geometryReady) entered = true
+    }
+    val progress by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = tween(ScreenshotPreviewSpec.ENTER_DURATION_MILLIS),
+        label = "screenshot-preview-enter",
+    )
+    Box(modifier = modifier.onGloballyPositioned { coordinates -> targetTopLeft = coordinates.positionInRoot() }) {
+        Surface(
+            modifier = Modifier
+                .width(PlayerScreenshotPreviewCardWidth)
+                .graphicsLayer {
+                    // **唯一的位移与缩放驱动**：两者都取自同一个 0→1 进度量。
+                    // 变换原点锚在左上角，层自身 scale 对平移量的放大才与公式一致
+                    //（推导见 screenshotPreviewEnterTranslation）。
+                    transformOrigin = TransformOrigin(0f, 0f)
+                    val size = ScreenshotPreviewSize(this.size.width, this.size.height)
+                    val track = screenshotPreviewTrack(
+                        buttonCenterX = captureButtonCenter?.x,
+                        buttonCenterY = captureButtonCenter?.y,
+                        targetX = targetTopLeft.x,
+                        targetY = targetTopLeft.y,
+                        size = size,
                     )
+                    val scale = screenshotPreviewEnterScale(progress)
+                    scaleX = scale
+                    scaleY = scale
+                    if (track != null) {
+                        with(density) {
+                            val translation = screenshotPreviewEnterTranslation(
+                                track = track,
+                                size = size,
+                                targetX = targetTopLeft.x,
+                                targetY = targetTopLeft.y,
+                                progress = progress,
+                            )
+                            translationX = translation.first * size.width
+                            translationY = translation.second * size.height
+                        }
+                    }
                 }
+                .testTag(PlayerTestTags.SCREENSHOT_PREVIEW)
+                .clickable(onClick = onExpand),
+            shape = RoundedCornerShape(PlayerScreenshotPreviewCornerRadius),
+            // 卡片底色用播放页画布色：截图本身可能是任意亮度，深底能让白描边与读条都稳定可读。
+            color = YingLiTheme.player.canvas,
+            border = BorderStroke(PlayerScreenshotPreviewBorderWidth, PlayerScreenshotPreviewBorderColor),
+            shadowElevation = 8.dp,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(ScreenshotPreviewSpec.ASPECT_RATIO),
+            ) {
+                AsyncImage(
+                    model = state.uri.takeIf { it.isNotBlank() },
+                    contentDescription = state.displayName,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                // 读条：3 秒匀速缩短，下沿贴齐卡片底边。
+                LinearProgressIndicator(
+                    progress = { state.remainingMillis / ScreenshotUiState.PREVIEW_DURATION_MILLIS.toFloat() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(PlayerScreenshotPreviewProgressHeight),
+                    color = YingLiTheme.player.controlPrimary,
+                    trackColor = YingLiTheme.player.track,
+                )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    state.displayName,
-                    maxLines = 1,
-                    color = YingLiTheme.colors.textPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = "${((state.remainingMillis + 999L) / 1_000L).coerceAtMost(3L)}s",
-                    color = YingLiTheme.colors.textSecondary,
-                )
-                YingLiIconButton(
-                    YingLiIcon.CLOSE,
-                    stringResource(R.string.action_cancel),
-                    onClose,
-                    modifier = Modifier.size(48.dp),
-                )
-                YingLiIconButton(
-                    YingLiIcon.WARNING,
-                    "删除截图",
-                    onDelete,
-                    modifier = Modifier.size(48.dp),
+        }
+    }
+}
+
+/**
+ * 大图预览：点击预览卡后放大展示，右上角弹出**删除按钮**（设计稿 §4.10 / §6）。
+ *
+ * 为什么用一层铺满画布的半透明遮罩而不是弹窗：截图是"看画面"的事，弹窗会把视频画面
+ * 整块盖住，用户想对照画面看截图反而做不到；同时它也是一道点击拦截——遮罩在场时，
+ * 画面手势（单击唤出控件、双击跳秒）不会在用户想关掉预览时被触发。
+ *
+ * 遮罩把画面压暗但保留可见，观察到的画面帧与截图可以上下对照；关闭方式给三种
+ * （点遮罩、点关闭按钮、返回键），因为这是"浮层不叠浮层"原则里的最上层浮层，
+ * 必须有一个明确、随处可用的退出路径。
+ *
+ * 它同时满足项目既有的"浮层不叠浮层"：截图工具胶囊在这一段已经收掉（胶囊只在
+ * Armed/Capturing 在场），设置/播放列表抽屉在进入截图模式时已关闭，所以这里不会与别的浮层同时出现。
+ */
+@Composable
+internal fun ScreenshotPreviewOverlay(
+    state: ScreenshotUiState.Preview,
+    onCollapse: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 返回键先关大图，而不是直接退出截图/播放页：用户此刻的"上一层"就是这张图。
+    BackHandler(enabled = true, onBack = onCollapse)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(PlayerScreenshotPreviewScrimColor)
+            .clickable(
+                // 去掉水波纹：整屏的涟漪会很吵，这里点哪儿都是"关掉"。
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onCollapse,
+            )
+            .testTag(PlayerTestTags.SCREENSHOT_PREVIEW_OVERLAY),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(PlayerScreenshotPreviewExpandedWidthFraction)
+                .padding(horizontal = 24.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(ScreenshotPreviewSpec.ASPECT_RATIO),
+            ) {
+                // 图片本体也要吃掉点击，否则点在图上是"关掉"而不是"什么都不做"。
+                AsyncImage(
+                    model = state.uri.takeIf { it.isNotBlank() },
+                    contentDescription = state.displayName,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        ),
                 )
             }
-            LinearProgressIndicator(
-                progress = { state.remainingMillis / ScreenshotUiState.PREVIEW_DURATION_MILLIS.toFloat() },
-                color = YingLiTheme.player.controlPrimary,
+            ScreenshotDeleteButton(
+                onDelete = onDelete,
+                // 贴在大图右上角外侧，与设计稿里预览卡的删除按钮同一位置关系。
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = 11.dp, y = (-11).dp),
             )
         }
     }
 }
+
+/**
+ * 删除按钮：红色圆形 + 垃圾桶，**弹入**（0.2s，`scale(.55) rotate(-18deg) → 1`，设计稿 §6）。
+ *
+ * 它是预览卡/大图上唯一的危险操作，所以颜色走错误色而不是普通控制色；
+ * 尺寸比控制按钮小一圈（27dp），这样它"贴"在卡片角上而不是压住图片。
+ */
+@Composable
+private fun ScreenshotDeleteButton(
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    val progress by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = tween(ScreenshotPreviewSpec.DELETE_BUTTON_DURATION_MILLIS),
+        label = "screenshot-delete-enter",
+    )
+    val startScale = ScreenshotPreviewSpec.DELETE_BUTTON_START_SCALE
+    Surface(
+        onClick = onDelete,
+        modifier = modifier
+            .size(PlayerScreenshotDeleteButtonSize)
+            .graphicsLayer {
+                val scale = startScale + (1f - startScale) * progress
+                scaleX = scale
+                scaleY = scale
+                rotationZ = ScreenshotPreviewSpec.DELETE_BUTTON_START_ROTATION_DEGREES * (1f - progress)
+                alpha = progress
+            }
+            .semantics { contentDescription = "删除截图" },
+        shape = CircleShape,
+        // 危险操作用 Material 的错误色（与 ShortsScreen 的删除按钮同一口径），
+        // 底色是错误容器色而不是纯红：贴在小图角上时不至于抢走截图本身的注意力。
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.error,
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = YingLiIcon.DELETE.imageVector,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+/** 预览卡宽度：设计稿 §4.10 的 116px。 */
+internal val PlayerScreenshotPreviewCardWidth = 116.dp
+
+/** 预览卡白色描边（设计稿 `border: 2px solid rgb(255 255 255 / .86)`）。 */
+private val PlayerScreenshotPreviewBorderColor = Color.White.copy(alpha = 0.86f)
+
+/**
+ * 描边宽度取 1.5dp（≈ 设计稿 2px）而不是 2dp：卡片只有 116dp 宽，
+ * 2dp 描边在 3x 屏上会占掉超过 6px，白边明显压住截图内容。
+ */
+private val PlayerScreenshotPreviewBorderWidth = 1.5.dp
+private val PlayerScreenshotPreviewCornerRadius = 7.dp
+private val PlayerScreenshotPreviewProgressHeight = 4.dp
+
+/** 截图胶囊里普通按钮的尺寸：比底栏按钮小一圈，让中间那枚强调按钮成为视觉主体。 */
+private val ScreenshotCapsuleButtonSize = 40.dp
+
+/** 删除按钮尺寸（设计稿 27px）。 */
+private val PlayerScreenshotDeleteButtonSize = 27.dp
+
+/** 大图预览的遮罩色：压暗画面但保留可见（与画面暗角同一族，不引入新色相）。 */
+private val PlayerScreenshotPreviewScrimColor = Color.Black.copy(alpha = 0.72f)
+
+/**
+ * 大图预览占整屏宽度的比例。
+ *
+ * 取 0.82 而不是"尽量铺满"：留出的边距让用户一眼看出这是浮层、
+ * 也保证图上的删除按钮不会贴到屏幕边上（小屏机型上删除按钮本来就在图的右上角外侧）。
+ */
+private const val PlayerScreenshotPreviewExpandedWidthFraction = 0.82f

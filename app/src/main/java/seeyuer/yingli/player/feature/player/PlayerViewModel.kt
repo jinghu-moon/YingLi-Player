@@ -80,10 +80,17 @@ import seeyuer.yingli.player.domain.playback.PlayerPanelReducer
 import seeyuer.yingli.player.domain.playback.PlayerPreferenceRepository
 import seeyuer.yingli.player.domain.playback.PlayerPreferences
 import seeyuer.yingli.player.domain.playback.ScreenshotGateway
+import seeyuer.yingli.player.domain.playback.ScreenshotPreviewSession
+import seeyuer.yingli.player.domain.playback.SCREENSHOT_PREVIEW_TICK_MILLIS
 import seeyuer.yingli.player.domain.playback.ScreenshotResult
 import seeyuer.yingli.player.domain.playback.ScreenshotUiEvent
 import seeyuer.yingli.player.domain.playback.ScreenshotUiReducer
 import seeyuer.yingli.player.domain.playback.ScreenshotUiState
+import seeyuer.yingli.player.domain.playback.collapse
+import seeyuer.yingli.player.domain.playback.expand
+import seeyuer.yingli.player.domain.playback.markDeleted
+import seeyuer.yingli.player.domain.playback.screenshotExpiredNaturally
+import seeyuer.yingli.player.domain.playback.tick
 import seeyuer.yingli.player.domain.playback.TrackChoice
 import seeyuer.yingli.player.domain.playback.TrackPreference
 import seeyuer.yingli.player.domain.playback.TrackPreferenceRepository
@@ -158,12 +165,18 @@ internal fun PlayerUiState.videoAspect(): Float? {
 sealed interface PlayerUiEvent {
     /**
      * 统一瞬时反馈：命令结果和状态变化都走这一条通道（规格 §14.4）。
-     * 文案用字符串资源 id 表达，不在事件里传裸文案；[argumentRes] 供
-     * 「播放顺序：随机播放」这类需要拼接一条资源文案的消息使用。
+     * 文案用字符串资源 id 表达，不在事件里传裸文案；需要拼一段**运行时才有的内容**时用
+     * [stringArgument]（例如"已保存到 …"里的保存位置），需要拼另一条资源文案时用 [argumentRes]
+     * （例如「播放顺序：随机播放」）。
+     *
+     * 为什么不像别的消息那样只靠资源 id：截图保存位置是网关生成的文件路径，
+     * 没有任何 `@StringRes` 能表达它；而把整句文案在 ViewModel 里拼好又会绕开资源体系。
      */
     data class TransientMessage(
         @StringRes val messageRes: Int,
         @StringRes val argumentRes: Int? = null,
+        /** 资源文案 `%1$s` 的实参；为 null 时按无参文案渲染。 */
+        val stringArgument: String? = null,
     ) : PlayerUiEvent
 }
 
@@ -199,6 +212,14 @@ class PlayerViewModel(
     private val abLimiter = AbLoopLimiter()
     private val screenshot = MutableStateFlow<ScreenshotUiState>(ScreenshotUiState.Idle)
 
+    /**
+     * 预览卡倒计时的**唯一状态源**（读条余量、展开定格、是否已删除）。UI 的
+     * [ScreenshotUiState.Preview.remainingMillis] 只是它推给读条的镜像，不参与计时决策——
+     * 展开期间读条定格而 UI 状态可能已经回到 Idle，余量只在这里还记得住
+     * （原因见 [ScreenshotPreviewSession] 的注释）。
+     */
+    private val screenshotSession = MutableStateFlow<ScreenshotPreviewSession?>(null)
+
     /** 画面旋转是视图层变换：不进播放管线，但按媒体持久化。 */
     private val rotation = MutableStateFlow(VideoRotation.Default)
     private val isFullscreen = MutableStateFlow(false)
@@ -218,7 +239,7 @@ class PlayerViewModel(
     private var seekAnchorMillis = 0L
 
     private var overlayHideJob: Job? = null
-    private var screenshotExpiryJob: Job? = null
+    private var screenshotTimerJob: Job? = null
     private var queueBuildJob: Job? = null
     private var activeQueueSource: PlaybackQueueSource? = null
 
@@ -234,6 +255,10 @@ class PlayerViewModel(
 
     override fun onCleared() {
         // 页面销毁：截图模式不再存在，既没有理由继续精确跳转，也没有理由让校准继续扫文件。
+        // 预览卡倒计时也一并停掉：会话随页面一起没了，留着计时协程只会推一份没人看的状态。
+        screenshotTimerJob?.cancel()
+        screenshotTimerJob = null
+        screenshotSession.value = null
         seekPrecisionControl?.setPrecision(SeekPrecision.CLOSEST_SYNC)
         sessionClient.stopFrameCalibration()
         if (ownsSessionClient) (sessionClient as? AutoCloseable)?.close()
@@ -686,13 +711,23 @@ class PlayerViewModel(
         scheduleOverlayHide()
     }
 
+    /**
+     * 进入截图模式。
+     *
+     * **默认暂停播放**（需求：截图定位时不应继续播放）：截图模式下用户要做的是"找到那一帧"，
+     * 播放中位置每 250ms 才回报一次，而一帧只有 33ms——画面一直在动，"当前帧"没有稳定含义，
+     * 捕获出来的也未必是用户看到的那一帧。暂停后由用户按播放键恢复，与 [stepScreenshotFrame]
+     * 的暂停共用 [pauseForFrameStepping] 这一条路径，避免两处各写一份暂停逻辑而互相打架。
+     */
     fun armScreenshot() {
         if (screenshotGateway == null || !state.value.playback.supportsScreenshot()) return
         panel.value = PlayerPanel.NONE
         abToolOpen.value = false
+        pauseForFrameStepping()
         screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.Arm)
         registerInteraction()
     }
+
     fun captureScreenshot() {
         val gateway = screenshotGateway ?: return
         if (screenshot.value != ScreenshotUiState.Armed) return
@@ -707,8 +742,25 @@ class PlayerViewModel(
                 screenshot.value,
                 ScreenshotUiEvent.CaptureCompleted(result),
             )
-            if (result is ScreenshotResult.Saved) scheduleScreenshotExpiry()
+            if (result is ScreenshotResult.Saved) {
+                screenshotSession.value = ScreenshotPreviewSession.start(
+                    displayName = result.displayName,
+                    uri = result.uri,
+                    location = result.location,
+                )
+                startScreenshotPreviewTimer()
+            }
         }
+    }
+
+    /**
+     * 逐帧步进的暂停，也是进入截图模式的暂停：**两处必须走同一条路径**。
+     *
+     * 直接下发暂停命令而不改 [PlayerUiState] 的本地镜像：真实暂停状态由会话回报，
+     * 抢先在本地把状态改成 Paused 只会让"控件在暂停时保持显示"那套自动隐藏逻辑提前生效。
+     */
+    private fun pauseForFrameStepping() {
+        dispatchResult(PlaybackSessionCommand.Pause)
     }
 
     fun stepScreenshotFrame(forward: Boolean) {
@@ -717,7 +769,7 @@ class PlayerViewModel(
         // 步进必须与播放互斥：播放中位置每 250ms 才回报一次，而一帧只有 33ms（30fps），
         // 正在播放时"当前帧"没有稳定含义，seek 也会立刻被播放推进覆盖。
         // 因此这里先暂停，由用户按播放键恢复——逐帧检查本来就是暂停态下的交互。
-        dispatchResult(PlaybackSessionCommand.Pause)
+        pauseForFrameStepping()
         val frameRate = effectiveFrameRate(current.mediaInfo?.frameRate, current.measuredFrameRate)
         val baseMillis = resolveFrameStepAnchor(
             positionMillis = current.displayedPositionMillis,
@@ -736,15 +788,44 @@ class PlayerViewModel(
         registerInteraction()
     }
 
-    fun toggleScreenshotExpiry() {
-        screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.ToggleExpiryPause)
-        val preview = screenshot.value as? ScreenshotUiState.Preview ?: return
-        if (preview.expiryPaused) screenshotExpiryJob?.cancel() else scheduleScreenshotExpiry()
+    /**
+     * 展开 / 收起大图预览（点击预览卡 / 关闭大图）。
+     *
+     * 展开让倒计时定格，收起时：
+     * - 读条还有余量 → 接着原来的余量继续走（不是重新给 3 秒）；
+     * - 读条在展开期间已走完 → 按"倒计时结束"的正常流程收场：卡片消失 + 提示保存路径。
+     *   这条路径由 [ScreenshotPreviewSession.collapse] 的返回值判定，删除过的不再提示。
+     */
+    fun setScreenshotPreviewExpanded(expanded: Boolean) {
+        if (screenshot.value !is ScreenshotUiState.Preview) return
+        val session = screenshotSession.value
+        if (expanded) {
+            screenshot.value = ScreenshotUiReducer.reduce(
+                screenshot.value,
+                ScreenshotUiEvent.ExpandChanged(true),
+            )
+            session?.let { screenshotSession.value = it.expand() }
+            return
+        }
+        // collapse() 只调一次：它同时负责"接着剩余时间继续走"与"判定是否已到期"两件事，
+        // 调两次既浪费又容易让两次判定落到不同状态上。
+        val resumed = session?.collapse()
+        if (session != null && resumed == null) {
+            // 读条走完（或这张图已被删除）：收起就等于原来的"倒计时结束、卡片消失"。
+            finishScreenshotPreview(session)
+            return
+        }
+        screenshot.value = ScreenshotUiReducer.reduce(
+            screenshot.value,
+            ScreenshotUiEvent.ExpandChanged(false),
+        )
+        resumed?.let { screenshotSession.value = it }
     }
 
     fun closeScreenshot() {
-        screenshotExpiryJob?.cancel()
-        screenshotExpiryJob = null
+        screenshotTimerJob?.cancel()
+        screenshotTimerJob = null
+        screenshotSession.value = null
         screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.Close)
         scheduleOverlayHide()
     }
@@ -766,10 +847,20 @@ class PlayerViewModel(
             frameStepAnchorMillis = null
         }
     }
+    /**
+     * 删除截图。
+     *
+     * 三件事必须一起成立，顺序不能换：
+     * 1. **先把会话标成已删除**——删除过的图片此后不再提示保存路径（需求明确要求），
+     *    而"倒计时到期"这条提示路径是由会话驱动的，标记必须发生在状态收掉之前；
+     * 2. 卡片立刻消失、倒计时取消：删除是即时反馈，不让用户等 IO；
+     * 3. 文件**真的删掉**（复用既有的 [ScreenshotFileGateway]，不另造存储）；
+     *    失败时按既有的"权限/失败"文案提示——文件其实还在，所以只提示不撒谎，
+     *    也不把卡片重新弹回来（用户点的是删除，不是撤销）。
+     */
     fun deleteScreenshot() {
-        val preview = screenshot.value as? ScreenshotUiState.Preview ?: run {
-            return
-        }
+        val preview = screenshot.value as? ScreenshotUiState.Preview ?: return
+        screenshotSession.value = screenshotSession.value?.markDeleted()
         val uri = preview.uri
         closeScreenshot()
         if (uri.isBlank()) return
@@ -1020,6 +1111,8 @@ class PlayerViewModel(
         ) return
         // 规格 §8「暂停默认保持显示」：不在这里短路（提前 return 会改变既有调用方的时序假设，
         // 曾让两个截图用例在删除前就丢失 Preview 状态），改为照常安排超时，在超时回调里判断。
+        // 预览卡在场（Preview）刻意**不**加进上面那组短路条件：卡片与帧数胶囊一样是浮层，
+        // 自己不受控件自动隐藏影响，遮挡与否由 UI 的层级关系决定，不需要借这条定时器。
         overlayHideJob = viewModelScope.launch {
             delay(PlayerOverlayReducer.AUTO_HIDE_MILLIS)
             val keepVisible = !overlay.value.locked && state.value.playback !is PlaybackState.Playing
@@ -1035,18 +1128,71 @@ class PlayerViewModel(
         }
     }
 
-    private fun scheduleScreenshotExpiry() {
-        screenshotExpiryJob?.cancel()
-        val preview = screenshot.value as? ScreenshotUiState.Preview ?: return
-        screenshotExpiryJob = viewModelScope.launch {
-            var remaining = preview.remainingMillis
-            while (remaining > 0) {
-                val elapsed = minOf(SCREENSHOT_EXPIRY_TICK_MILLIS, remaining)
-                delay(elapsed)
-                screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.TimeElapsed(elapsed))
-                remaining -= elapsed
+    /**
+     * 预览卡倒计时的唯一计时器：每隔 [SCREENSHOT_PREVIEW_TICK_MILLIS] 把时间喂给
+     * [ScreenshotPreviewSession]，由它决定读条要不要推进、要不要收场。
+     *
+     * 为什么是"一个恒转的计时器"而不是"每次改状态重启一个"：展开 / 收起 / 删除都会碰到倒计时，
+     * 只要有一个入口忘了重启或忘了取消，就会出现"展开后读条还在走"或"收起后读条不动"；
+     * 计时器只有一条生命周期（会话建立 → 会话结束），其余状态变化都只是喂给它的数据。
+     * 展开期间循环照常跑（只是把时间记进"看大图的时长"而不是减读条），
+     * 所以不存在两处同时推进的余地。
+     */
+    private fun startScreenshotPreviewTimer() {
+        screenshotTimerJob?.cancel()
+        screenshotTimerJob = viewModelScope.launch {
+            while (true) {
+                delay(SCREENSHOT_PREVIEW_TICK_MILLIS)
+                val session = screenshotSession.value ?: break
+                val tick = session.tick(SCREENSHOT_PREVIEW_TICK_MILLIS)
+                screenshotSession.value = tick.session
+                tick.publishRemainingMillis?.let { remaining ->
+                    val preview = screenshot.value as? ScreenshotUiState.Preview ?: return@let
+                    screenshot.value = preview.copy(remainingMillis = remaining)
+                }
+                if (tick.expired) {
+                    // 读条走完 = 卡片消失 + 提示保存路径（需求一.2）。
+                    screenshotSession.value = null
+                    screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.Close)
+                    scheduleOverlayHide()
+                    notifyScreenshotSavedTo(session)
+                    break
+                }
+                if (tick.notifyLocationOnly) {
+                    // 大图预览开着时读条到点：卡片（大图）不消失，只提示一次保存路径；
+                    // 用户关掉大图时按同一流程收场（见 setScreenshotPreviewExpanded）。
+                    notifyScreenshotSavedTo(session)
+                }
             }
         }
+    }
+
+    /** 预览卡按"倒计时到期"收场：卡片消失 + 提示保存路径（已删除的不再提示）。 */
+    private fun finishScreenshotPreview(session: ScreenshotPreviewSession) {
+        screenshotTimerJob?.cancel()
+        screenshotTimerJob = null
+        screenshotSession.value = null
+        screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.Close)
+        scheduleOverlayHide()
+        notifyScreenshotSavedTo(session)
+    }
+
+    /**
+     * 提示保存路径。位置为空就不提示——宁可不提示，也不弹一条"已保存到 "这样的半截文案。
+     * 走的是项目既有的瞬时反馈通道（播放页顶部那条 Snackbar 样式提示），不新引入组件体系。
+     *
+     * "只提示一次"落在这里：**提示成功就把会话标成已提示**。会话里那条记录是唯一权威，
+     * 而不是靠调用方各自记住"我是不是已经说过了"——那正是重复弹出同一条提示的成因。
+     */
+    private fun notifyScreenshotSavedTo(session: ScreenshotPreviewSession) {
+        if (session.location.isBlank() || session.locationReported) return
+        screenshotSession.value = screenshotSession.value?.copy(locationReported = true)
+        events.trySend(
+            PlayerUiEvent.TransientMessage(
+                messageRes = R.string.player_screenshot_saved_to,
+                stringArgument = session.location,
+            ),
+        )
     }
 
     private fun clampSeek(positionMillis: Long): Long {
@@ -1203,7 +1349,6 @@ class PlayerViewModel(
          */
         private const val GESTURE_VALUE_GAIN = 2f
         private const val TRACK_LOAD_TIMEOUT_MILLIS = 5_000L
-        private const val SCREENSHOT_EXPIRY_TICK_MILLIS = 100L
         private const val PLAYLIST_PAGE_SIZE = 60
         private const val PLAYLIST_PREFETCH_DISTANCE = 12
         private const val PLAYLIST_MAX_SIZE = 240

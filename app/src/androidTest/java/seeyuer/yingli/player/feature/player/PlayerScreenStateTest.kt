@@ -165,9 +165,8 @@ class PlayerScreenStateTest {
     }
 
     @Test
-    fun screenshotPreviewSupportsPauseCloseAndDeleteActions() {
-        var toggled = 0
-        var closed = 0
+    fun screenshotPreviewCardExpandsAndDeletes() {
+        var expanded: Boolean? = null
         var deleted = 0
         composeRule.setContent {
             YingLiTheme(darkTheme = true) {
@@ -175,28 +174,63 @@ class PlayerScreenStateTest {
                     state = PlayerUiState(
                         playback = PlaybackState.Paused(REQUEST, TIMELINE),
                         title = "测试影片",
-                        screenshot = ScreenshotUiState.Preview("frame.jpg"),
+                        screenshot = ScreenshotUiState.Preview(
+                            "frame.jpg",
+                            "content://frame",
+                            "Pictures/YingLi/frame.jpg",
+                        ),
                     ),
                     onBack = {}, onPlay = {}, onPause = {}, onSeek = {}, onReplay = {}, onRetry = {},
                     onRecovery = {}, videoSurface = {},
-                    onToggleScreenshotPreview = { toggled++ },
-                    onCloseScreenshot = { closed++ },
+                    onSetScreenshotPreviewExpanded = { expanded = it },
                     onDeleteScreenshot = { deleted++ },
                 )
             }
         }
 
+        // 预览卡阶段：没有删除按钮（删除只在放大预览里出现，设计稿 §4.10），点击即放大。
         composeRule.onNodeWithTag(PlayerTestTags.SCREENSHOT_PREVIEW).assertIsDisplayed().performClick()
-        composeRule.onNodeWithContentDescription("取消").assertIsDisplayed().performClick()
-        composeRule.onNodeWithContentDescription("删除截图").assertIsDisplayed().performClick()
-
-        assertEquals(1, toggled)
-        assertEquals(1, closed)
-        assertEquals(1, deleted)
+        assertEquals(true, expanded)
+        composeRule.onAllNodesWithContentDescription("删除截图").assertCountEquals(0)
+        composeRule.onAllNodesWithTag(PlayerTestTags.SCREENSHOT_PREVIEW_OVERLAY).assertCountEquals(0)
     }
 
     @Test
-    fun armedScreenshotRendersTheToolCapsuleInTheTransportLayer() {
+    fun expandedScreenshotPreviewShowsTheDeleteActionAndCollapses() {
+        var expanded: Boolean? = null
+        var deleted = 0
+        composeRule.setContent {
+            YingLiTheme(darkTheme = true) {
+                PlayerScreen(
+                    state = PlayerUiState(
+                        playback = PlaybackState.Paused(REQUEST, TIMELINE),
+                        title = "测试影片",
+                        screenshot = ScreenshotUiState.Preview(
+                            "frame.jpg",
+                            "content://frame",
+                            "Pictures/YingLi/frame.jpg",
+                            expanded = true,
+                        ),
+                    ),
+                    onBack = {}, onPlay = {}, onPause = {}, onSeek = {}, onReplay = {}, onRetry = {},
+                    onRecovery = {}, videoSurface = {},
+                    onSetScreenshotPreviewExpanded = { expanded = it },
+                    onDeleteScreenshot = { deleted++ },
+                )
+            }
+        }
+
+        // 放大预览阶段：铺满画布、右上角有删除按钮，小卡不再同时出现。
+        composeRule.onNodeWithTag(PlayerTestTags.SCREENSHOT_PREVIEW_OVERLAY).assertIsDisplayed()
+        composeRule.onAllNodesWithTag(PlayerTestTags.SCREENSHOT_PREVIEW).assertCountEquals(0)
+        composeRule.onNodeWithContentDescription("删除截图").assertIsDisplayed().performClick()
+
+        assertEquals(1, deleted)
+        assertEquals(null, expanded)
+    }
+
+    @Test
+    fun armedScreenshotRendersTheToolCapsuleWithoutTheCenterControls() {
         composeRule.setContent {
             YingLiTheme(darkTheme = true) {
                 PlayerScreen(
@@ -212,6 +246,10 @@ class PlayerScreenStateTest {
         }
 
         composeRule.onNodeWithTag(PlayerTestTags.SCREENSHOT_CAPSULE).assertIsDisplayed()
+        // 截图模式激活期间中央三连（上一个/播放/下一个）不出现；退出后由
+        // `centerControlsExposePreviousAndNext` 覆盖"回来了"这一半。
+        composeRule.onAllNodesWithContentDescription("上一项").assertCountEquals(0)
+        composeRule.onAllNodesWithContentDescription("下一项").assertCountEquals(0)
     }
 
     private fun setPlayer(playbackState: PlaybackState) {

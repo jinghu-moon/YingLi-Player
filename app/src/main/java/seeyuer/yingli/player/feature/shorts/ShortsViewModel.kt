@@ -286,7 +286,7 @@ class ShortsViewModel(
                 gateway.capture(current.title, mutableState.value.progressMillis, VideoRotation.Default)
             }
             val screenshot = when (result) {
-                is ScreenshotResult.Saved -> ScreenshotUiState.Preview(result.displayName, result.uri)
+                is ScreenshotResult.Saved -> ScreenshotUiState.Preview(result.displayName, result.uri, result.location)
                 is ScreenshotResult.Failed -> ScreenshotUiState.Failed(result.reason)
             }
             mutableState.value = ShortsReducer.reduce(mutableState.value, ShortsEvent.ScreenshotChanged(screenshot))
@@ -303,8 +303,10 @@ class ShortsViewModel(
         mutableState.value = ShortsReducer.reduce(
             mutableState.value,
             ShortsEvent.ScreenshotChanged(
+                // 与常规播放页同一套语义：展开预览即定格倒计时（收起时若读条已走完，
+                // 状态已经是 Idle，不会再被 TimeElapsed 推着走）。
                 when (val screenshot = mutableState.value.screenshot) {
-                    is ScreenshotUiState.Preview -> screenshot.copy(expiryPaused = !screenshot.expiryPaused)
+                    is ScreenshotUiState.Preview -> screenshot.copy(expanded = !screenshot.expanded && screenshot.uri.isNotBlank())
                     else -> screenshot
                 },
             ),

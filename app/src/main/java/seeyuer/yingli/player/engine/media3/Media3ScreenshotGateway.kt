@@ -70,7 +70,7 @@ class Media3ScreenshotGateway(
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
                     put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/YingLi")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, RELATIVE_PATH)
                 }
                 val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                     ?: return@withContext ScreenshotResult.Failed(ScreenshotFailure.READ_ONLY)
@@ -81,7 +81,13 @@ class Media3ScreenshotGateway(
                     resolver.delete(uri, null, null)
                     ScreenshotResult.Failed(ScreenshotFailure.STORAGE_FULL)
                 } else {
-                    ScreenshotResult.Saved(displayName, uri.toString())
+                    // 位置直接由 RELATIVE_PATH 与文件名拼出：写入落点就在这一处，
+                    // 让 UI 去反查 MediaStore 反而多一条可能失败/漂移的路径（见 ScreenshotResult.Saved 注释）。
+                    ScreenshotResult.Saved(
+                        displayName = displayName,
+                        uri = uri.toString(),
+                        location = "$RELATIVE_PATH/$displayName",
+                    )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -129,5 +135,8 @@ class Media3ScreenshotGateway(
 
     private companion object {
         const val JPEG_QUALITY = 92
+
+        /** 截图落点（MediaStore 相对路径）。提示给用户的保存位置就是它 + 文件名。 */
+        val RELATIVE_PATH = "${Environment.DIRECTORY_PICTURES}/YingLi"
     }
 }

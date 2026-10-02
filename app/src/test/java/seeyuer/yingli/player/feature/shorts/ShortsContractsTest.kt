@@ -72,18 +72,18 @@ class ShortsContractsTest {
     }
 
     @Test
-    fun `screenshot preview supports pause and expires at three seconds`() {
+    fun `screenshot preview supports expansion and expires at three seconds`() {
         val preview = ScreenshotUiReducer.reduce(
             ScreenshotUiState.Capturing,
             ScreenshotUiEvent.CaptureCompleted(ScreenshotResult.Saved("frame.jpg", "content://frame")),
         )
-        val paused = ScreenshotUiReducer.reduce(preview, ScreenshotUiEvent.ToggleExpiryPause)
-        val stillVisible = ScreenshotUiReducer.reduce(paused, ScreenshotUiEvent.TimeElapsed(3_000))
-        val resumed = ScreenshotUiReducer.reduce(stillVisible, ScreenshotUiEvent.ToggleExpiryPause)
+        val expanded = ScreenshotUiReducer.reduce(preview, ScreenshotUiEvent.ExpandChanged(true))
+        val stillVisible = ScreenshotUiReducer.reduce(expanded, ScreenshotUiEvent.TimeElapsed(3_000))
+        val collapsed = ScreenshotUiReducer.reduce(stillVisible, ScreenshotUiEvent.ExpandChanged(false))
 
-        assertEquals(true, (paused as ScreenshotUiState.Preview).expiryPaused)
-        assertEquals(paused, stillVisible)
-        assertEquals(ScreenshotUiState.Idle, ScreenshotUiReducer.reduce(resumed, ScreenshotUiEvent.TimeElapsed(3_000)))
+        assertEquals(true, (expanded as ScreenshotUiState.Preview).expanded)
+        assertEquals(expanded, stillVisible)
+        assertEquals(ScreenshotUiState.Idle, ScreenshotUiReducer.reduce(collapsed, ScreenshotUiEvent.TimeElapsed(3_000)))
     }
 
     private fun candidate(id: String) = ShortsCandidate(

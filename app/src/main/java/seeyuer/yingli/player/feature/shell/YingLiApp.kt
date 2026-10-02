@@ -400,7 +400,7 @@ fun YingLiApp(
                     onCaptureScreenshot = playerViewModel::captureScreenshot,
                     onPreviousScreenshotFrame = { playerViewModel.stepScreenshotFrame(false) },
                     onNextScreenshotFrame = { playerViewModel.stepScreenshotFrame(true) },
-                    onToggleScreenshotPreview = playerViewModel::toggleScreenshotExpiry,
+                    onSetScreenshotPreviewExpanded = playerViewModel::setScreenshotPreviewExpanded,
                     onCloseScreenshot = playerViewModel::closeScreenshot,
                     onDeleteScreenshot = playerViewModel::deleteScreenshot,
                     onOpenAbTool = playerViewModel::openAbTool,

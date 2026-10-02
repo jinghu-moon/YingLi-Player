@@ -4,7 +4,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import composeicons.tabler.TablerIcons
 import composeicons.tabler.outline.Activity
 import composeicons.tabler.outline.AlertCircle
-import composeicons.tabler.outline.Aperture
 import composeicons.tabler.outline.DotsVertical
 import composeicons.tabler.outline.ArrowRight
 import composeicons.tabler.outline.ArrowsHorizontal
@@ -58,6 +57,9 @@ import composeicons.tabler.outline.Trash
 import composeicons.tabler.outline.Upload
 import composeicons.tabler.outline.Volume
 import composeicons.tabler.outline.X
+import composeicons.tabler.filled.Camera as CameraFilled
+import composeicons.tabler.filled.PlayerSkipBack as PlayerSkipBackFilled
+import composeicons.tabler.filled.PlayerSkipForward as PlayerSkipForwardFilled
 import composeicons.tabler.filled.Star as StarFilled
 
 enum class IconProvider {
@@ -109,7 +111,10 @@ enum class YingLiIcon(
     FLIP_HORIZONTAL(IconProvider.LOCAL_VECTOR),
     FLIP_VERTICAL(IconProvider.LOCAL_VECTOR),
     EXIT_FULLSCREEN(IconProvider.TABLER),
+    /** 截图**入口**（进入截图模式）：设计稿 §2.3 的 `ti-camera`，线性。 */
     SCREENSHOT(IconProvider.TABLER),
+    /** 截图胶囊中间的**捕获按钮**：设计稿 §2.3 的 `ti-camera-filled`，实心。 */
+    SCREENSHOT_CAPTURE(IconProvider.TABLER),
     FAVORITE(IconProvider.TABLER),
     FAVORITE_FILLED(IconProvider.TABLER),
     BLOCK(IconProvider.TABLER),
@@ -179,7 +184,9 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.FLIP_HORIZONTAL -> YingLiCustomIcons.FlipHorizontal
         YingLiIcon.FLIP_VERTICAL -> YingLiCustomIcons.FlipVertical
         YingLiIcon.EXIT_FULLSCREEN -> TablerIcons.Outline.Minimize
-        YingLiIcon.SCREENSHOT -> TablerIcons.Outline.Aperture
+        // 设计稿 §2.3：截图入口 = `ti-camera`（线性），捕获按钮 = `ti-camera-filled`（实心）。
+        YingLiIcon.SCREENSHOT -> TablerIcons.Outline.Camera
+        YingLiIcon.SCREENSHOT_CAPTURE -> TablerIcons.Filled.CameraFilled
         YingLiIcon.FAVORITE -> TablerIcons.Outline.Star
         YingLiIcon.FAVORITE_FILLED -> TablerIcons.Filled.StarFilled
         YingLiIcon.BLOCK -> TablerIcons.Outline.Ban
@@ -190,12 +197,13 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.CAST -> TablerIcons.Outline.Cast
         YingLiIcon.VOLUME -> TablerIcons.Outline.Volume
         YingLiIcon.FULLSCREEN -> TablerIcons.Outline.ArrowsMaximize
+        // 逐帧步进用**无填充**的 skip 字形，刻意区别于"上一项/下一项"（设计稿 §2.3）。
         YingLiIcon.SEEK_BACKWARD -> TablerIcons.Outline.PlayerSkipBack
         YingLiIcon.SEEK_FORWARD -> TablerIcons.Outline.PlayerSkipForward
-        // 上一项/下一项与"快退/快进 N 秒"共用 PlayerSkipBack/Forward 字形（图标库无 track 变体），
-        // 因此靠画面按钮上的**秒数徽标**区分语义：带 "10" 的是跳秒，不带的是切上/下一项。
-        YingLiIcon.PREVIOUS -> TablerIcons.Outline.PlayerSkipBack
-        YingLiIcon.NEXT -> TablerIcons.Outline.PlayerSkipForward
+        // 上一项/下一项用**实心**的 skip 字形：图标库里没有 track 变体，靠填充与否把
+        // "切上/下一个视频"和截图工具里的"上一帧/下一帧"区分开（设计稿 §2.3 的口径）。
+        YingLiIcon.PREVIOUS -> TablerIcons.Filled.PlayerSkipBackFilled
+        YingLiIcon.NEXT -> TablerIcons.Filled.PlayerSkipForwardFilled
         YingLiIcon.CLOSE -> TablerIcons.Outline.X
         YingLiIcon.UNLOCK -> TablerIcons.Outline.LockOpen
         YingLiIcon.BACKUP_EXPORT -> TablerIcons.Outline.Download

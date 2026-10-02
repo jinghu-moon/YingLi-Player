@@ -31,15 +31,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import kotlinx.coroutines.delay
@@ -88,7 +92,8 @@ fun PlayerScreen(
     onCaptureScreenshot: () -> Unit = {},
     onPreviousScreenshotFrame: () -> Unit = {},
     onNextScreenshotFrame: () -> Unit = {},
-    onToggleScreenshotPreview: () -> Unit = {},
+    /** 展开 / 收起大图预览（点击预览卡、关闭大图都走这一条）。 */
+    onSetScreenshotPreviewExpanded: (Boolean) -> Unit = {},
     onCloseScreenshot: () -> Unit = {},
     onDeleteScreenshot: () -> Unit = onCloseScreenshot,
     onToggleFullscreen: () -> Unit = {},
@@ -138,6 +143,8 @@ fun PlayerScreen(
     val hasTransientTool = state.panel != PlayerPanel.NONE || state.abToolOpen ||
         state.screenshot is ScreenshotUiState.Armed || state.screenshot is ScreenshotUiState.Capturing ||
         state.screenshot is ScreenshotUiState.Preview
+    // 预览卡飞入的几何输入：捕获按钮在根布局里的中心点（未测量到时为 null）。
+    var captureButtonCenter by remember { mutableStateOf<Offset?>(null) }
     // 画面手势的唯一所有者是 playerCanvasDragGestures：把单击/双击接线到画布回调。
     // 放大状态下双击改为复位缩放（规格要求提供复位入口，且不会误伤播放状态）。
     val latestZoomActive by rememberUpdatedState(state.zoom.isActive)
@@ -412,9 +419,13 @@ fun PlayerScreen(
                 tonalElevation = 4.dp,
             ) {
                 Text(
-                    text = message.argumentRes?.let { argument ->
-                        stringResource(message.messageRes, stringResource(argument))
-                    } ?: stringResource(message.messageRes),
+                    text = when {
+                        message.stringArgument != null ->
+                            stringResource(message.messageRes, message.stringArgument)
+                        message.argumentRes != null ->
+                            stringResource(message.messageRes, stringResource(message.argumentRes))
+                        else -> stringResource(message.messageRes)
+                    },
                     color = YingLiTheme.colors.textPrimary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                 )
@@ -437,8 +448,18 @@ fun PlayerScreen(
         // 但两者都会把底栏拉进组合，而底栏内三段各自的收起逻辑不变。
         val controlsOnScreen = state.overlay.controlsVisible && state.playback.hasTransportControls()
         val screenshotCapsuleVisible = state.screenshot.isCapsuleVisible()
+        // 截图模式激活期间中央三连不出现（需求三）：只加这一条，横竖屏/锁定/自动隐藏的既有
+        // 条件仍然原样生效——`controlsOnScreen` 管的是"控件该不该在场"，这里管的是"在场时长什么样"。
+        val centerControlsOnScreen = controlsOnScreen && !state.screenshot.hidesCenterTransportControls()
         if (!state.overlay.locked && (controlsOnScreen || screenshotCapsuleVisible)) {
-            if (controlsOnScreen) {
+            // 用 AnimatedVisibility 而不是 `if`：截图模式进出时中央三连要**淡出/淡入**
+            // （与底栏三段同一动效常量、同一时长），硬切会让它在画面正中"啪"地消失。
+            AnimatedVisibility(
+                visible = centerControlsOnScreen,
+                enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+                exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+                modifier = Modifier.align(Alignment.Center),
+            ) {
                 CenterPlaybackControls(
                     // 重缓冲期间播放意图仍是"播放中"：按钮不应翻成"播放"，
                     // 否则拖动进度条时会看到"页面自动暂停、松手又恢复"的错觉。
@@ -449,7 +470,7 @@ fun PlayerScreen(
                     onNext = onNext,
                     canNavigatePrevious = canNavigatePrevious,
                     canNavigateNext = canNavigateNext,
-                    modifier = Modifier.align(Alignment.Center)
+                    modifier = Modifier
                         .then(if (landscape) Modifier else Modifier.padding(bottom = 96.dp))
                         .testTag(if (landscape) PlayerTestTags.LANDSCAPE_CENTER_CONTROLS else PlayerTestTags.PORTRAIT_CENTER_CONTROLS),
                 )
@@ -492,6 +513,7 @@ fun PlayerScreen(
                         onCapture = onCaptureScreenshot,
                         onNextFrame = onNextScreenshotFrame,
                         onClose = onCloseScreenshot,
+                        onCapturePositioned = { captureButtonCenter = it },
                         modifier = Modifier.testTag(PlayerTestTags.SCREENSHOT_CAPSULE),
                     )
                 },
@@ -534,16 +556,29 @@ fun PlayerScreen(
             state.frameCounter?.let { counter -> FrameCounterCapsule(counter) }
         }
         (state.screenshot as? ScreenshotUiState.Preview)?.let { preview ->
-            ScreenshotPreview(
-                state = preview,
-                onTogglePause = onToggleScreenshotPreview,
-                onClose = onCloseScreenshot,
-                onDelete = onDeleteScreenshot,
-                modifier = Modifier.align(Alignment.TopStart)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(start = 16.dp, top = 64.dp)
-                    .testTag(PlayerTestTags.SCREENSHOT_PREVIEW),
-            )
+            if (preview.expanded) {
+                // 大图预览铺满画布（自带的遮罩会拦住画面手势），与预览卡互斥：
+                // 同一张图不同时以两种尺寸出现。
+                ScreenshotPreviewOverlay(
+                    state = preview,
+                    onCollapse = { onSetScreenshotPreviewExpanded(false) },
+                    onDelete = onDeleteScreenshot,
+                )
+            } else {
+                ScreenshotPreviewCard(
+                    state = preview,
+                    captureButtonCenter = captureButtonCenter,
+                    onExpand = { onSetScreenshotPreviewExpanded(true) },
+                    // 卡片落在左上角：**帧号胶囊下方**（帧号胶囊固定在顶栏下方那条带里），
+                    // 两者共享同一条水平带的左端，错开竖直位置才不会互相压住。
+                    modifier = Modifier.align(Alignment.TopStart)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(
+                            start = PlayerPortraitBarHorizontalPadding,
+                            top = frameCounterTopPadding + PlayerScreenshotPreviewTopGap,
+                        ),
+                )
+            }
         }
         (state.screenshot as? ScreenshotUiState.Failed)?.let {
             Text(
@@ -705,6 +740,7 @@ object PlayerTestTags {
     const val PORTRAIT_SETTINGS = "player.settings.portrait"
     const val SCREENSHOT_CAPSULE = "player.screenshot.capsule"
     const val SCREENSHOT_PREVIEW = "player.screenshot.preview"
+    const val SCREENSHOT_PREVIEW_OVERLAY = "player.screenshot.preview.overlay"
     const val FRAME_COUNTER = "player.frame_counter"
     const val AB_CAPSULE = "player.ab.capsule"
     const val GESTURE_HINT = "player.gesture_hint"
@@ -720,3 +756,11 @@ object PlayerTestTags {
  * 真正的避让靠"下移到顶栏下方"完成，不靠这个比例。
  */
 private const val PlayerFrameCounterMaxWidthFraction = 0.8f
+
+/**
+ * 截图预览卡与帧数胶囊之间的竖直间距。
+ *
+ * 取 12dp：与 [PlayerFrameCounterTopGap]（帧号胶囊到顶栏底边的间距）同一档，
+ * 让"顶栏 → 帧号 → 预览卡"这三层的间距节奏一致，而不是三个各不相同的数字。
+ */
+private val PlayerScreenshotPreviewTopGap = 12.dp

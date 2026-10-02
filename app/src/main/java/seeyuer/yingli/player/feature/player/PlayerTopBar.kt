@@ -148,7 +148,9 @@ internal fun PlayerTopBar(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },
             ) {
-                if (allowScreenshot) menuItem("保存当前帧", onScreenshot) { menuExpanded = false }
+                // 文案区分"进入截图模式"与"按下拍摄"（后者在截图胶囊里），
+                // 图标也按设计稿 §2.3 分成 camera / camera-filled 两个。
+                if (allowScreenshot) menuItem(stringResource(R.string.player_screenshot), onScreenshot) { menuExpanded = false }
                 if (allowPictureInPicture) menuItem("画中画", onPictureInPicture) { menuExpanded = false }
                 menuItem("播放列表", onOpenPlaylist) { menuExpanded = false }
                 menuItem("播放设置", onOpenSettings) { menuExpanded = false }

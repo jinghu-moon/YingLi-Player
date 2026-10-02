@@ -382,7 +382,7 @@ fun ShortsScreen(
                 )
                 Text(preview.displayName, color = YingLiTheme.player.controlPrimary, modifier = Modifier.padding(end = 8.dp))
                 Text("${((preview.remainingMillis + 999L) / 1_000L).coerceAtMost(3L)}s", color = YingLiTheme.player.controlSecondary)
-                YingLiIconButton(YingLiIcon.PAUSE, if (preview.expiryPaused) "继续截图预览倒计时" else "暂停截图预览倒计时", onToggleScreenshotPause, tint = YingLiTheme.player.controlPrimary)
+                YingLiIconButton(YingLiIcon.PAUSE, if (preview.expanded) "收起截图预览" else "展开截图预览", onToggleScreenshotPause, tint = YingLiTheme.player.controlPrimary)
                 YingLiIconButton(YingLiIcon.CLOSE, "关闭截图预览", onCloseScreenshot, tint = YingLiTheme.player.controlPrimary)
                 YingLiIconButton(YingLiIcon.DELETE, "删除截图", onDeleteScreenshot, tint = MaterialTheme.colorScheme.error)
             }

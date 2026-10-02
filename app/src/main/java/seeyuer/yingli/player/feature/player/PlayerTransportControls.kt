@@ -731,7 +731,7 @@ private fun PlayerShortcut(
             R.string.player_scale_state,
             stringResource(videoScaleModeLabelRes(state.scaleMode)),
         )
-        PlayerControlId.SCREENSHOT -> "截图"
+        PlayerControlId.SCREENSHOT -> stringResource(R.string.player_screenshot)
         PlayerControlId.AB_LOOP -> "AB循环"
         PlayerControlId.MIRROR_HORIZONTAL -> "水平翻转"
         PlayerControlId.MIRROR_VERTICAL -> "垂直翻转"

@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
@@ -51,6 +52,7 @@ import seeyuer.yingli.player.domain.playback.ScreenshotGateway
 import seeyuer.yingli.player.domain.playback.ScreenshotFileGateway
 import seeyuer.yingli.player.domain.playback.ScreenshotResult
 import seeyuer.yingli.player.domain.playback.ScreenshotUiState
+import seeyuer.yingli.player.domain.playback.SCREENSHOT_PREVIEW_TICK_MILLIS
 import seeyuer.yingli.player.domain.playback.FrameCalibration
 import seeyuer.yingli.player.domain.playback.FrameCalibrationControl
 import seeyuer.yingli.player.domain.playback.FrameCalibrationResult
@@ -736,7 +738,226 @@ class PlayerViewModelTest {
 
         assertEquals(1, captures)
         assertEquals("frame.jpg", (viewModel.state.value.screenshot as ScreenshotUiState.Preview).displayName)
+        // 收尾：预览卡的倒计时计时器是**持续运行**的（这正是"只有一个计时器"的实现方式），
+        // 不主动结束会话，测试调度器就永远有下一个任务，runTest 会一直等下去。
+        viewModel.closeScreenshot()
         stateCollector.cancel()
+    }
+
+    @Test
+    fun `arming the screenshot tool pauses playback so the frame is stable`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        // 先落成"已暂停"再 advanceUntilIdle：Playing 状态下进度投影流按 PROGRESS_TICK_MILLIS
+        // 无限自增，虚拟时间永远有下一个任务，advanceUntilIdle 不会返回。
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(2_000, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg", "content://media/1")),
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        // 用户先按下播放：进入截图模式之前确实在播。
+        controller.setState(PlaybackState.Playing(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(2_000, 10_000)))
+        runCurrent()
+
+        viewModel.armScreenshot()
+        // 进入截图模式即暂停：否则"当前帧"一直在动，捕获出来的不是用户看到的那一帧。
+        assertEquals(1, controller.pauseCount)
+        // 用户仍可手动按播放键恢复。
+        viewModel.play()
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `preview countdown ticks down and only the natural expiry reports the saved location`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(0, 10_000)))
+        val gateway = ScreenshotGatewayFake(
+            ScreenshotResult.Saved("frame.jpg", "content://media/1", "Pictures/YingLi/frame.jpg"),
+        )
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = gateway,
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        val events = mutableListOf<PlayerUiEvent>()
+        val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        viewModel.captureScreenshot()
+        runCurrent()
+        val captured = viewModel.state.value.screenshot as ScreenshotUiState.Preview
+        assertEquals("Pictures/YingLi/frame.jpg", captured.location)
+        assertEquals(ScreenshotUiState.PREVIEW_DURATION_MILLIS, captured.remainingMillis)
+
+        advanceTimeBy(1_000)
+        val midway = viewModel.state.value.screenshot as ScreenshotUiState.Preview
+        assertTrue("remaining=${midway.remainingMillis}", midway.remainingMillis < 3_000L)
+        assertTrue("remaining=${midway.remainingMillis}", midway.remainingMillis > 1_000L)
+        assertTrue("读条未走完就不该提示保存路径", events.isEmpty())
+
+        advanceTimeBy(2_100)
+        assertEquals(ScreenshotUiState.Idle, viewModel.state.value.screenshot)
+        assertEquals(
+            listOf(
+                PlayerUiEvent.TransientMessage(
+                    R.string.player_screenshot_saved_to,
+                    stringArgument = "Pictures/YingLi/frame.jpg",
+                ),
+            ),
+            events,
+        )
+        stateCollector.cancel()
+        eventCollector.cancel()
+    }
+
+    @Test
+    fun `expanding the preview freezes the readout and resumes it on collapse`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(
+                ScreenshotResult.Saved("frame.jpg", "content://media/1", "Pictures/YingLi/frame.jpg"),
+            ),
+        )
+        // 收集卡片还挂着时推出去的读条值：展开期间有没有继续走，看这个列表就够了。
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        viewModel.captureScreenshot()
+        runCurrent()
+        advanceTimeBy(1_000)
+        val beforeExpand = (viewModel.state.value.screenshot as ScreenshotUiState.Preview).remainingMillis
+
+        viewModel.setScreenshotPreviewExpanded(true)
+        assertEquals(true, (viewModel.state.value.screenshot as ScreenshotUiState.Preview).expanded)
+        // 展开那一刻读条定格（设计稿 §6）：卡片上的读条值停在手点下去时的那个数。
+        val frozen = (viewModel.state.value.screenshot as ScreenshotUiState.Preview).remainingMillis
+        // 看大图的这段时间照样算进 3 秒里：UI 上推出去的"还剩多久"会跟着走。
+        advanceTimeBy(1_000)
+        assertTrue(
+            "expanded readout should keep ticking down",
+            (viewModel.state.value.screenshot as ScreenshotUiState.Preview).remainingMillis < frozen,
+        )
+
+        viewModel.setScreenshotPreviewExpanded(false)
+        val collapsed = viewModel.state.value.screenshot as ScreenshotUiState.Preview
+        assertEquals(false, collapsed.expanded)
+        // 收起后从"展开那一刻的读数 - 看图的 1 秒"接着走：既不会重新给满，
+        // 也不会把看图的 1 秒白白退还给用户。
+        assertTrue("frozen=$frozen collapsed=${collapsed.remainingMillis}", collapsed.remainingMillis < frozen)
+        assertTrue("remaining=${collapsed.remainingMillis}", collapsed.remainingMillis > 0L)
+        // 再走完剩下的时间就自动消失（会话结束，计时器随之收工）。
+        advanceTimeBy(ScreenshotUiState.PREVIEW_DURATION_MILLIS)
+        assertEquals(ScreenshotUiState.Idle, viewModel.state.value.screenshot)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `countdown finishing while expanded keeps the preview and reports the location once`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(
+                ScreenshotResult.Saved("frame.jpg", "content://media/1", "Pictures/YingLi/frame.jpg"),
+            ),
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        val events = mutableListOf<PlayerUiEvent>()
+        val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        viewModel.captureScreenshot()
+        runCurrent()
+        // 读条走掉 2 秒后再展开：只在大图里看一眼（0.5 秒），读条定格在 1 秒。
+        advanceTimeBy(2_000)
+        viewModel.setScreenshotPreviewExpanded(true)
+        advanceTimeBy(500)
+        // 定格期间不会有任何提示，卡片也一直在。
+        assertTrue("定格期间不该提示保存路径", events.isEmpty())
+        assertEquals(true, (viewModel.state.value.screenshot as ScreenshotUiState.Preview).expanded)
+
+        // 大图一直开着看图：1 秒后读条到点——卡片不消失，但提示一次保存路径（需求一.3.2）。
+        advanceTimeBy(1_000)
+        val expanded = viewModel.state.value.screenshot as ScreenshotUiState.Preview
+        assertEquals(true, expanded.expanded)
+        assertEquals(0L, expanded.remainingMillis)
+        assertEquals(
+            listOf(
+                PlayerUiEvent.TransientMessage(
+                    R.string.player_screenshot_saved_to,
+                    stringArgument = "Pictures/YingLi/frame.jpg",
+                ),
+            ),
+            events,
+        )
+
+        // 关掉大图 = 按"倒计时到期"的正常流程收场：卡片消失，且不再重复提示。
+        viewModel.setScreenshotPreviewExpanded(false)
+        assertEquals(ScreenshotUiState.Idle, viewModel.state.value.screenshot)
+        assertEquals(1, events.size)
+        stateCollector.cancel()
+        eventCollector.cancel()
+    }
+
+    @Test
+    fun `deleting the preview removes the saved file and never reports the location`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(0, 10_000)))
+        val gateway = ScreenshotGatewayFake(
+            ScreenshotResult.Saved("frame.jpg", "content://media/1", "Pictures/YingLi/frame.jpg"),
+        )
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = gateway,
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        val events = mutableListOf<PlayerUiEvent>()
+        val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        viewModel.captureScreenshot()
+        runCurrent()
+        viewModel.setScreenshotPreviewExpanded(true)
+        viewModel.deleteScreenshot()
+        advanceTimeBy(5_000)
+
+        // 真正删掉文件、取消倒计时、卡片消失，并且**不再**提示保存路径。
+        assertEquals(listOf("content://media/1"), gateway.deletedUris)
+        assertEquals(ScreenshotUiState.Idle, viewModel.state.value.screenshot)
+        assertEquals(
+            listOf(PlayerUiEvent.TransientMessage(R.string.player_screenshot_deleted)),
+            events,
+        )
+        stateCollector.cancel()
+        eventCollector.cancel()
     }
 
     @Test
@@ -1024,12 +1245,15 @@ class PlayerViewModelTest {
 
         viewModel.armScreenshot()
         runCurrent()
+        // 进入截图模式本身就暂停一次（截图定位时不应继续播放）。
+        assertEquals(1, controller.pauseCount)
         viewModel.stepScreenshotFrame(forward = true)
         runCurrent()
 
         // 30fps → 一帧 33ms；步进必须走精确 seek 的目标位置，而不是固定 34ms 的估算偏移。
         assertEquals(1_033L, controller.lastSeekPosition)
-        assertEquals(1, controller.pauseCount)
+        // 步进再暂停一次：两处暂停走的是同一条路径（pauseForFrameStepping），不会互相打架。
+        assertEquals(2, controller.pauseCount)
         // 退出截图模式后步进必须无效（工具没打开时不该动播放位置）。
         viewModel.closeScreenshot()
         runCurrent()

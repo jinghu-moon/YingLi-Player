@@ -5,6 +5,7 @@ import composeicons.tabler.TablerIcons
 import composeicons.tabler.outline.Activity
 import composeicons.tabler.outline.AlertCircle
 import composeicons.tabler.outline.Aperture
+import composeicons.tabler.outline.DotsVertical
 import composeicons.tabler.outline.ArrowRight
 import composeicons.tabler.outline.ArrowsHorizontal
 import composeicons.tabler.outline.ArrowsMaximize
@@ -20,7 +21,6 @@ import composeicons.tabler.outline.ChevronRight
 import composeicons.tabler.outline.Check
 import composeicons.tabler.outline.Crop
 import composeicons.tabler.outline.Dots
-import composeicons.tabler.outline.DotsVertical
 import composeicons.tabler.outline.Download
 import composeicons.tabler.outline.Eye
 import composeicons.tabler.outline.EyeOff

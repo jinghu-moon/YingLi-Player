@@ -6,10 +6,13 @@ enum class PlayerControlSurface(val capacity: Int) {
     LANDSCAPE_BOTTOM_RIGHT(4),
     PORTRAIT_BOTTOM(7),
 
+    /** 竖屏底栏上方的 "更多" 托盘：低频按钮集中在这里，可用设置页的槽位编辑器自由搬运。 */
+    TOOLS(8),
+
     ;
 
     val landscape: Boolean
-        get() = this != PORTRAIT_BOTTOM
+        get() = this == LANDSCAPE_TOP_RIGHT || this == LANDSCAPE_BOTTOM_LEFT || this == LANDSCAPE_BOTTOM_RIGHT
 }
 
 enum class PlayerControlId(val fixed: Boolean = false) {
@@ -28,6 +31,7 @@ enum class PlayerControlId(val fixed: Boolean = false) {
     ORIENTATION,
     LOCK,
     SETTINGS,
+    MORE,
     FULLSCREEN(true),
 }
 
@@ -99,9 +103,10 @@ data class PlayerControlLayout(
             PlayerControlSurface.LANDSCAPE_TOP_RIGHT to listOf(PlayerControlId.PLAYLIST, PlayerControlId.AUDIO, PlayerControlId.SUBTITLE, PlayerControlId.SETTINGS),
             PlayerControlSurface.LANDSCAPE_BOTTOM_LEFT to listOf(PlayerControlId.ORDER, PlayerControlId.SPEED),
             PlayerControlSurface.LANDSCAPE_BOTTOM_RIGHT to listOf(PlayerControlId.PIP, PlayerControlId.FULLSCREEN, PlayerControlId.LOCK),
+            PlayerControlSurface.TOOLS to listOf(PlayerControlId.SCREENSHOT, PlayerControlId.AB_LOOP, PlayerControlId.INFO),
             PlayerControlSurface.PORTRAIT_BOTTOM to listOf(
                 PlayerControlId.SPEED,
-                PlayerControlId.SETTINGS,
+                PlayerControlId.MORE,
                 PlayerControlId.SCALE,
                 PlayerControlId.ORIENTATION,
                 PlayerControlId.PIP,

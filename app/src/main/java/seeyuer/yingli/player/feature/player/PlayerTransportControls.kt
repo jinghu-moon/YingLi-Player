@@ -323,11 +323,51 @@ internal fun BottomPlaybackControls(
             } else {
                 PlayerShortcutSpacing
             }
+            // "更多"托盘展开状态：纯 UI 状态，不需要进 ViewModel。
+            var toolsExpanded by remember { mutableStateOf(false) }
             // 预览状态必须跨"提交后挡位变化"保持同一个实例：手势协程在重组间持续运行，
             // 若这里按 state.speed 重建状态，拖动时就写不到按钮读的那个状态，数值不再实时更新。
             var previewedSpeed by remember { mutableStateOf<PlaybackSpeed?>(null) }
             LaunchedEffect(state.speed, sliderActive) { previewedSpeed = null }
             val shownSpeed = previewedSpeed ?: state.speed
+            androidx.compose.animation.AnimatedVisibility(
+                visible = toolsExpanded,
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = PlayerPortraitControlsSpacing),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    state.controlLayout
+                        .controls(seeyuer.yingli.player.domain.playback.PlayerControlSurface.TOOLS)
+                        .forEach { id ->
+                            PlayerShortcut(
+                                id = id,
+                                state = state,
+                                allowPictureInPicture = allowPictureInPicture,
+                                onOpenSettings = onOpenSettings,
+                                onToggleFullscreen = onToggleFullscreen,
+                                onRotateVideo = onRotateVideo,
+                                onToggleSpeedPanel = onToggleSpeedPanel,
+                                onCycleScaleMode = onCycleScaleMode,
+                                onOpenPlaylist = onOpenPlaylist,
+                                onPictureInPicture = onPictureInPicture,
+                                onSetPlaybackOrder = onSetPlaybackOrder,
+                                onScreenshot = onScreenshot,
+                                onOpenAbTool = onOpenAbTool,
+                                onToggleLock = onToggleLock,
+                                onPrevious = onPrevious,
+                                onNext = onNext,
+                                onToggleTools = { toolsExpanded = !toolsExpanded },
+                                onOpenVideoInfo = onOpenVideoInfo,
+                                onSelectAudioTrack = onSelectAudioTrack,
+                                onSelectSubtitleTrack = onSelectSubtitleTrack,
+                            )
+                        }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .then(if (spreadAcrossRow) Modifier else Modifier.horizontalScroll(scrollState)),
@@ -366,6 +406,7 @@ internal fun BottomPlaybackControls(
                                 onToggleLock = onToggleLock,
                                 onPrevious = onPrevious,
                                 onNext = onNext,
+                                onToggleTools = { toolsExpanded = !toolsExpanded },
                                 onOpenVideoInfo = onOpenVideoInfo,
                                 onSelectAudioTrack = onSelectAudioTrack,
                                 onSelectSubtitleTrack = onSelectSubtitleTrack,
@@ -435,6 +476,7 @@ private fun PlayerShortcut(
     onToggleLock: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onToggleTools: () -> Unit = {},
     onOpenVideoInfo: () -> Unit,
     onSelectAudioTrack: () -> Unit,
     onSelectSubtitleTrack: () -> Unit,
@@ -456,6 +498,7 @@ private fun PlayerShortcut(
         PlayerControlId.ORIENTATION -> onRotateVideo
         PlayerControlId.LOCK -> onToggleLock
         PlayerControlId.SETTINGS -> onOpenSettings
+        PlayerControlId.MORE -> onToggleTools
         PlayerControlId.PREVIOUS -> onPrevious
         PlayerControlId.NEXT -> onNext
         PlayerControlId.FULLSCREEN -> onToggleFullscreen
@@ -477,6 +520,7 @@ private fun PlayerShortcut(
         // 锁定按钮的图标表达"当前状态"：未锁定是开锁，锁定后是闭合锁。
         PlayerControlId.LOCK -> if (state.overlay.locked) YingLiIcon.LOCK else YingLiIcon.UNLOCK
         PlayerControlId.SETTINGS -> YingLiIcon.SETTINGS
+        PlayerControlId.MORE -> YingLiIcon.OVERFLOW
         PlayerControlId.PREVIOUS -> YingLiIcon.PREVIOUS
         PlayerControlId.NEXT -> YingLiIcon.NEXT
     }
@@ -504,6 +548,7 @@ private fun PlayerShortcut(
         // 图标表达状态，文案表达动作：未锁定点击后锁定，锁定后点击解锁。
         PlayerControlId.LOCK -> stringResource(if (state.overlay.locked) R.string.player_unlock else R.string.player_lock)
         PlayerControlId.SETTINGS -> "播放设置"
+        PlayerControlId.MORE -> "更多"
         PlayerControlId.PREVIOUS -> "上一项"
         PlayerControlId.NEXT -> "下一项"
         PlayerControlId.FULLSCREEN -> stringResource(

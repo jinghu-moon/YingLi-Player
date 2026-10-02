@@ -190,6 +190,7 @@ private fun surfaceLabel(surface: PlayerControlSurface) = when (surface) {
     PlayerControlSurface.LANDSCAPE_BOTTOM_LEFT -> "横屏左下"
     PlayerControlSurface.LANDSCAPE_BOTTOM_RIGHT -> "横屏右下"
     PlayerControlSurface.PORTRAIT_BOTTOM -> "竖屏底部"
+    PlayerControlSurface.TOOLS -> "工具托盘（更多）"
 }
 
 private fun controlLabel(id: PlayerControlId) = id.name.lowercase().replace('_', ' ')

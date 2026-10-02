@@ -64,9 +64,9 @@ internal fun ScreenshotToolCapsule(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    ScreenshotCapsuleSurface(modifier) {
+    ScreenshotCapsuleSurface(modifier.height(PlayerChromeButtonSize)) {
         Row(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

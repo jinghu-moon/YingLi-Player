@@ -195,6 +195,25 @@ class PlayerScreenStateTest {
         assertEquals(1, deleted)
     }
 
+    @Test
+    fun armedScreenshotRendersTheToolCapsuleInTheTransportLayer() {
+        composeRule.setContent {
+            YingLiTheme(darkTheme = true) {
+                PlayerScreen(
+                    state = PlayerUiState(
+                        playback = PlaybackState.Paused(REQUEST, TIMELINE),
+                        title = "测试影片",
+                        screenshot = ScreenshotUiState.Armed,
+                    ),
+                    onBack = {}, onPlay = {}, onPause = {}, onSeek = {}, onReplay = {}, onRetry = {},
+                    onRecovery = {}, videoSurface = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(PlayerTestTags.SCREENSHOT_CAPSULE).assertIsDisplayed()
+    }
+
     private fun setPlayer(playbackState: PlaybackState) {
         composeRule.setContent {
             YingLiTheme(darkTheme = true) {

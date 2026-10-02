@@ -69,8 +69,13 @@ private val PlayerPortraitControlsSpacing = 16.dp
 /** 时间文本最小宽度，保证播放中进度条长度不随时长位数跳动。 */
 private val PlayerTimeLabelMinWidth = 42.dp
 
-/** 拖动进度条时实时 seek 的最小间隔：画面跟手，但不至于每个像素都 flush 解码器。 */
-private const val LIVE_SEEK_THROTTLE_MILLIS = 120L
+/**
+ * 拖动进度条时实时 seek 的**最小间隔**。
+ *
+ * 真正的限流来自"就绪即投放"（上一次 seek 引起的重缓冲结束前不投放新目标，只保留最新一个），
+ * 这个下限只用于 seek 秒回（缓冲区已覆盖目标、不进入重缓冲）时避免逐帧派发。
+ */
+private const val LIVE_SEEK_MIN_INTERVAL_MILLIS = 60L
 
 /**
  * 画面中央的三连控件：**上一个 / 播放暂停 / 下一个**（与 REX-Player 同构：
@@ -179,10 +184,24 @@ internal fun BottomPlaybackControls(
     var previewPositionMillis by remember(state.playback.request?.mediaId) {
         mutableStateOf(state.displayedPositionMillis)
     }
-    // 拖动中实时 seek（与 REX-Player 同构：Seekbar 每个拖动事件都 onSeek）。
-    // 节流到 120ms：画面跟着手指走，又不会每个像素都触发一次解码器 flush。
+    // 拖动中的"待投放目标"：**只保留最后一次**，等播放器从上一次 seek 的重缓冲里恢复后再投放。
+    // REX 的做法是取消在途 seek（PlaybackManager.seekJob.cancel()，本地文件不排队）只保留最新；
+    // Media3 的 seekTo 在 seek 进行中会排队，所以固定时间节流会让快速拖动越拖越滞后。
+    var pendingSeekMillis by remember(state.playback.request?.mediaId) { mutableStateOf<Long?>(null) }
     var lastLiveSeekAt by remember(state.playback.request?.mediaId) { mutableStateOf(0L) }
-    var lastSubmittedPositionMillis by remember(state.playback.request?.mediaId) { mutableStateOf<Long?>(null) }
+    val seekBusy = (state.playback as? seeyuer.yingli.player.domain.playback.PlaybackState.Preparing)
+        ?.isRebuffering == true
+    LaunchedEffect(seekBusy, pendingSeekMillis) {
+        val target = pendingSeekMillis ?: return@LaunchedEffect
+        if (seekBusy) return@LaunchedEffect
+        // 下限间隔：seek 秒回（缓冲区已覆盖目标、不进入重缓冲）时避免逐帧派发。
+        val wait = LIVE_SEEK_MIN_INTERVAL_MILLIS -
+            (android.os.SystemClock.uptimeMillis() - lastLiveSeekAt)
+        if (wait > 0) kotlinx.coroutines.delay(wait)
+        lastLiveSeekAt = android.os.SystemClock.uptimeMillis()
+        pendingSeekMillis = null
+        onSeek(target)
+    }
     LaunchedEffect(state.displayedPositionMillis, dragging) {
         if (!dragging) previewPositionMillis = state.displayedPositionMillis
     }
@@ -230,24 +249,12 @@ internal fun BottomPlaybackControls(
                         previewPositionMillis = it.toLong().let { candidate ->
                             if (abStart != null && abEnd != null) candidate.coerceIn(abStart, abEnd) else candidate
                         }
-                        // 实时 seek：拖动过程中画面就跟着变（用户不必松手才看到效果）。
-                        val now = android.os.SystemClock.uptimeMillis()
-                        if (now - lastLiveSeekAt >= LIVE_SEEK_THROTTLE_MILLIS) {
-                            lastLiveSeekAt = now
-                            if (lastSubmittedPositionMillis != previewPositionMillis) {
-                                lastSubmittedPositionMillis = previewPositionMillis
-                                onSeek(previewPositionMillis)
-                            }
-                        }
+                        // 只记录最新目标；真正投放由上面的 gate 决定（就绪即投放），因此不会排队。
+                        pendingSeekMillis = previewPositionMillis
                     },
                     onValueChangeFinished = {
-                        // 松手时只补交节流漏掉的最后位置；点击同一点不会重复 seek。
-                        if (dragging && lastSubmittedPositionMillis != previewPositionMillis) {
-                            lastSubmittedPositionMillis = previewPositionMillis
-                            onSeek(previewPositionMillis)
-                        }
-                        lastLiveSeekAt = 0L
-                        lastSubmittedPositionMillis = null
+                        // 松手必定投放最终位置（gate 会在就绪时执行一次）。
+                        pendingSeekMillis = previewPositionMillis
                         dragging = false
                     },
                     modifier = Modifier.fillMaxWidth().testTag(PlayerTestTags.PROGRESS),

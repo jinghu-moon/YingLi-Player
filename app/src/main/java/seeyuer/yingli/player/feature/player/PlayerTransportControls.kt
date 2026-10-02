@@ -6,6 +6,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -193,6 +195,12 @@ internal fun BottomPlaybackControls(
     backgroundPlaybackEnabled: Boolean = true,
     onToggleBackgroundPlayback: () -> Unit = {},
     controlLayout: seeyuer.yingli.player.domain.playback.PlayerControlLayout = seeyuer.yingli.player.domain.playback.PlayerControlLayout(),
+    /**
+     * 截图模式下的截图胶囊插槽：胶囊**占用工具托盘行本身的位置**，
+     * 因此托盘行让位时它就在同一行里从右向左滑入（起点即托盘最右端的截图按钮）。
+     * 默认空实现：不传插槽时这一行什么都不渲染，托盘行照常收起。
+     */
+    screenshotTool: @Composable () -> Unit = {},
     modifier: Modifier,
     compact: Boolean = false,
 ) {
@@ -376,6 +384,29 @@ internal fun BottomPlaybackControls(
                         )
                     }
                 }
+        }
+        // 截图胶囊占用托盘行的位置：因此从右滑入即从截图按钮（托盘最右项）滑出并停在这一行中间。
+        // 可见性用 isCapsuleVisible()（Armed / Capturing），与上面托盘行的让位条件（任何截图态）
+        // 互补——托盘不会在 Preview 期间冒出来，胶囊也不会在 Preview / Idle 期间残留。
+        AnimatedVisibility(
+            visible = state.screenshot.isCapsuleVisible(),
+            enter = slideInHorizontally(
+                initialOffsetX = { it },
+                animationSpec = tween(TRANSPORT_SECTION_TRANSITION_MILLIS),
+            ) + fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+            exit = slideOutHorizontally(
+                targetOffsetX = { it },
+                animationSpec = tween(TRANSPORT_SECTION_TRANSITION_MILLIS),
+            ) + fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+        ) {
+            // 这一行本身是 fillMaxWidth：胶囊滑入后停在行中间；下内边距与托盘行一致，
+            // 保证它落在托盘行原有的那一条垂直位置上，而不是贴着按钮行。
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(bottom = PlayerPortraitControlsSpacing),
+                contentAlignment = Alignment.Center,
+            ) {
+                screenshotTool()
+            }
         }
         AnimatedVisibility(
             visible = !screenshotActive,

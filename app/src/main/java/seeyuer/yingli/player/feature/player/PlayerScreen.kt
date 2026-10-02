@@ -432,21 +432,30 @@ fun PlayerScreen(
             canNavigateNext = canNavigateNext,
             modifier = Modifier.align(Alignment.Center),
         )
-        if (state.overlay.controlsVisible && !state.overlay.locked && state.playback.hasTransportControls()) {
-            CenterPlaybackControls(
-                // 重缓冲期间播放意图仍是"播放中"：按钮不应翻成"播放"，
-                // 否则拖动进度条时会看到"页面自动暂停、松手又恢复"的错觉。
-                playing = state.playback.isPlayingIntent(),
-                onPlay = onPlay,
-                onPause = onPause,
-                onPrevious = onPrevious,
-                onNext = onNext,
-                canNavigatePrevious = canNavigatePrevious,
-                canNavigateNext = canNavigateNext,
-                modifier = Modifier.align(Alignment.Center)
-                    .then(if (landscape) Modifier else Modifier.padding(bottom = 96.dp))
-                    .testTag(if (landscape) PlayerTestTags.LANDSCAPE_CENTER_CONTROLS else PlayerTestTags.PORTRAIT_CENTER_CONTROLS),
-            )
+        // 截图胶囊在组合期占用底栏的工具托盘行（BottomPlaybackControls 的 screenshotTool 插槽），
+        // 所以只要它在场，底栏就必须留在组合里：截图工具本身是浮层，和帧数胶囊一样不吃控件自动隐藏，
+        // 否则在截图模式里单击画面收起控件会把胶囊一起藏掉。
+        // 注意两个条件是"或"：胶囊在场不等于控件在场（控件那一侧仍受自动隐藏与传输控件可用性约束），
+        // 但两者都会把底栏拉进组合，而底栏内三段各自的收起逻辑不变。
+        val controlsOnScreen = state.overlay.controlsVisible && state.playback.hasTransportControls()
+        val screenshotCapsuleVisible = state.screenshot.isCapsuleVisible()
+        if (!state.overlay.locked && (controlsOnScreen || screenshotCapsuleVisible)) {
+            if (controlsOnScreen) {
+                CenterPlaybackControls(
+                    // 重缓冲期间播放意图仍是"播放中"：按钮不应翻成"播放"，
+                    // 否则拖动进度条时会看到"页面自动暂停、松手又恢复"的错觉。
+                    playing = state.playback.isPlayingIntent(),
+                    onPlay = onPlay,
+                    onPause = onPause,
+                    onPrevious = onPrevious,
+                    onNext = onNext,
+                    canNavigatePrevious = canNavigatePrevious,
+                    canNavigateNext = canNavigateNext,
+                    modifier = Modifier.align(Alignment.Center)
+                        .then(if (landscape) Modifier else Modifier.padding(bottom = 96.dp))
+                        .testTag(if (landscape) PlayerTestTags.LANDSCAPE_CENTER_CONTROLS else PlayerTestTags.PORTRAIT_CENTER_CONTROLS),
+                )
+            }
             BottomPlaybackControls(
                 state = state,
                 onSeek = onSeek,
@@ -476,22 +485,23 @@ fun PlayerScreen(
                 },
                 onOpenSettings = { onOpenPanel(PlayerPanel.SETTINGS) },
                 controlLayout = state.controlLayout,
+                // 截图胶囊交给底栏渲染在托盘行那一格：动画与居中都由底栏负责（从右向左滑入），
+                // 它不再是一个自己定位的浮层，所以这里只挂测试标记，不带任何位置修饰符。
+                screenshotTool = {
+                    ScreenshotToolCapsule(
+                        state = state.screenshot,
+                        onPreviousFrame = onPreviousScreenshotFrame,
+                        onCapture = onCaptureScreenshot,
+                        onNextFrame = onNextScreenshotFrame,
+                        onClose = onCloseScreenshot,
+                        modifier = Modifier.testTag(PlayerTestTags.SCREENSHOT_CAPSULE),
+                    )
+                },
                 compact = !landscape,
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .testTag(if (landscape) PlayerTestTags.LANDSCAPE_CONTROLS else PlayerTestTags.PORTRAIT_CONTROLS),
             )
         }
-        ScreenshotToolCapsule(
-            state = state.screenshot,
-            onPreviousFrame = onPreviousScreenshotFrame,
-            onCapture = onCaptureScreenshot,
-            onNextFrame = onNextScreenshotFrame,
-            onClose = onCloseScreenshot,
-            modifier = Modifier.align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(bottom = if (landscape) 112.dp else 148.dp)
-                .testTag(PlayerTestTags.SCREENSHOT_CAPSULE),
-        )
         // 帧数胶囊占用顶部标题胶囊的位置：截图模式期间标题让位（PlayerTopBar 内隐藏标题段），
         // 二者生命周期完全一致，不会同时出现（设计稿 §3.2 不允许浮层叠浮层）。
         // 它跟截图胶囊一样不受控件自动隐藏影响：截图工具本身就是浮层，隐藏控件不应把工具一起藏掉。

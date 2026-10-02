@@ -1,11 +1,5 @@
 package seeyuer.yingli.player.feature.player
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,16 +29,25 @@ import seeyuer.yingli.player.domain.playback.FrameCounterState
 import seeyuer.yingli.player.domain.playback.ScreenshotUiState
 
 /**
- * 截图工具胶囊的出入场时长。与项目既有动效常量同一量级
- * （`ZOOM_TRANSITION_MILLIS = 240`、抽屉/面板的 0.24s，见设计稿 §6），不另立一类手感。
+ * 截图工具胶囊是否在场：Armed 与 Capturing 都算「工具打开」——捕获中胶囊要保持在场
+ * （捕获按钮切等待态），否则按下的瞬间胶囊会在手指底下消失；Preview 让位给预览卡、
+ * Idle / Failed 都没有胶囊。
+ *
+ * 这里是**唯一**的判定入口：底栏用它决定「托盘行让位 + 胶囊滑入」，
+ * Screen 层用它决定底栏要不要因为胶囊而留在组合里（截图工具是浮层，不吃控件自动隐藏）。
  */
-private const val SCREENSHOT_CAPSULE_TRANSITION_MILLIS = 240
+internal fun ScreenshotUiState.isCapsuleVisible(): Boolean =
+    this is ScreenshotUiState.Armed || this is ScreenshotUiState.Capturing
 
 /**
- * 截图工具胶囊。**从右侧滑入**：截图入口在竖屏「更多」工具托盘的最右端
- * （托盘按 `TOOLS` 槽位反序渲染，`SCREENSHOT` 为第一项 → 显示在最右），
- * 因此从右滑入在视觉上就是「从这个按钮的位置滑出来」，退出时反向滑回去。
- * 若改成从底部滑入，用户看到的起点与刚才点的按钮毫无关系，动效会显得凭空出现。
+ * 截图工具胶囊的**内容**，出入场动画由外层负责（见 `BottomPlaybackControls` 的
+ * `screenshotTool` 插槽）：它占用竖屏「更多」工具托盘行的位置，从右向左滑入并停在这一行中间。
+ *
+ * 截图入口在托盘最右端（托盘按 `TOOLS` 槽位反序渲染，`SCREENSHOT` 为第一项 → 显示在最右），
+ * 所以外层按整行宽度从右滑入，视觉上就是「从这个按钮的位置滑出来」，退出时反向滑回去；
+ * 若改成从底部滑入，起点与刚才点的按钮毫无关系，动效会显得凭空出现。
+ *
+ * 动画不放在这里：内外两层位移会叠加成一段突兀的加速，而且可见性只有一处说了算。
  */
 @Composable
 internal fun ScreenshotToolCapsule(
@@ -55,55 +58,39 @@ internal fun ScreenshotToolCapsule(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Armed 与 Capturing 都算「工具打开」：捕获中胶囊要保持在场（捕获按钮切等待态），
-    // 否则按下的瞬间胶囊会在手指底下消失。
-    val visible = state is ScreenshotUiState.Armed || state is ScreenshotUiState.Capturing
-    AnimatedVisibility(
-        visible = visible,
-        modifier = modifier,
-        enter = slideInHorizontally(
-            initialOffsetX = { it },
-            animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS),
-        ) + fadeIn(animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS)),
-        exit = slideOutHorizontally(
-            targetOffsetX = { it },
-            animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS),
-        ) + fadeOut(animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS)),
-    ) {
-        ScreenshotCapsuleSurface {
-            Row(
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                YingLiIconButton(
-                    YingLiIcon.SEEK_BACKWARD,
-                    stringResource(R.string.player_previous_frame),
-                    onPreviousFrame,
-                    enabled = state is ScreenshotUiState.Armed,
-                    tint = YingLiTheme.player.controlPrimary,
-                )
-                YingLiIconButton(
-                    YingLiIcon.SCREENSHOT,
-                    stringResource(R.string.player_screenshot),
-                    onCapture,
-                    enabled = state is ScreenshotUiState.Armed,
-                    tint = YingLiTheme.player.controlPrimary,
-                )
-                YingLiIconButton(
-                    YingLiIcon.SEEK_FORWARD,
-                    stringResource(R.string.player_next_frame),
-                    onNextFrame,
-                    enabled = state is ScreenshotUiState.Armed,
-                    tint = YingLiTheme.player.controlPrimary,
-                )
-                YingLiIconButton(
-                    YingLiIcon.CLOSE,
-                    stringResource(R.string.action_cancel),
-                    onClose,
-                    tint = YingLiTheme.player.controlPrimary,
-                )
-            }
+    ScreenshotCapsuleSurface(modifier) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            YingLiIconButton(
+                YingLiIcon.SEEK_BACKWARD,
+                stringResource(R.string.player_previous_frame),
+                onPreviousFrame,
+                enabled = state is ScreenshotUiState.Armed,
+                tint = YingLiTheme.player.controlPrimary,
+            )
+            YingLiIconButton(
+                YingLiIcon.SCREENSHOT,
+                stringResource(R.string.player_screenshot),
+                onCapture,
+                enabled = state is ScreenshotUiState.Armed,
+                tint = YingLiTheme.player.controlPrimary,
+            )
+            YingLiIconButton(
+                YingLiIcon.SEEK_FORWARD,
+                stringResource(R.string.player_next_frame),
+                onNextFrame,
+                enabled = state is ScreenshotUiState.Armed,
+                tint = YingLiTheme.player.controlPrimary,
+            )
+            YingLiIconButton(
+                YingLiIcon.CLOSE,
+                stringResource(R.string.action_cancel),
+                onClose,
+                tint = YingLiTheme.player.controlPrimary,
+            )
         }
     }
 }

@@ -1,5 +1,11 @@
 package seeyuer.yingli.player.feature.player
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +82,12 @@ private val PlayerTimeLabelMinWidth = 42.dp
  * 这个下限只用于 seek 秒回（缓冲区已覆盖目标、不进入重缓冲）时避免逐帧派发。
  */
 private const val LIVE_SEEK_MIN_INTERVAL_MILLIS = 60L
+
+/**
+ * 底栏三段（进度行 / 工具托盘 / 按钮行）在进出截图模式时的收起-展开时长。
+ * 与截图胶囊的滑入滑出同取 240ms 一档（设计稿 §6 的 0.24s），保证两侧同时开始、同时结束。
+ */
+internal const val TRANSPORT_SECTION_TRANSITION_MILLIS = 240
 
 /**
  * 画面中央的三连控件：**上一个 / 播放暂停 / 下一个**（与 REX-Player 同构：
@@ -221,70 +233,86 @@ internal fun BottomPlaybackControls(
                 vertical = if (compact) PlayerPortraitBarVerticalPadding else PlayerLandscapeBarVerticalPadding,
             ),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = formatDuration(displayedPositionMillis),
-                color = YingLiTheme.player.controlPrimary,
-                style = playerTimeTextStyle(),
-                maxLines = 1,
-                textAlign = TextAlign.End,
-                modifier = Modifier.widthIn(min = PlayerTimeLabelMinWidth),
-            )
-            Box(Modifier.weight(1f)) {
-                if (duration != null && duration > 0 && abStart != null) {
-                    val markerColor = YingLiTheme.colors.selectionStructural
-                    Canvas(Modifier.matchParentSize().padding(horizontal = 10.dp)) {
-                        val startX = size.width * (abStart.toFloat() / duration).coerceIn(0f, 1f)
-                        val endX = abEnd?.let { size.width * (it.toFloat() / duration).coerceIn(0f, 1f) }
-                        if (endX != null) {
-                            drawRect(
-                                color = markerColor.copy(alpha = 0.28f),
-                                topLeft = androidx.compose.ui.geometry.Offset(startX, size.height * 0.4f),
-                                size = androidx.compose.ui.geometry.Size((endX - startX).coerceAtLeast(0f), size.height * 0.2f),
-                            )
-                        }
-                        drawLine(markerColor, androidx.compose.ui.geometry.Offset(startX, 0f), androidx.compose.ui.geometry.Offset(startX, size.height), strokeWidth = 2.dp.toPx())
-                        if (endX != null) {
-                            drawLine(markerColor, androidx.compose.ui.geometry.Offset(endX, 0f), androidx.compose.ui.geometry.Offset(endX, size.height), strokeWidth = 2.dp.toPx())
+        // "更多"托盘展开状态：纯 UI 状态，不进 ViewModel；声明在托盘与按钮行共同的父作用域里。
+        var toolsExpanded by remember { mutableStateOf(false) }
+        // 截图模式：底栏三段让位给截图胶囊。
+        // 这里只做「收起」，不接管可见性判定——控件的自动隐藏仍然由 overlay.controlsVisible 决定
+        // （PlayerOverlayReducer 那套 Interaction/Timeout 原样生效），二者是"与"的关系：
+        // 截图模式下无论自动隐藏是否触发，这三段都不出现；退出截图模式后按自动隐藏的当前状态回来。
+        val screenshotActive = state.isScreenshotToolActive()
+        AnimatedVisibility(
+            visible = !screenshotActive,
+            enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)) +
+                expandVertically(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+            exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)) +
+                shrinkVertically(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = formatDuration(displayedPositionMillis),
+                    color = YingLiTheme.player.controlPrimary,
+                    style = playerTimeTextStyle(),
+                    maxLines = 1,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.widthIn(min = PlayerTimeLabelMinWidth),
+                )
+                Box(Modifier.weight(1f)) {
+                    if (duration != null && duration > 0 && abStart != null) {
+                        val markerColor = YingLiTheme.colors.selectionStructural
+                        Canvas(Modifier.matchParentSize().padding(horizontal = 10.dp)) {
+                            val startX = size.width * (abStart.toFloat() / duration).coerceIn(0f, 1f)
+                            val endX = abEnd?.let { size.width * (it.toFloat() / duration).coerceIn(0f, 1f) }
+                            if (endX != null) {
+                                drawRect(
+                                    color = markerColor.copy(alpha = 0.28f),
+                                    topLeft = androidx.compose.ui.geometry.Offset(startX, size.height * 0.4f),
+                                    size = androidx.compose.ui.geometry.Size((endX - startX).coerceAtLeast(0f), size.height * 0.2f),
+                                )
+                            }
+                            drawLine(markerColor, androidx.compose.ui.geometry.Offset(startX, 0f), androidx.compose.ui.geometry.Offset(startX, size.height), strokeWidth = 2.dp.toPx())
+                            if (endX != null) {
+                                drawLine(markerColor, androidx.compose.ui.geometry.Offset(endX, 0f), androidx.compose.ui.geometry.Offset(endX, size.height), strokeWidth = 2.dp.toPx())
+                            }
                         }
                     }
+                    YingLiSlider(
+                        value = displayedPositionMillis.toFloat().coerceAtMost((duration ?: 1).toFloat()),
+                        onValueChange = {
+                            dragging = true
+                            previewPositionMillis = it.toLong().let { candidate ->
+                                if (abStart != null && abEnd != null) candidate.coerceIn(abStart, abEnd) else candidate
+                            }
+                            // 只记录最新目标；真正投放由上面的 gate 决定（就绪即投放），因此不会排队。
+                            pendingSeekMillis = previewPositionMillis
+                        },
+                        onValueChangeFinished = {
+                            // 松手必定投放最终位置（gate 会在就绪时执行一次）。
+                            pendingSeekMillis = previewPositionMillis
+                            dragging = false
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag(PlayerTestTags.PROGRESS),
+                        enabled = duration != null && duration > 0,
+                        valueRange = 0f..(duration ?: 1).coerceAtLeast(1).toFloat(),
+                        trackHeight = 4.dp,
+                        thumbRadius = 7.dp,
+                        colors = YingLiSliderDefaults.colors(
+                            activeTrack = YingLiTheme.player.controlPrimary,
+                            inactiveTrack = YingLiTheme.player.track,
+                            thumb = YingLiTheme.player.controlPrimary,
+                        ),
+                    )
                 }
-                YingLiSlider(
-                    value = displayedPositionMillis.toFloat().coerceAtMost((duration ?: 1).toFloat()),
-                    onValueChange = {
-                        dragging = true
-                        previewPositionMillis = it.toLong().let { candidate ->
-                            if (abStart != null && abEnd != null) candidate.coerceIn(abStart, abEnd) else candidate
-                        }
-                        // 只记录最新目标；真正投放由上面的 gate 决定（就绪即投放），因此不会排队。
-                        pendingSeekMillis = previewPositionMillis
-                    },
-                    onValueChangeFinished = {
-                        // 松手必定投放最终位置（gate 会在就绪时执行一次）。
-                        pendingSeekMillis = previewPositionMillis
-                        dragging = false
-                    },
-                    modifier = Modifier.fillMaxWidth().testTag(PlayerTestTags.PROGRESS),
-                    enabled = duration != null && duration > 0,
-                    valueRange = 0f..(duration ?: 1).coerceAtLeast(1).toFloat(),
-                    trackHeight = 4.dp,
-                    thumbRadius = 7.dp,
-                    colors = YingLiSliderDefaults.colors(
-                        activeTrack = YingLiTheme.player.controlPrimary,
-                        inactiveTrack = YingLiTheme.player.track,
-                        thumb = YingLiTheme.player.controlPrimary,
-                    ),
+                Text(
+                    text = formatDuration(duration),
+                    color = YingLiTheme.player.controlPrimary,
+                    style = playerTimeTextStyle(),
+                    maxLines = 1,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.widthIn(min = PlayerTimeLabelMinWidth),
                 )
             }
-            Text(
-                text = formatDuration(duration),
-                color = YingLiTheme.player.controlPrimary,
-                style = playerTimeTextStyle(),
-                maxLines = 1,
-                textAlign = TextAlign.Start,
-                modifier = Modifier.widthIn(min = PlayerTimeLabelMinWidth),
-            )
         }
+
         if (abStart != null || abEnd != null) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -303,12 +331,12 @@ internal fun BottomPlaybackControls(
             )
         }
         if (compact) Spacer(Modifier.height(PlayerPortraitControlsSpacing))
-        // "更多"托盘展开状态：纯 UI 状态，不进 ViewModel；声明在托盘与按钮行共同的父作用域里。
-        var toolsExpanded by remember { mutableStateOf(false) }
-        androidx.compose.animation.AnimatedVisibility(
-            visible = toolsExpanded,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(),
+        AnimatedVisibility(
+            visible = toolsExpanded && !screenshotActive,
+            enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)) +
+                expandVertically(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+            exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)) +
+                shrinkVertically(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = PlayerPortraitControlsSpacing),
@@ -347,109 +375,117 @@ internal fun BottomPlaybackControls(
                             onToggleBackgroundPlayback = onToggleBackgroundPlayback,
                         )
                     }
-            }
-        }
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val buttonCount = controlGroups.sumOf { it.size }
-            // 竖屏优先铺满整行：只要按钮本体放得下，间距就按剩余宽度压缩（可以压到很小），
-            // 这样 7 个按钮仍然一行放得下，不必退化成横向滚动。
-            val spreadAcrossRow = compact && PlayerChromeButtonSize * buttonCount <= maxWidth
-            val scrollState = rememberScrollState()
-            // 倍速编辑态：倍速按钮留在原位显示实时数值，它之后的按钮暂时隐藏，
-            // 空出的那段宽度交给滑杆（长度即"第二个按钮最左侧到最后一个按钮最右侧"）。
-            val speedPanelOpen = state.panel == seeyuer.yingli.player.domain.playback.PlayerPanel.SPEED
-            val speedFlatIndex = controlGroups.flatten().indexOf(PlayerControlId.SPEED)
-            val sliderActive = speedPanelOpen && speedFlatIndex >= 0
-            val visibleGroups = if (!sliderActive) {
-                controlGroups
-            } else {
-                var remaining = speedFlatIndex
-                controlGroups.mapNotNull { ids ->
-                    if (remaining < 0) return@mapNotNull null
-                    val kept = ids.take(remaining + 1)
-                    remaining -= kept.size
-                    kept.takeIf(List<PlayerControlId>::isNotEmpty)
                 }
-            }
-            val rowGap = if (spreadAcrossRow && buttonCount > 1) {
-                (maxWidth - PlayerChromeButtonSize * buttonCount) / (buttonCount - 1)
-            } else {
-                PlayerShortcutSpacing
-            }
-            // 预览状态必须跨"提交后挡位变化"保持同一个实例：手势协程在重组间持续运行，
-            // 若这里按 state.speed 重建状态，拖动时就写不到按钮读的那个状态，数值不再实时更新。
-            var previewedSpeed by remember { mutableStateOf<PlaybackSpeed?>(null) }
-            LaunchedEffect(state.speed, sliderActive) { previewedSpeed = null }
-            val shownSpeed = previewedSpeed ?: state.speed
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                    .then(if (spreadAcrossRow) Modifier else Modifier.horizontalScroll(scrollState)),
-                horizontalArrangement = if (sliderActive) Arrangement.spacedBy(rowGap) else Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                visibleGroups.forEachIndexed { index, ids ->
-                    Row(
-                        horizontalArrangement = if (spreadAcrossRow) {
-                            Arrangement.SpaceBetween
-                        } else {
-                            Arrangement.spacedBy(PlayerShortcutSpacing)
-                        },
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = when {
-                            spreadAcrossRow && !sliderActive -> Modifier.weight(1f)
-                            compact || index == 0 -> Modifier
-                            else -> Modifier.padding(start = PlayerLandscapeGroupSpacing)
-                        },
-                    ) {
-                        ids.forEach { id ->
-                            PlayerShortcut(
-                                id = id,
-                                state = state,
-                                allowPictureInPicture = allowPictureInPicture,
-                                onOpenSettings = onOpenSettings,
-                                onToggleFullscreen = onToggleFullscreen,
-                                onRotateVideo = onRotateVideo,
-                                onToggleSpeedPanel = onToggleSpeedPanel,
-                                onCycleScaleMode = onCycleScaleMode,
-                                onOpenPlaylist = onOpenPlaylist,
-                                onPictureInPicture = onPictureInPicture,
-                                onSetPlaybackOrder = onSetPlaybackOrder,
-                                onScreenshot = onScreenshot,
-                                onOpenAbTool = onOpenAbTool,
-                                onToggleLock = onToggleLock,
-                                onPrevious = onPrevious,
-                                onNext = onNext,
-                                onToggleTools = { toolsExpanded = !toolsExpanded },
-                                onOpenVideoInfo = onOpenVideoInfo,
-                                onSelectAudioTrack = onSelectAudioTrack,
-                                onSelectSubtitleTrack = onSelectSubtitleTrack,
-                                mirror = mirror,
-                                onToggleMirrorHorizontal = onToggleMirrorHorizontal,
-                                onToggleMirrorVertical = onToggleMirrorVertical,
-                                backgroundPlaybackEnabled = backgroundPlaybackEnabled,
-                                onToggleBackgroundPlayback = onToggleBackgroundPlayback,
-                                valueLabel = if (sliderActive && id == PlayerControlId.SPEED) {
-                                    shownSpeed.displayLabel()
+        }
+        AnimatedVisibility(
+            visible = !screenshotActive,
+            enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)) +
+                expandVertically(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+            exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)) +
+                shrinkVertically(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+        ) {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val buttonCount = controlGroups.sumOf { it.size }
+                // 竖屏优先铺满整行：只要按钮本体放得下，间距就按剩余宽度压缩（可以压到很小），
+                // 这样 7 个按钮仍然一行放得下，不必退化成横向滚动。
+                val spreadAcrossRow = compact && PlayerChromeButtonSize * buttonCount <= maxWidth
+                val scrollState = rememberScrollState()
+                // 倍速编辑态：倍速按钮留在原位显示实时数值，它之后的按钮暂时隐藏，
+                // 空出的那段宽度交给滑杆（长度即"第二个按钮最左侧到最后一个按钮最右侧"）。
+                val speedPanelOpen = state.panel == seeyuer.yingli.player.domain.playback.PlayerPanel.SPEED
+                val speedFlatIndex = controlGroups.flatten().indexOf(PlayerControlId.SPEED)
+                val sliderActive = speedPanelOpen && speedFlatIndex >= 0
+                val visibleGroups = if (!sliderActive) {
+                    controlGroups
+                } else {
+                    var remaining = speedFlatIndex
+                    controlGroups.mapNotNull { ids ->
+                        if (remaining < 0) return@mapNotNull null
+                        val kept = ids.take(remaining + 1)
+                        remaining -= kept.size
+                        kept.takeIf(List<PlayerControlId>::isNotEmpty)
+                    }
+                }
+                val rowGap = if (spreadAcrossRow && buttonCount > 1) {
+                    (maxWidth - PlayerChromeButtonSize * buttonCount) / (buttonCount - 1)
+                } else {
+                    PlayerShortcutSpacing
+                }
+                // 预览状态必须跨"提交后挡位变化"保持同一个实例：手势协程在重组间持续运行，
+                // 若这里按 state.speed 重建状态，拖动时就写不到按钮读的那个状态，数值不再实时更新。
+                var previewedSpeed by remember { mutableStateOf<PlaybackSpeed?>(null) }
+                LaunchedEffect(state.speed, sliderActive) { previewedSpeed = null }
+                val shownSpeed = previewedSpeed ?: state.speed
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .then(if (spreadAcrossRow) Modifier else Modifier.horizontalScroll(scrollState)),
+                    horizontalArrangement = if (sliderActive) Arrangement.spacedBy(rowGap) else Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    visibleGroups.forEachIndexed { index, ids ->
+                        Row(
+                            horizontalArrangement = if (spreadAcrossRow) {
+                                Arrangement.SpaceBetween
+                            } else {
+                                Arrangement.spacedBy(PlayerShortcutSpacing)
+                            },
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = when {
+                                spreadAcrossRow && !sliderActive -> Modifier.weight(1f)
+                                compact || index == 0 -> Modifier
+                                else -> Modifier.padding(start = PlayerLandscapeGroupSpacing)
+                            },
+                        ) {
+                            ids.forEach { id ->
+                                PlayerShortcut(
+                                    id = id,
+                                    state = state,
+                                    allowPictureInPicture = allowPictureInPicture,
+                                    onOpenSettings = onOpenSettings,
+                                    onToggleFullscreen = onToggleFullscreen,
+                                    onRotateVideo = onRotateVideo,
+                                    onToggleSpeedPanel = onToggleSpeedPanel,
+                                    onCycleScaleMode = onCycleScaleMode,
+                                    onOpenPlaylist = onOpenPlaylist,
+                                    onPictureInPicture = onPictureInPicture,
+                                    onSetPlaybackOrder = onSetPlaybackOrder,
+                                    onScreenshot = onScreenshot,
+                                    onOpenAbTool = onOpenAbTool,
+                                    onToggleLock = onToggleLock,
+                                    onPrevious = onPrevious,
+                                    onNext = onNext,
+                                    onToggleTools = { toolsExpanded = !toolsExpanded },
+                                    onOpenVideoInfo = onOpenVideoInfo,
+                                    onSelectAudioTrack = onSelectAudioTrack,
+                                    onSelectSubtitleTrack = onSelectSubtitleTrack,
+                                    mirror = mirror,
+                                    onToggleMirrorHorizontal = onToggleMirrorHorizontal,
+                                    onToggleMirrorVertical = onToggleMirrorVertical,
+                                    backgroundPlaybackEnabled = backgroundPlaybackEnabled,
+                                    onToggleBackgroundPlayback = onToggleBackgroundPlayback,
+                                    valueLabel = if (sliderActive && id == PlayerControlId.SPEED) {
+                                        shownSpeed.displayLabel()
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
+                        }
+                        if (sliderActive && ids.contains(PlayerControlId.SPEED)) {
+                            PlayerSpeedRail(
+                                current = state.speed,
+                                onPreview = { previewedSpeed = it },
+                                onCommit = { committed ->
+                                    previewedSpeed = null
+                                    onSetSpeed(committed)
+                                },
+                                modifier = if (spreadAcrossRow) {
+                                    Modifier.weight(1f)
                                 } else {
-                                    null
+                                    Modifier.width((trailingSpan(controlGroups, PlayerControlId.SPEED) - rowGap).coerceAtLeast(0.dp))
                                 },
                             )
                         }
-                    }
-                    if (sliderActive && ids.contains(PlayerControlId.SPEED)) {
-                        PlayerSpeedRail(
-                            current = state.speed,
-                            onPreview = { previewedSpeed = it },
-                            onCommit = { committed ->
-                                previewedSpeed = null
-                                onSetSpeed(committed)
-                            },
-                            modifier = if (spreadAcrossRow) {
-                                Modifier.weight(1f)
-                            } else {
-                                Modifier.width((trailingSpan(controlGroups, PlayerControlId.SPEED) - rowGap).coerceAtLeast(0.dp))
-                            },
-                        )
                     }
                 }
             }

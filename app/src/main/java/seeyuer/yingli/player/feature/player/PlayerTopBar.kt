@@ -37,6 +37,7 @@ import seeyuer.yingli.player.domain.playback.PlaybackOrder
 import seeyuer.yingli.player.domain.playback.PlayerControlId
 import seeyuer.yingli.player.domain.playback.PlayerControlLayout
 import seeyuer.yingli.player.domain.playback.PlayerControlSurface
+import seeyuer.yingli.player.domain.playback.ScreenshotUiState
 
 @Composable
 internal fun PlayerTopBar(
@@ -76,21 +77,26 @@ internal fun PlayerTopBar(
             modifier = Modifier.weight(1f).padding(start = 12.dp, end = 8.dp),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
         ) {
-            Text(
-                text = state.title.ifBlank { "未知视频" },
-                color = YingLiTheme.player.controlPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
-            )
-            state.playerSubtitle()?.let { subtitle ->
+            // 截图模式下标题胶囊让位给帧数胶囊（设计稿 §4.1 的标题位 → §3.2「浮层不允许叠浮层」）：
+            // 两者位置相同，同时显示会互相压住，所以这里整段标题（主标题 + 元信息副标题）收起，
+            // 由 Screen 层的帧数胶囊顶替这个位置，且两者生命周期完全一致（只在截图工具打开期间互换）。
+            if (!state.isScreenshotToolActive()) {
                 Text(
-                    text = subtitle,
-                    color = YingLiTheme.player.controlSecondary,
+                    text = state.title.ifBlank { "未知视频" },
+                    color = YingLiTheme.player.controlPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                 )
+                state.playerSubtitle()?.let { subtitle ->
+                    Text(
+                        text = subtitle,
+                        color = YingLiTheme.player.controlSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
         controlLayout.controls(PlayerControlSurface.LANDSCAPE_TOP_RIGHT)
@@ -164,6 +170,20 @@ internal fun PlayerTopBar(
  */
 internal val PlayerChromeButtonSize = 48.dp
 
+/**
+ * 底栏按钮的材质（底色 / 描边 / 形状）。截图胶囊与帧数胶囊必须与底栏按钮**同源**：
+ * 它们与按钮出现在同一屏上，另造一套视觉会立刻看出色差与圆角不一致，
+ * 因此这里抽出唯一一份定义，按钮与胶囊都只引用它，不再各写 alpha 字面量。
+ */
+internal val PlayerChromeControlFillAlpha = 0.10f
+
+/** 与底栏按钮同源的细描边宽度与透明度。 */
+internal val PlayerChromeControlBorderWidth = 1.dp
+internal val PlayerChromeControlBorderAlpha = 0.12f
+
+/** 与底栏按钮同源的圆角：全圆（胶囊形），对应设计稿 `border-radius: 999px`。 */
+internal val PlayerChromeCapsuleShape = CircleShape
+
 @Composable
 internal fun PlayerChromeIconButton(
     icon: YingLiIcon,
@@ -182,9 +202,17 @@ internal fun PlayerChromeIconButton(
         modifier = modifier.size(size),
         enabled = enabled,
         shape = CircleShape,
-        color = if (filled) YingLiTheme.player.controlPrimary else YingLiTheme.player.controlPrimary.copy(alpha = 0.10f),
+        color = if (filled) {
+            YingLiTheme.player.controlPrimary
+        } else {
+            YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlFillAlpha)
+        },
         contentColor = if (filled) YingLiTheme.player.canvas else tint,
-        border = if (filled) null else BorderStroke(1.dp, YingLiTheme.player.controlPrimary.copy(alpha = 0.12f)),
+        border = if (filled) {
+            null
+        } else {
+            BorderStroke(PlayerChromeControlBorderWidth, YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlBorderAlpha))
+        },
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (valueLabel != null) {
@@ -252,6 +280,18 @@ private fun menuItem(
             action()
         },
     )
+}
+
+/**
+ * 截图工具是否正在**占用**播放页（Armed / Capturing / Preview 三段）。
+ *
+ * 这三段的界面差别只是胶囊内容，对「谁占着标题位、底栏要不要收起」而言是同一件事，
+ * 所以判定集中在这里，避免各调用点各写一遍状态枚举、日后新增状态时漏改一处。
+ */
+internal fun PlayerUiState.isScreenshotToolActive(): Boolean = when (screenshot) {
+    ScreenshotUiState.Armed, ScreenshotUiState.Capturing -> true
+    is ScreenshotUiState.Preview -> true
+    else -> false
 }
 
 private fun PlayerUiState.playerSubtitle(): String? {

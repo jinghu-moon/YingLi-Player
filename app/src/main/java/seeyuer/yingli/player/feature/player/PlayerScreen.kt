@@ -1,5 +1,9 @@
 package seeyuer.yingli.player.feature.player
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -27,6 +31,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -39,6 +45,7 @@ import androidx.paging.compose.LazyPagingItems
 import kotlinx.coroutines.delay
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
+import seeyuer.yingli.player.domain.playback.FrameCounterState
 import seeyuer.yingli.player.domain.playback.PlaybackRecoveryAction
 import seeyuer.yingli.player.domain.playback.PlayerPanel
 import seeyuer.yingli.player.domain.playback.AbPoint
@@ -50,6 +57,7 @@ import seeyuer.yingli.player.domain.playback.VideoRotation
 import seeyuer.yingli.player.domain.playback.VideoMirror
 import seeyuer.yingli.player.domain.playback.PlaybackOrder
 import seeyuer.yingli.player.domain.playback.PlayerControlLayout
+import seeyuer.yingli.player.domain.playback.frameCounterStateOf
 import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -484,6 +492,35 @@ fun PlayerScreen(
                 .padding(bottom = if (landscape) 112.dp else 148.dp)
                 .testTag(PlayerTestTags.SCREENSHOT_CAPSULE),
         )
+        // 帧数胶囊占用顶部标题胶囊的位置：截图模式期间标题让位（PlayerTopBar 内隐藏标题段），
+        // 二者生命周期完全一致，不会同时出现（设计稿 §3.2 不允许浮层叠浮层）。
+        // 它跟截图胶囊一样不受控件自动隐藏影响：截图工具本身就是浮层，隐藏控件不应把工具一起藏掉。
+        val screenshotActive = state.isScreenshotToolActive()
+        val liveFrameCounter = state.frameCounter()
+        // 淡出期间要留住最后一个非空值：退出截图模式的那几百毫秒里 state.mediaInfo 可能已被清空
+        // （切集/停播），直接读实时值会让淡出中的文本闪一下 `null / null`。
+        var lastFrameCounter by remember { mutableStateOf<FrameCounterState?>(null) }
+        lastFrameCounter = liveFrameCounter ?: lastFrameCounter.takeIf { screenshotActive }
+        // 实时值已消失、且截图模式也结束了，就彻底忘掉旧值，
+        // 否则下次进截图模式会先闪一下上一次的帧号。
+        LaunchedEffect(screenshotActive, liveFrameCounter) {
+            if (!screenshotActive) lastFrameCounter = null
+        }
+        AnimatedVisibility(
+            // 可见性只由「截图工具是否打开」决定：三段收起与它同步，自动隐藏不参与。
+            visible = screenshotActive,
+            modifier = Modifier.align(Alignment.TopCenter)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                // 与顶栏标题同一水平位置：顶栏上下内边距 8dp + 标题行中心，视觉上正好顶替原标题胶囊。
+                .padding(top = 20.dp)
+                .testTag(PlayerTestTags.FRAME_COUNTER),
+            enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+            exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+        ) {
+            // 帧率不可用时 lastFrameCounter 恒为 null → 整个胶囊不出现：
+            // 宁可不出这个胶囊，也不显示编造的帧号（口径与下一步的逐帧步进一致）。
+            lastFrameCounter?.let { counter -> FrameCounterCapsule(counter) }
+        }
         (state.screenshot as? ScreenshotUiState.Preview)?.let { preview ->
             ScreenshotPreview(
                 state = preview,
@@ -589,6 +626,18 @@ fun PlayerScreen(
     }
 }
 
+/**
+ * 帧数胶囊要显示的两个数：帧率取自媒体格式（Media3 `Format.frameRate`，经 `PlaybackMediaInfo` 冒泡到 UI），
+ * 时长为时间轴总时长，位置用「当前显示位置」——拖动进度条时它跟手，帧号也就跟手。
+ *
+ * 计算本身是纯逻辑，放在域层 [frameCounterStateOf]；这里只负责把三份状态取出来。
+ */
+private fun PlayerUiState.frameCounter(): FrameCounterState? = frameCounterStateOf(
+    positionMillis = displayedPositionMillis,
+    durationMillis = playback.timeline.durationMillis ?: mediaInfo?.durationMillis,
+    frameRate = mediaInfo?.frameRate,
+)
+
 private fun PlaybackState.hasTransportControls(): Boolean = when (this) {
     is PlaybackState.Ready, is PlaybackState.Playing, is PlaybackState.Paused -> true
     // seek 造成的瞬时重缓冲仍属于"播放中"：控件必须留在组合里。
@@ -656,6 +705,7 @@ object PlayerTestTags {
     const val PORTRAIT_SETTINGS = "player.settings.portrait"
     const val SCREENSHOT_CAPSULE = "player.screenshot.capsule"
     const val SCREENSHOT_PREVIEW = "player.screenshot.preview"
+    const val FRAME_COUNTER = "player.frame_counter"
     const val AB_CAPSULE = "player.ab.capsule"
     const val GESTURE_HINT = "player.gesture_hint"
     const val LANDSCAPE_PLAYLIST = "player.playlist.landscape"

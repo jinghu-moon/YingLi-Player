@@ -1,5 +1,12 @@
 package seeyuer.yingli.player.feature.player
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import coil3.compose.AsyncImage
@@ -23,8 +31,21 @@ import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
+import seeyuer.yingli.player.domain.playback.FrameCounterState
 import seeyuer.yingli.player.domain.playback.ScreenshotUiState
 
+/**
+ * 截图工具胶囊的出入场时长。与项目既有动效常量同一量级
+ * （`ZOOM_TRANSITION_MILLIS = 240`、抽屉/面板的 0.24s，见设计稿 §6），不另立一类手感。
+ */
+private const val SCREENSHOT_CAPSULE_TRANSITION_MILLIS = 240
+
+/**
+ * 截图工具胶囊。**从右侧滑入**：截图入口在竖屏「更多」工具托盘的最右端
+ * （托盘按 `TOOLS` 槽位反序渲染，`SCREENSHOT` 为第一项 → 显示在最右），
+ * 因此从右滑入在视觉上就是「从这个按钮的位置滑出来」，退出时反向滑回去。
+ * 若改成从底部滑入，用户看到的起点与刚才点的按钮毫无关系，动效会显得凭空出现。
+ */
 @Composable
 internal fun ScreenshotToolCapsule(
     state: ScreenshotUiState,
@@ -34,47 +55,106 @@ internal fun ScreenshotToolCapsule(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (state !is ScreenshotUiState.Armed && state !is ScreenshotUiState.Capturing) return
+    // Armed 与 Capturing 都算「工具打开」：捕获中胶囊要保持在场（捕获按钮切等待态），
+    // 否则按下的瞬间胶囊会在手指底下消失。
+    val visible = state is ScreenshotUiState.Armed || state is ScreenshotUiState.Capturing
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = slideInHorizontally(
+            initialOffsetX = { it },
+            animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS),
+        ) + fadeIn(animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS)),
+        exit = slideOutHorizontally(
+            targetOffsetX = { it },
+            animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS),
+        ) + fadeOut(animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS)),
+    ) {
+        ScreenshotCapsuleSurface {
+            Row(
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                YingLiIconButton(
+                    YingLiIcon.SEEK_BACKWARD,
+                    stringResource(R.string.player_previous_frame),
+                    onPreviousFrame,
+                    enabled = state is ScreenshotUiState.Armed,
+                    tint = YingLiTheme.player.controlPrimary,
+                )
+                YingLiIconButton(
+                    YingLiIcon.SCREENSHOT,
+                    stringResource(R.string.player_screenshot),
+                    onCapture,
+                    enabled = state is ScreenshotUiState.Armed,
+                    tint = YingLiTheme.player.controlPrimary,
+                )
+                YingLiIconButton(
+                    YingLiIcon.SEEK_FORWARD,
+                    stringResource(R.string.player_next_frame),
+                    onNextFrame,
+                    enabled = state is ScreenshotUiState.Armed,
+                    tint = YingLiTheme.player.controlPrimary,
+                )
+                YingLiIconButton(
+                    YingLiIcon.CLOSE,
+                    stringResource(R.string.action_cancel),
+                    onClose,
+                    tint = YingLiTheme.player.controlPrimary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 截图工具与帧数胶囊共用的容器材质：**与底栏按钮同源**——同一份
+ * [PlayerChromeControlFillAlpha] 底、[PlayerChromeControlBorderWidth] /
+ * [PlayerChromeControlBorderAlpha] 细描边，以及同一枚胶囊形圆角
+ * [PlayerChromeCapsuleShape]。胶囊与按钮同屏出现，各写一套 alpha 必然出现色差。
+ *
+ * 这里用 [BorderStroke] 而不是 `border` 参数：与 `PlayerChromeIconButton` 保持同一写法，
+ * 描边宽度/透明度的唯一来源就是上面那几个常量。
+ */
+@Composable
+private fun ScreenshotCapsuleSurface(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
     Surface(
         modifier = modifier,
-        shape = YingLiTheme.components.componentCorner,
-        color = YingLiTheme.player.edgeScrim,
+        shape = PlayerChromeCapsuleShape,
+        color = YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlFillAlpha),
         contentColor = YingLiTheme.player.controlPrimary,
-        tonalElevation = 4.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            YingLiIconButton(
-                YingLiIcon.SEEK_BACKWARD,
-                stringResource(R.string.player_previous_frame),
-                onPreviousFrame,
-                enabled = state is ScreenshotUiState.Armed,
-                tint = YingLiTheme.player.controlPrimary,
-            )
-            YingLiIconButton(
-                YingLiIcon.SCREENSHOT,
-                stringResource(R.string.player_screenshot),
-                onCapture,
-                enabled = state is ScreenshotUiState.Armed,
-                tint = YingLiTheme.player.controlPrimary,
-            )
-            YingLiIconButton(
-                YingLiIcon.SEEK_FORWARD,
-                stringResource(R.string.player_next_frame),
-                onNextFrame,
-                enabled = state is ScreenshotUiState.Armed,
-                tint = YingLiTheme.player.controlPrimary,
-            )
-            YingLiIconButton(
-                YingLiIcon.CLOSE,
-                stringResource(R.string.action_cancel),
-                onClose,
-                tint = YingLiTheme.player.controlPrimary,
-            )
-        }
+        border = BorderStroke(
+            PlayerChromeControlBorderWidth,
+            YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlBorderAlpha),
+        ),
+        content = content,
+    )
+}
+
+/**
+ * 帧数胶囊：截图模式下占用**顶部标题胶囊的位置**，内容为 `当前帧 / 总帧数`。
+ *
+ * 之所以与标题互换而不是同时显示：设计稿 §3.2 的浮层原则不允许浮层叠浮层，
+ * 而 §4.1 里那个位置本来只属于标题胶囊。
+ */
+@Composable
+internal fun FrameCounterCapsule(
+    counter: FrameCounterState,
+    modifier: Modifier = Modifier,
+) {
+    ScreenshotCapsuleSurface(modifier) {
+        Text(
+            text = "${counter.currentFrame} / ${counter.totalFrames}",
+            color = YingLiTheme.player.controlPrimary,
+            // 等宽数字：帧号每帧都在变，比例数字会让整段文本左右抖动（与进度时间文本同一做法）。
+            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
     }
 }
 

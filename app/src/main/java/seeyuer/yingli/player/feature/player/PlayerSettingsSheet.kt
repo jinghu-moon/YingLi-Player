@@ -39,6 +39,8 @@ internal fun PlayerSettingsSheet(
     onSetOrder: (PlaybackOrder) -> Unit = {},
     onSetRotation: (VideoRotation) -> Unit = {},
     onOpenVideoInfo: () -> Unit = {},
+    onScreenshot: () -> Unit = {},
+    onOpenAbTool: () -> Unit = {},
     onSetLayout: (PlayerControlLayout) -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -85,6 +87,26 @@ internal fun PlayerSettingsSheet(
                     )
                 }
             }
+        }
+        Text("工具", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(
+                selected = false,
+                onClick = onScreenshot,
+                label = { Text("截图") },
+                leadingIcon = {
+                    androidx.compose.material3.Icon(
+                        YingLiIcon.SCREENSHOT.imageVector,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+            )
+            FilterChip(
+                selected = state.abLoop.pointA != null,
+                onClick = onOpenAbTool,
+                label = { Text("A-B 循环") },
+            )
         }
         androidx.compose.material3.TextButton(onClick = onOpenVideoInfo) { Text("视频信息") }
         Text("控件布局", style = MaterialTheme.typography.titleMedium)

@@ -34,7 +34,8 @@ class PlayerControlLayoutTest {
     @Test fun `move reorders within a slot and can move between slots`() {
         val defaults = PlayerControlLayout()
         val surface = PlayerControlSurface.LANDSCAPE_BOTTOM_LEFT
-        val moved = defaults.move(surface, 0, 2)
+        // 默认槽位现在是 [ORDER, SPEED]：截图与 A-B 循环已移入"工具"弹窗，不再占用底栏。
+        val moved = defaults.move(surface, 0, 1)
         assertEquals(PlayerControlId.SPEED, moved.controls(surface)[0])
         val relocated = moved.move(
             PlayerControlSurface.LANDSCAPE_BOTTOM_LEFT,

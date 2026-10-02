@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import composeicons.tabler.TablerIcons
 import composeicons.tabler.outline.Activity
 import composeicons.tabler.outline.AlertCircle
+import composeicons.tabler.outline.Aperture
 import composeicons.tabler.outline.ArrowRight
 import composeicons.tabler.outline.ArrowsHorizontal
 import composeicons.tabler.outline.ArrowsMaximize
@@ -168,7 +169,7 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.CROP -> TablerIcons.Outline.Crop
         YingLiIcon.STRETCH -> TablerIcons.Outline.ArrowsHorizontal
         YingLiIcon.EXIT_FULLSCREEN -> TablerIcons.Outline.Minimize
-        YingLiIcon.SCREENSHOT -> TablerIcons.Outline.Camera
+        YingLiIcon.SCREENSHOT -> TablerIcons.Outline.Aperture
         YingLiIcon.FAVORITE -> TablerIcons.Outline.Star
         YingLiIcon.FAVORITE_FILLED -> TablerIcons.Filled.StarFilled
         YingLiIcon.BLOCK -> TablerIcons.Outline.Ban

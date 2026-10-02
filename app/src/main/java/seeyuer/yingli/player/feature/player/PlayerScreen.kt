@@ -485,6 +485,8 @@ fun PlayerScreen(
                         state, onSetScaleMode, onSelectAudioTrack, onSelectSubtitleTrack,
                         onSetOrder = onSetPlaybackOrder,
                         onSetRotation = onSetRotation,
+                        onScreenshot = onScreenshot,
+                        onOpenAbTool = onOpenAbTool,
                         onOpenVideoInfo = { onOpenPanel(PlayerPanel.VIDEO_INFO) },
                         onSetLayout = onSetControlLayout,
                     )
@@ -512,6 +514,8 @@ fun PlayerScreen(
                     state, onSetScaleMode, onSelectAudioTrack, onSelectSubtitleTrack,
                     onSetOrder = onSetPlaybackOrder,
                     onSetRotation = onSetRotation,
+                    onScreenshot = onScreenshot,
+                    onOpenAbTool = onOpenAbTool,
                     onOpenVideoInfo = { onOpenPanel(PlayerPanel.VIDEO_INFO) },
                     onSetLayout = onSetControlLayout,
                 )

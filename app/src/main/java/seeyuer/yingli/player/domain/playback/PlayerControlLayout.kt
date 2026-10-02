@@ -106,12 +106,12 @@ data class PlayerControlLayout(
             PlayerControlSurface.TOOLS to listOf(PlayerControlId.SCREENSHOT, PlayerControlId.AB_LOOP, PlayerControlId.INFO),
             PlayerControlSurface.PORTRAIT_BOTTOM to listOf(
                 PlayerControlId.SPEED,
-                PlayerControlId.MORE,
                 PlayerControlId.SCALE,
                 PlayerControlId.ORIENTATION,
                 PlayerControlId.PIP,
                 PlayerControlId.FULLSCREEN,
                 PlayerControlId.LOCK,
+                PlayerControlId.MORE,
             ),
         )
     }

@@ -296,6 +296,47 @@ internal fun BottomPlaybackControls(
             )
         }
         if (compact) Spacer(Modifier.height(PlayerPortraitControlsSpacing))
+        // "更多"托盘展开状态：纯 UI 状态，不进 ViewModel；声明在托盘与按钮行共同的父作用域里。
+        var toolsExpanded by remember { mutableStateOf(false) }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = toolsExpanded,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = PlayerPortraitControlsSpacing),
+                horizontalArrangement = Arrangement.spacedBy(PlayerShortcutSpacing, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                state.controlLayout
+                    .controls(seeyuer.yingli.player.domain.playback.PlayerControlSurface.TOOLS)
+                    .reversed()
+                    .forEach { id ->
+                        PlayerShortcut(
+                            id = id,
+                            state = state,
+                            allowPictureInPicture = allowPictureInPicture,
+                            onOpenSettings = onOpenSettings,
+                            onToggleFullscreen = onToggleFullscreen,
+                            onRotateVideo = onRotateVideo,
+                            onToggleSpeedPanel = onToggleSpeedPanel,
+                            onCycleScaleMode = onCycleScaleMode,
+                            onOpenPlaylist = onOpenPlaylist,
+                            onPictureInPicture = onPictureInPicture,
+                            onSetPlaybackOrder = onSetPlaybackOrder,
+                            onScreenshot = onScreenshot,
+                            onOpenAbTool = onOpenAbTool,
+                            onToggleLock = onToggleLock,
+                            onPrevious = onPrevious,
+                            onNext = onNext,
+                            onToggleTools = { toolsExpanded = !toolsExpanded },
+                            onOpenVideoInfo = onOpenVideoInfo,
+                            onSelectAudioTrack = onSelectAudioTrack,
+                            onSelectSubtitleTrack = onSelectSubtitleTrack,
+                        )
+                    }
+            }
+        }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val buttonCount = controlGroups.sumOf { it.size }
             // 竖屏优先铺满整行：只要按钮本体放得下，间距就按剩余宽度压缩（可以压到很小），
@@ -323,51 +364,11 @@ internal fun BottomPlaybackControls(
             } else {
                 PlayerShortcutSpacing
             }
-            // "更多"托盘展开状态：纯 UI 状态，不需要进 ViewModel。
-            var toolsExpanded by remember { mutableStateOf(false) }
             // 预览状态必须跨"提交后挡位变化"保持同一个实例：手势协程在重组间持续运行，
             // 若这里按 state.speed 重建状态，拖动时就写不到按钮读的那个状态，数值不再实时更新。
             var previewedSpeed by remember { mutableStateOf<PlaybackSpeed?>(null) }
             LaunchedEffect(state.speed, sliderActive) { previewedSpeed = null }
             val shownSpeed = previewedSpeed ?: state.speed
-            androidx.compose.animation.AnimatedVisibility(
-                visible = toolsExpanded,
-                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
-                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = PlayerPortraitControlsSpacing),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    state.controlLayout
-                        .controls(seeyuer.yingli.player.domain.playback.PlayerControlSurface.TOOLS)
-                        .forEach { id ->
-                            PlayerShortcut(
-                                id = id,
-                                state = state,
-                                allowPictureInPicture = allowPictureInPicture,
-                                onOpenSettings = onOpenSettings,
-                                onToggleFullscreen = onToggleFullscreen,
-                                onRotateVideo = onRotateVideo,
-                                onToggleSpeedPanel = onToggleSpeedPanel,
-                                onCycleScaleMode = onCycleScaleMode,
-                                onOpenPlaylist = onOpenPlaylist,
-                                onPictureInPicture = onPictureInPicture,
-                                onSetPlaybackOrder = onSetPlaybackOrder,
-                                onScreenshot = onScreenshot,
-                                onOpenAbTool = onOpenAbTool,
-                                onToggleLock = onToggleLock,
-                                onPrevious = onPrevious,
-                                onNext = onNext,
-                                onToggleTools = { toolsExpanded = !toolsExpanded },
-                                onOpenVideoInfo = onOpenVideoInfo,
-                                onSelectAudioTrack = onSelectAudioTrack,
-                                onSelectSubtitleTrack = onSelectSubtitleTrack,
-                            )
-                        }
-                }
-            }
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .then(if (spreadAcrossRow) Modifier else Modifier.horizontalScroll(scrollState)),

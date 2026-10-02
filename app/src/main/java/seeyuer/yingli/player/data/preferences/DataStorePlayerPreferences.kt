@@ -48,6 +48,10 @@ class DataStorePlayerPreferenceRepository(
         userPreferences.update { it.copy(miniPlayerEnabled = enabled) }
     }
 
+    override suspend fun setPreviousRestartsCurrentItem(enabled: Boolean) {
+        userPreferences.update { it.copy(previousRestartsCurrentItem = enabled) }
+    }
+
     override suspend fun setAutoPictureInPicture(enabled: Boolean) {
         userPreferences.update { it.copy(autoPictureInPicture = enabled) }
     }
@@ -131,6 +135,7 @@ internal fun UserPreferences.toPlayerPreferences(): PlayerPreferences = PlayerPr
     gestureDoubleTapSeekMillis = gestureDoubleTapSeekMillis,
     gestureSwipeDownToExitEnabled = gestureSwipeDownToExitEnabled,
     gestureHintShown = gestureHintShown,
+    previousRestartsCurrentItem = previousRestartsCurrentItem,
 )
 
 /**

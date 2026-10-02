@@ -189,6 +189,8 @@ class Media3PlaybackController(
             return PlaybackCommandResult.AlreadyApplied
         }
         secureSessionActive = false
+        // 新请求从"未就绪"开始：下一次 BUFFERING 才算首次准备。
+        hasEverBeenReady = false
         mutableState.value = PlaybackStateReducer.reduce(current, PlaybackTransition.Prepare(request))
         scope.launch(dispatchers.io) {
             val source = try {
@@ -439,8 +441,13 @@ class Media3PlaybackController(
 
     private fun updateFromPlayer(player: Player) {
         val request = mutableState.value.request ?: requestFrom(player.currentMediaItem, player.currentPosition) ?: return
-        mutableState.value = mutableState.value.withPlayerState(player, request)
+        // 记住"是否曾经就绪过"：重缓冲与首次准备在这里分岔（见 withPlayerState）。
+        if (player.playbackState == Player.STATE_READY) hasEverBeenReady = true
+        mutableState.value = mutableState.value.withPlayerState(player, request, hasEverBeenReady)
     }
+
+    /** 见 [withPlayerState]：新文件重新开始后，下一次 BUFFERING 又算"首次准备"。 */
+    private var hasEverBeenReady = false
 
     private var videoOutputEnabled = true
 

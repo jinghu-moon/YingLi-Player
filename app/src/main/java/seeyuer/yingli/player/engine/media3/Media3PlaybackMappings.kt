@@ -21,11 +21,21 @@ internal fun Player.toPlaybackTimeline(): PlaybackTimeline = PlaybackTimeline(
     bufferedPositionMillis = bufferedPosition.coerceAtLeast(0),
 )
 
-internal fun PlaybackState.withPlayerState(player: Player, request: PlaybackRequest): PlaybackState {
+internal fun PlaybackState.withPlayerState(
+    player: Player,
+    request: PlaybackRequest,
+    hasEverBeenReady: Boolean,
+): PlaybackState {
     val timeline = player.toPlaybackTimeline()
     return when (player.playbackState) {
         Player.STATE_IDLE -> this
-        Player.STATE_BUFFERING -> PlaybackState.Preparing(request, timeline)
+        // 曾经就绪过 ⇒ 这次 BUFFERING 是"重缓冲"（seek/缓冲不足），不是首次准备。
+        // 必须带上 isRebuffering：否则进度条跳转、快进快退都会让 UI 闪一个全屏加载圈。
+        Player.STATE_BUFFERING -> PlaybackState.Preparing(
+            request = request,
+            timeline = timeline,
+            isRebuffering = hasEverBeenReady,
+        )
         Player.STATE_READY -> when {
             player.isPlaying -> PlaybackState.Playing(request, timeline)
             this is PlaybackState.Paused -> PlaybackState.Paused(request, timeline)

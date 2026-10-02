@@ -63,6 +63,9 @@ data class SettingsToolActions(
     val onLibraryLayoutChanged: (LibraryLayoutPreference) -> Unit = {},
     val onThumbnailScaleChanged: (Float) -> Unit = {},
     val onTrashRetentionDaysChanged: (Int) -> Unit = {},
+
+    /** "上一个" 的行为：true=先回本集开头（默认），false=永远直接切上一项。 */
+    val onPreviousRestartsCurrentItemChanged: (Boolean) -> Unit = {},
     val onBackupSelectionChanged: (BackupSelection) -> Unit = {},
     val onBackup: () -> Unit = {},
     val onRestore: () -> Unit = {},
@@ -199,6 +202,11 @@ fun SettingsScreen(
             label = stringResource(R.string.settings_auto_pip),
             checked = playerPreferences.autoPictureInPicture,
             onCheckedChange = onAutoPipChanged,
+        )
+        YingLiSwitch(
+            label = stringResource(R.string.settings_previous_restarts_current),
+            checked = playerPreferences.previousRestartsCurrentItem,
+            onCheckedChange = tools.onPreviousRestartsCurrentItemChanged,
         )
         Text(stringResource(R.string.settings_player_gesture), style = MaterialTheme.typography.titleMedium)
         YingLiSwitch(

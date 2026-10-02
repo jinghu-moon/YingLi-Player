@@ -50,7 +50,8 @@ internal fun PlayerStatusOverlay(
                 modifier,
             )
         }
-        state.playback is PlaybackState.Preparing -> CircularProgressIndicator(
+        // 只有首次准备才显示加载圈；seek 造成的瞬时重缓冲保持画面不动（本地播放应当"实时"）。
+        state.playback is PlaybackState.Preparing && !state.playback.isRebuffering -> CircularProgressIndicator(
             modifier = modifier.testTag(PlayerTestTags.LOADING),
             color = YingLiTheme.player.controlPrimary,
         )

@@ -133,6 +133,9 @@ class PlayerGestureHintTest {
 
         override suspend fun setGestureLongPressSpeed(speed: PlaybackSpeed) = update { it.copy(longPressSpeed = speed) }
 
+        override suspend fun setPreviousRestartsCurrentItem(enabled: Boolean) =
+            update { it.copy(previousRestartsCurrentItem = enabled) }
+
         private fun update(transform: (PlayerPreferences) -> PlayerPreferences) {
             mutablePreferences.value = transform(mutablePreferences.value)
         }

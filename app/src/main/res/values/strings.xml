@@ -143,6 +143,7 @@
     <string name="processing_notification_message">可返回处理中心查看进度或取消任务</string>
     <string name="settings_playback">播放</string>
     <string name="settings_mini_player">离开播放页后显示迷你播放器</string>
+    <string name="settings_previous_restarts_current">上一个：先回到本集开头</string>
     <string name="settings_auto_pip">按 Home 键时自动进入画中画</string>
     <string name="settings_player_gesture">画面手势</string>
     <string name="settings_player_gesture_seek">双击左右两侧快进/快退</string>

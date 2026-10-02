@@ -40,6 +40,12 @@ sealed interface PlaybackState {
             positionMillis = request.startPositionMillis,
             bufferedPositionMillis = request.startPositionMillis,
         ),
+        /**
+         * true 表示这是**播放中因 seek/缓冲不足而重新缓冲**，不是首次准备。
+         * 两者必须区分：首次准备才该显示加载指示；seek 造成的瞬时重缓冲若也弹全屏加载圈，
+         * 快进/快退/拖进度条时画面就会一直闪加载圈。
+         */
+        val isRebuffering: Boolean = false,
     ) : PlaybackState {
         override val availableActions = setOf(PlaybackAction.STOP, PlaybackAction.GO_BACK)
     }

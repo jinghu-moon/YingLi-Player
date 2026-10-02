@@ -55,9 +55,9 @@ class PlayerScreenStateTest {
     }
 
     @Test
-    fun centerControlsExposeSeekButtons() {
-        var backwardClicks = 0
-        var forwardClicks = 0
+    fun centerControlsExposePreviousAndNext() {
+        var previousClicks = 0
+        var nextClicks = 0
         composeRule.setContent {
             YingLiTheme(darkTheme = true) {
                 PlayerScreen(
@@ -67,19 +67,20 @@ class PlayerScreenStateTest {
                     ),
                     onBack = {}, onPlay = {}, onPause = {}, onSeek = {}, onReplay = {}, onRetry = {},
                     onRecovery = {}, videoSurface = {},
-                    onSeekBackward = { backwardClicks++ },
-                    onSeekForward = { forwardClicks++ },
+                    onPrevious = { previousClicks++ },
+                    onNext = { nextClicks++ },
+                    canNavigatePrevious = true,
+                    canNavigateNext = true,
                 )
             }
         }
 
-        composeRule.onAllNodesWithContentDescription("上一项").assertCountEquals(0)
-        composeRule.onAllNodesWithContentDescription("下一项").assertCountEquals(0)
-        composeRule.onNodeWithContentDescription("后退 10 秒").performClick()
-        composeRule.onNodeWithContentDescription("前进 10 秒").performClick()
+        // 画面中央是"上一个 / 播放暂停 / 下一个"三连：不再放快退/快进 N 秒按钮。
+        composeRule.onNodeWithContentDescription("上一项").performClick()
+        composeRule.onNodeWithContentDescription("下一项").performClick()
 
-        assertEquals(1, backwardClicks)
-        assertEquals(1, forwardClicks)
+        assertEquals(1, previousClicks)
+        assertEquals(1, nextClicks)
     }
 
     @Test

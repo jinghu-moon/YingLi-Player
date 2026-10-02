@@ -146,10 +146,8 @@ class PlaybackSessionClientBridge(
 
     private suspend fun previous() {
         val current = queue ?: return feedback(PlaybackCommandRejection.NO_CANDIDATE.name)
-        if (snapshot.value.timeline.positionMillis > 5_000) {
-            controller.seekTo(0)
-            return
-        }
+        // "先回本集开头 / 直接切上一项"的判定已上移到 PlayerViewModel.previous()（受设置控制），
+        // 这里只负责按队列导航切项；否则会把用户选择的"永远直接切上一项"重新改回 5 秒惯例。
         val decision = queueNavigator.previous(current.toSnapshot(), snapshot.value.timeline.positionMillis)
         val move = decision as? NavigationDecision.MoveTo ?: return feedback(PlaybackCommandRejection.NO_CANDIDATE.name)
         val id = move.mediaId

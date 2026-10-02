@@ -69,14 +69,23 @@ private val PlayerPortraitControlsSpacing = 16.dp
 /** 时间文本最小宽度，保证播放中进度条长度不随时长位数跳动。 */
 private val PlayerTimeLabelMinWidth = 42.dp
 
+/**
+ * 画面中央的三连控件：**上一个 / 播放暂停 / 下一个**（与 REX-Player 同构：
+ * `PlayerControls.kt:1074-1195` 的中间区就是这三连，且只在存在播放队列时可用）。
+ *
+ * 这里**不再**放"快退/快进 N 秒"：那一对与"上一个/下一个"共用 PlayerSkipBack/Forward 字形，
+ * 放在中央会被误认为切集按钮（用户实测反馈）。跳秒改由双击画面左右两侧承担（步长可配置），
+ * 横向拖动画面仍是连续 seek。
+ */
 @Composable
 internal fun CenterPlaybackControls(
     playing: Boolean,
     onPlay: () -> Unit,
     onPause: () -> Unit,
-    onSeekBackward: () -> Unit,
-    onSeekForward: () -> Unit,
-    controlLayout: seeyuer.yingli.player.domain.playback.PlayerControlLayout = seeyuer.yingli.player.domain.playback.PlayerControlLayout(),
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    canNavigatePrevious: Boolean,
+    canNavigateNext: Boolean,
     modifier: Modifier,
 ) {
     Row(
@@ -85,9 +94,10 @@ internal fun CenterPlaybackControls(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PlayerChromeIconButton(
-            icon = YingLiIcon.SEEK_BACKWARD,
-            contentDescription = stringResource(R.string.player_seek_backward),
-            onClick = onSeekBackward,
+            icon = YingLiIcon.PREVIOUS,
+            contentDescription = "上一项",
+            onClick = onPrevious,
+            enabled = canNavigatePrevious,
             size = 56.dp,
         )
         PlayerChromeIconButton(
@@ -98,9 +108,10 @@ internal fun CenterPlaybackControls(
             filled = true,
         )
         PlayerChromeIconButton(
-            icon = YingLiIcon.SEEK_FORWARD,
-            contentDescription = stringResource(R.string.player_seek_forward),
-            onClick = onSeekForward,
+            icon = YingLiIcon.NEXT,
+            contentDescription = "下一项",
+            onClick = onNext,
+            enabled = canNavigateNext,
             size = 56.dp,
         )
     }

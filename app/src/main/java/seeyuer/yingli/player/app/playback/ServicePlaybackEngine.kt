@@ -50,6 +50,13 @@ class ServicePlaybackEngine(
     )
     private val mutableMediaInfo = MutableStateFlow<PlaybackMediaInfo?>(null)
     private var currentLease: SurfaceLease? = null
+
+    /**
+     * 是否**曾经**进入过 READY。用于区分"首次准备"与"seek/缓冲不足导致的重缓冲"：
+     * 旧实现按 `currentPosition > 0` 判断，快退到接近 0 或拖到开头时 position == 0，
+     * seek 引发的 STATE_BUFFERING 会被误判成首次准备，UI 于是闪出全屏加载圈。
+     */
+    private var hasEverBeenReady = false
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             publish()
@@ -89,6 +96,8 @@ class ServicePlaybackEngine(
             .setMediaMetadata(MediaMetadata.Builder().setTitle(source.displayName).setExtras(extras).build())
             .build()
         mutableState.value = EngineState.Preparing
+        // 新文件重新开始：下一次 BUFFERING 属于"首次准备"，不是重缓冲。
+        hasEverBeenReady = false
         mutableMediaInfo.value = PlaybackMediaInfo(
             title = source.displayName,
             durationMillis = source.durationMillis,
@@ -102,7 +111,7 @@ class ServicePlaybackEngine(
 
     override fun play() = player.play()
     override fun pause() = player.pause()
-    override fun stop() { player.stop(); mutableState.value = EngineState.Idle }
+    override fun stop() { player.stop(); hasEverBeenReady = false; mutableState.value = EngineState.Idle }
     override fun seekTo(positionMillis: Long) = player.seekTo(positionMillis)
     override fun setSpeed(speed: PlaybackSpeed): PlaybackCommandResult {
         player.setPlaybackSpeed(speed.value)
@@ -138,14 +147,39 @@ class ServicePlaybackEngine(
 
     private fun publish() {
         publishMediaInfo()
-        mutableState.value = when {
-            player.playbackState == Player.STATE_BUFFERING && player.currentPosition > 0 ->
-                EngineState.Buffering(timeline(), BufferingReason.REBUFFER)
-            player.playbackState == Player.STATE_BUFFERING -> EngineState.Preparing
-            player.playbackState == Player.STATE_ENDED -> EngineState.Ended(timeline())
-            player.isPlaying -> EngineState.Playing(timeline())
-            player.playbackState == Player.STATE_READY -> EngineState.Paused(timeline())
-            else -> EngineState.Idle
+        val playbackState = player.playbackState
+        if (playbackState == Player.STATE_READY) hasEverBeenReady = true
+        mutableState.value = when (classifyEngineState(playbackState, player.isPlaying, hasEverBeenReady)) {
+            EngineStateKind.REBUFFER -> EngineState.Buffering(timeline(), BufferingReason.REBUFFER)
+            EngineStateKind.PREPARING -> EngineState.Preparing
+            EngineStateKind.ENDED -> EngineState.Ended(timeline())
+            EngineStateKind.PLAYING -> EngineState.Playing(timeline())
+            EngineStateKind.PAUSED -> EngineState.Paused(timeline())
+            EngineStateKind.IDLE -> EngineState.Idle
+        }
+    }
+
+    /** 引擎状态种类，见 [classifyEngineState]。 */
+    internal enum class EngineStateKind { REBUFFER, PREPARING, ENDED, PLAYING, PAUSED, IDLE }
+
+    internal companion object {
+        /**
+         * 把 Media3 的播放状态分类成引擎状态种类（纯函数，便于单元测试）。
+         *
+         * **首次准备**与**重缓冲**必须分开：只有前者该显示加载指示；seek 造成的瞬时重缓冲
+         * 若也显示全屏加载圈，快进/快退/拖进度条时画面就会一直闪加载圈。
+         */
+        fun classifyEngineState(
+            playbackState: Int,
+            isPlaying: Boolean,
+            hasEverBeenReady: Boolean,
+        ): EngineStateKind = when {
+            playbackState == Player.STATE_BUFFERING && hasEverBeenReady -> EngineStateKind.REBUFFER
+            playbackState == Player.STATE_BUFFERING -> EngineStateKind.PREPARING
+            playbackState == Player.STATE_ENDED -> EngineStateKind.ENDED
+            isPlaying -> EngineStateKind.PLAYING
+            playbackState == Player.STATE_READY -> EngineStateKind.PAUSED
+            else -> EngineStateKind.IDLE
         }
     }
 

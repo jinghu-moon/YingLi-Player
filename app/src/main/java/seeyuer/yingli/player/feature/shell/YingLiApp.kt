@@ -272,6 +272,7 @@ fun YingLiApp(
                 onLibraryLayoutChanged = viewModel::setLibraryLayout,
                 onThumbnailScaleChanged = viewModel::setThumbnailScale,
                 onTrashRetentionDaysChanged = viewModel::setTrashRetentionDays,
+                onPreviousRestartsCurrentItemChanged = playerViewModel::setPreviousRestartsCurrentItem,
                 onBackupSelectionChanged = settingsViewModel::setSelection,
                 onBackup = settingsViewModel::requestBackup,
                 onRestore = settingsViewModel::requestRestore,

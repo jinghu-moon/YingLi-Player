@@ -12,6 +12,12 @@ data class PlayerPreferences(
     val gestureZoomEnabled: Boolean = true,
     val gestureLeftSideIsVolume: Boolean = true,
     val gestureDoubleTapSeekMillis: Int = DEFAULT_DOUBLE_TAP_SEEK_MILLIS,
+
+    /**
+     * "上一个" 的行为：true = 当前已播放超过 [_PREVIOUS_RESTART_THRESHOLD_MILLIS] 时先回到本集开头，
+     * 再按一次才切上一项（多数播放器的惯例）；false = 永远直接切上一项。
+     */
+    val previousRestartsCurrentItem: Boolean = true,
     val gestureSwipeDownToExitEnabled: Boolean = false,
     /** 常规播放页的一次性手势提示是否已展示过（规格 §5.15 / §19.3）。 */
     val gestureHintShown: Boolean = false,
@@ -48,6 +54,9 @@ interface PlayerPreferenceRepository {
     suspend fun setGestureZoomEnabled(enabled: Boolean)
     suspend fun setGestureLeftSideIsVolume(enabled: Boolean)
     suspend fun setGestureDoubleTapSeekMillis(millis: Int)
+
+    /** 见 [previousRestartsCurrentItem]。 */
+    suspend fun setPreviousRestartsCurrentItem(enabled: Boolean)
     suspend fun setGestureSwipeDownToExitEnabled(enabled: Boolean)
     suspend fun setGestureHintShown(shown: Boolean)
     suspend fun setGestureLongPressSpeed(speed: PlaybackSpeed)

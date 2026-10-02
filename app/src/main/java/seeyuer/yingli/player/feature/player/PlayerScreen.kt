@@ -404,9 +404,10 @@ fun PlayerScreen(
                 playing = state.playback is PlaybackState.Playing,
                 onPlay = onPlay,
                 onPause = onPause,
-                onSeekBackward = onSeekBackward,
-                onSeekForward = onSeekForward,
-                controlLayout = state.controlLayout,
+                onPrevious = onPrevious,
+                onNext = onNext,
+                canNavigatePrevious = canNavigatePrevious,
+                canNavigateNext = canNavigateNext,
                 modifier = Modifier.align(Alignment.Center)
                     .then(if (landscape) Modifier else Modifier.padding(bottom = 96.dp))
                     .testTag(if (landscape) PlayerTestTags.LANDSCAPE_CENTER_CONTROLS else PlayerTestTags.PORTRAIT_CENTER_CONTROLS),

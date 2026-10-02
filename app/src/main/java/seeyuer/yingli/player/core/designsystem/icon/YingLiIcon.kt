@@ -180,6 +180,8 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.FULLSCREEN -> TablerIcons.Outline.ArrowsMaximize
         YingLiIcon.SEEK_BACKWARD -> TablerIcons.Outline.PlayerSkipBack
         YingLiIcon.SEEK_FORWARD -> TablerIcons.Outline.PlayerSkipForward
+        // 上一项/下一项与"快退/快进 N 秒"共用 PlayerSkipBack/Forward 字形（图标库无 track 变体），
+        // 因此靠画面按钮上的**秒数徽标**区分语义：带 "10" 的是跳秒，不带的是切上/下一项。
         YingLiIcon.PREVIOUS -> TablerIcons.Outline.PlayerSkipBack
         YingLiIcon.NEXT -> TablerIcons.Outline.PlayerSkipForward
         YingLiIcon.CLOSE -> TablerIcons.Outline.X

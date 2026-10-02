@@ -55,6 +55,8 @@ data class UserPreferences(
     val trashRetentionDays: Int = 30,
     val miniPlayerEnabled: Boolean = true,
     val autoPictureInPicture: Boolean = false,
+    /** "上一个" 的行为：true=播放超过阈值时先回到本集开头；false=直接切上一项。 */
+    val previousRestartsCurrentItem: Boolean = true,
     val gestureSeekEnabled: Boolean = true,
     val gestureVolumeEnabled: Boolean = true,
     val gestureBrightnessEnabled: Boolean = true,
@@ -99,6 +101,7 @@ data class UserPreferences(
             trashRetentionDays: Int?,
             miniPlayerEnabled: Boolean?,
             autoPictureInPicture: Boolean?,
+            previousRestartsCurrentItem: Boolean? = null,
             gestureSeekEnabled: Boolean? = null,
             gestureVolumeEnabled: Boolean? = null,
             gestureBrightnessEnabled: Boolean? = null,
@@ -126,6 +129,7 @@ data class UserPreferences(
                     .coerceIn(MIN_TRASH_RETENTION_DAYS, MAX_TRASH_RETENTION_DAYS),
                 miniPlayerEnabled = miniPlayerEnabled ?: true,
                 autoPictureInPicture = autoPictureInPicture ?: false,
+                previousRestartsCurrentItem = previousRestartsCurrentItem ?: true,
                 gestureSeekEnabled = gestureSeekEnabled ?: true,
                 gestureVolumeEnabled = gestureVolumeEnabled ?: true,
                 gestureBrightnessEnabled = gestureBrightnessEnabled ?: true,
@@ -185,6 +189,7 @@ internal fun Preferences.readUserPreferences(): UserPreferences = UserPreference
     trashRetentionDays = this[TRASH_RETENTION_DAYS],
     miniPlayerEnabled = this[MINI_PLAYER],
     autoPictureInPicture = this[AUTO_PIP],
+    previousRestartsCurrentItem = this[PREVIOUS_RESTARTS_CURRENT_ITEM],
     gestureSeekEnabled = this[GESTURE_SEEK_ENABLED],
     gestureVolumeEnabled = this[GESTURE_VOLUME_ENABLED],
     gestureBrightnessEnabled = this[GESTURE_BRIGHTNESS_ENABLED],
@@ -211,6 +216,7 @@ internal fun MutablePreferences.writeUserPreferences(value: UserPreferences) {
     this[TRASH_RETENTION_DAYS] = value.trashRetentionDays
     this[MINI_PLAYER] = value.miniPlayerEnabled
     this[AUTO_PIP] = value.autoPictureInPicture
+    this[PREVIOUS_RESTARTS_CURRENT_ITEM] = value.previousRestartsCurrentItem
     this[GESTURE_SEEK_ENABLED] = value.gestureSeekEnabled
     this[GESTURE_VOLUME_ENABLED] = value.gestureVolumeEnabled
     this[GESTURE_BRIGHTNESS_ENABLED] = value.gestureBrightnessEnabled
@@ -236,6 +242,7 @@ private val LIBRARY_VIDEO_COLUMNS = intPreferencesKey("library_video_columns")
 private val TRASH_RETENTION_DAYS = intPreferencesKey("trash_retention_days")
 private val MINI_PLAYER = booleanPreferencesKey("mini_player_enabled")
 private val AUTO_PIP = booleanPreferencesKey("auto_picture_in_picture")
+    private val PREVIOUS_RESTARTS_CURRENT_ITEM = booleanPreferencesKey("previous_restarts_current_item")
 private val GESTURE_SEEK_ENABLED = booleanPreferencesKey("gesture_seek_enabled")
 private val GESTURE_VOLUME_ENABLED = booleanPreferencesKey("gesture_volume_enabled")
 private val GESTURE_BRIGHTNESS_ENABLED = booleanPreferencesKey("gesture_brightness_enabled")

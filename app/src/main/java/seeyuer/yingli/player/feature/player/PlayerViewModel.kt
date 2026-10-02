@@ -366,7 +366,18 @@ class PlayerViewModel(
     }
 
     fun previous(): PlaybackCommandResult {
-        return dispatchResult(PlaybackSessionCommand.Previous)
+        // 两种口径由设置决定：默认"先回本集开头"（超过 5 秒时），也可设为"永远直接切上一项"。
+        // 规则本身在域层纯函数里，客户端与媒体会话共用同一判定。
+        return if (
+            seeyuer.yingli.player.domain.playback.shouldRestartCurrentItemOnPrevious(
+                positionMillis = state.value.displayedPositionMillis,
+                previousRestartsCurrentItem = state.value.preferences.previousRestartsCurrentItem,
+            )
+        ) {
+            seekTo(0L)
+        } else {
+            dispatchResult(PlaybackSessionCommand.Previous)
+        }
     }
 
     fun selectQueueItem(index: Int): PlaybackCommandResult {
@@ -836,6 +847,11 @@ class PlayerViewModel(
         viewModelScope.launch { playerPreferenceRepository?.setAutoPictureInPicture(enabled) }
     }
 
+    /** "上一个"的行为：true = 先回本集开头（默认），false = 永远直接切上一项。 */
+    fun setPreviousRestartsCurrentItem(enabled: Boolean) {
+        viewModelScope.launch { playerPreferenceRepository?.setPreviousRestartsCurrentItem(enabled) }
+    }
+
     // ---- 画面手势设置（规格 FR-PLAYER-004 / #208：每项手势可分别关闭）----
 
     fun setGestureSeekEnabled(enabled: Boolean) {
@@ -1125,7 +1141,8 @@ private fun PlaybackSessionSnapshot.toPlaybackState(): PlaybackState {
         is PlaybackPhase.Ready -> request?.let { PlaybackState.Ready(it, timeline) } ?: PlaybackState.Idle
         is PlaybackPhase.Playing -> request?.let { PlaybackState.Playing(it, timeline) } ?: PlaybackState.Idle
         is PlaybackPhase.Paused -> request?.let { PlaybackState.Paused(it, timeline) } ?: PlaybackState.Idle
-        is PlaybackPhase.Buffering -> request?.let { PlaybackState.Preparing(it, timeline) } ?: PlaybackState.Idle
+        // 重缓冲（seek/缓冲不足）单独标记：UI 据此不显示全屏加载圈，避免快进/快退/拖动进度条时闪加载。
+        is PlaybackPhase.Buffering -> request?.let { PlaybackState.Preparing(it, timeline, isRebuffering = true) } ?: PlaybackState.Idle
         is PlaybackPhase.Ended -> request?.let { PlaybackState.Ended(it, timeline, current.next != null) } ?: PlaybackState.Idle
         is PlaybackPhase.Failed -> PlaybackState.Failed(request, timeline, current.error)
     }

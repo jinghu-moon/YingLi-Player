@@ -51,7 +51,12 @@ fun Media3VideoSurface(
                 }
                 view.useController = false
                 view.resizeMode = scaleMode.toResizeMode()
-                view.setShutterBackgroundColor(Color.BLACK)
+                // 关掉 Media3 自带的缓冲转圈：它在 STATE_BUFFERING 时会在画面上叠一个加载圈，
+                // 进度条跳转 / 快进快退 都会触发。本地播放要"实时"，加载指示只由
+                // PlayerStatusOverlay 在"首次准备"时给出（重缓冲已由引擎区分，不再显示）。
+                view.setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                // 透明快门：seek 期间保留上一帧，而不是盖一层黑（黑也会被误认为"在加载"）。
+                view.setShutterBackgroundColor(Color.TRANSPARENT)
                 view.player = controller.connectedPlayer()
                 playerLease = controller.attachPlayerView(view)
                 playerView = view

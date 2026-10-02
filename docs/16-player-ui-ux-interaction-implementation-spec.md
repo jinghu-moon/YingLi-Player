@@ -164,7 +164,7 @@ object PlayerDimensions {
 | 速度 | `BrandSpeedtest` | 点击在底栏行内展开档位条 |
 | 画面比例 | `AspectRatio`（适应）、`Crop`（裁剪）、`ArrowsHorizontal`（拉伸） | 三态动态，底栏一次点按循环 |
 | 截图 | `Aperture` | 捕获按钮可 filled；入口在「更多」托盘与设置面板「工具」分组，不再占底栏（口径修正：原表写 `Camera`，代码为 `TablerIcons.Outline.Aperture`） |
-| AB 循环 | `Repeat` | 激活态强调色；入口同样在「更多」托盘与设置面板「工具」分组 |
+| AB 循环 | `Refresh`（`YingLiIcon.REPLAY` -> Tabler `Refresh`；口径修正：原写 `Repeat`） | 激活态强调色；入口同样在「更多」托盘与设置面板「工具」分组 |
 | 镜像翻转 | `flip-horizontal` / `flip-vertical` 设计资产逐路径移植（`YingLiCustomIcons`，`IconProvider.LOCAL_VECTOR`） | 托盘开关，开启时 filled；只做视图层变换（见 §5.16） |
 | 后台播放 | `Headphones` | 托盘开关，开启时 filled；默认开启，关闭后离开前台即暂停（见 §5.17） |
 | 画中画 | `PictureInPicture` | 不可用时禁用 |

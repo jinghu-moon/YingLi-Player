@@ -30,3 +30,6 @@ refer/
 
 keystore/
 prototypes/views/assets/
+
+# Kotlin 编译会话临时文件（不应入库）
+.kotlin/

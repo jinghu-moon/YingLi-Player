@@ -27,8 +27,26 @@ enum class VideoScaleMode {
  * 归一化平移（0f 居中，±0.5f 为半个画面）。只做视图层变换，不进播放管线；规格要求
  * "缩放状态在当前播放内保留"，因此它随媒体切换重置。
  */
-data class VideoZoom(
-    val scale: Float = 1f,
+/**
+ * 画面镜像（水平 / 垂直）：只做视图层变换，与缩放、旋转叠加在同一个 `graphicsLayer` 上，
+ * 不进播放管线。与 [VideoZoom] 同样"在当前播放内保留"，随媒体切换复位。
+ */
+data class VideoMirror(
+    val horizontal: Boolean = false,
+    val vertical: Boolean = false,
+) {
+    val isActive: Boolean get() = horizontal || vertical
+
+    fun toggleHorizontal(): VideoMirror = copy(horizontal = !horizontal)
+
+    fun toggleVertical(): VideoMirror = copy(vertical = !vertical)
+
+    companion object {
+        val Default = VideoMirror()
+    }
+}
+
+data class VideoZoom(    val scale: Float = 1f,
     val offsetX: Float = 0f,
     val offsetY: Float = 0f,
 ) {

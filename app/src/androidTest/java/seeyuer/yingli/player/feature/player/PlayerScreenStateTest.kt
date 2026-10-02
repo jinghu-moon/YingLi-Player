@@ -43,6 +43,14 @@ class PlayerScreenStateTest {
     }
 
     @Test
+    fun rebufferingDoesNotShowBlockingLoadingOverlay() {
+        setPlayer(PlaybackState.Preparing(REQUEST, TIMELINE, isRebuffering = true))
+
+        composeRule.onNodeWithTag(PlayerTestTags.CANVAS).assertIsDisplayed()
+        composeRule.onAllNodesWithTag(PlayerTestTags.LOADING).assertCountEquals(0)
+    }
+
+    @Test
     fun playingExposesPauseControlLabel() {
         setPlayer(PlaybackState.Playing(REQUEST, TIMELINE))
         composeRule.onNodeWithContentDescription("暂停").assertIsDisplayed()

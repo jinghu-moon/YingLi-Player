@@ -28,6 +28,8 @@ class PlaybackSessionClientBridge(
 ) : PlaybackSessionClient, AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + dispatchers.main)
     private val commandSequence = AtomicLong(0)
+    /** Seek 是高频输入：只执行最新目标，避免拖动期间排队过时 seek。 */
+    private var seekJob: kotlinx.coroutines.Job? = null
     private val mutableSnapshot = MutableStateFlow(PlaybackSessionSnapshot(sessionId, null, null, PlaybackPhase.Idle))
     private val mutableEvents = kotlinx.coroutines.flow.MutableSharedFlow<PlaybackSessionEvent>(extraBufferCapacity = 32)
     private var queue: PlaybackQueue? = null
@@ -62,8 +64,12 @@ class PlaybackSessionClientBridge(
 
     override fun dispatch(command: PlaybackSessionCommand): PlaybackCommandHandle {
         val id = PlaybackCommandId(commandSequence.incrementAndGet())
-        scope.launch {
-            when (command) {
+        if (command is PlaybackSessionCommand.Seek) {
+            seekJob?.cancel()
+            seekJob = scope.launch { controller.seekTo(command.positionMillis) }
+        } else {
+            scope.launch {
+                when (command) {
                 is PlaybackSessionCommand.Open -> open(command.request)
                 is PlaybackSessionCommand.OpenVault -> openVault(command.itemId, command.displayTitle)
                 PlaybackSessionCommand.Play -> controller.play()
@@ -88,6 +94,7 @@ class PlaybackSessionClientBridge(
                 is PlaybackSessionCommand.BindSurface,
                 is PlaybackSessionCommand.UnbindSurface,
                 PlaybackSessionCommand.CaptureFrame -> feedback(PlaybackCommandRejection.CAPABILITY_UNAVAILABLE.name)
+                }
             }
         }
         return PlaybackCommandHandle(id)
@@ -181,15 +188,13 @@ class PlaybackSessionClientBridge(
 
     private fun publish(state: PlaybackState) {
         val request = state.request
-        val phase = when (state) {
-            PlaybackState.Idle -> PlaybackPhase.Idle
-            is PlaybackState.Preparing -> PlaybackPhase.Preparing(BackendId.MEDIA3)
-            is PlaybackState.Ready -> PlaybackPhase.Ready(state.timeline.isSeekable)
-            is PlaybackState.Playing -> PlaybackPhase.Playing(0)
-            is PlaybackState.Paused -> PlaybackPhase.Paused(PauseReason.USER)
-            is PlaybackState.Ended -> PlaybackPhase.Ended(if (state.hasNext) queue?.mediaIds?.getOrNull((queue?.currentIndex ?: -1) + 1) else null)
-            is PlaybackState.Failed -> PlaybackPhase.Failed(state.error)
-        }
+        val phase = state.toSessionPhase(
+            next = if (state is PlaybackState.Ended && state.hasNext) {
+                queue?.mediaIds?.getOrNull((queue?.currentIndex ?: -1) + 1)
+            } else {
+                null
+            },
+        )
         mutableSnapshot.value = mutableSnapshot.value.copy(
             mediaId = request?.mediaId,
             title = currentTitle ?: request?.mediaId?.value,
@@ -227,4 +232,24 @@ class PlaybackSessionClientBridge(
         order = order,
         shuffleHistory = shuffleHistory,
     )
+}
+
+/**
+ * 保留播放状态的语义边界：首次准备和 seek 后的重缓冲不能都映射成 Preparing。
+ *
+ * [PlaybackState.Preparing.isRebuffering] 是 UI 是否显示全屏加载圈的关键事实；
+ * 桥接层若把它丢掉，快进/快退/进度拖动就会被误认为首次加载。
+ */
+internal fun PlaybackState.toSessionPhase(next: MediaItemId? = null): PlaybackPhase = when (this) {
+    PlaybackState.Idle -> PlaybackPhase.Idle
+    is PlaybackState.Preparing -> if (isRebuffering) {
+        PlaybackPhase.Buffering(BufferingReason.REBUFFER)
+    } else {
+        PlaybackPhase.Preparing(BackendId.MEDIA3)
+    }
+    is PlaybackState.Ready -> PlaybackPhase.Ready(timeline.isSeekable)
+    is PlaybackState.Playing -> PlaybackPhase.Playing(0)
+    is PlaybackState.Paused -> PlaybackPhase.Paused(PauseReason.USER)
+    is PlaybackState.Ended -> PlaybackPhase.Ended(next)
+    is PlaybackState.Failed -> PlaybackPhase.Failed(error)
 }

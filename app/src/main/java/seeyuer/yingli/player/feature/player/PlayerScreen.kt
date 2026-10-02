@@ -401,7 +401,9 @@ fun PlayerScreen(
         )
         if (state.overlay.controlsVisible && !state.overlay.locked && state.playback.hasTransportControls()) {
             CenterPlaybackControls(
-                playing = state.playback is PlaybackState.Playing,
+                // 重缓冲期间播放意图仍是"播放中"：按钮不应翻成"播放"，
+                // 否则拖动进度条时会看到"页面自动暂停、松手又恢复"的错觉。
+                playing = state.playback.isPlayingIntent(),
                 onPlay = onPlay,
                 onPause = onPause,
                 onPrevious = onPrevious,
@@ -551,8 +553,18 @@ fun PlayerScreen(
     }
 }
 
-private fun PlaybackState.hasTransportControls(): Boolean =
-    this is PlaybackState.Ready || this is PlaybackState.Playing || this is PlaybackState.Paused
+private fun PlaybackState.hasTransportControls(): Boolean = when (this) {
+    is PlaybackState.Ready, is PlaybackState.Playing, is PlaybackState.Paused -> true
+    // seek 造成的瞬时重缓冲仍属于"播放中"：控件必须留在组合里。
+    // 否则拖动进度条时实时 seek 会让状态短暂变为 Preparing，控件被卸载、拖拽手势丢失，
+    // 表现就是"进度条只能点击跳转、不能拖动"。
+    is PlaybackState.Preparing -> isRebuffering
+    else -> false
+}
+
+/** 播放意图：Playing 为真；seek/缓冲不足造成的重缓冲也视为"仍在播放"。 */
+private fun PlaybackState.isPlayingIntent(): Boolean =
+    this is PlaybackState.Playing || (this is PlaybackState.Preparing && isRebuffering)
 
 @Composable
 private fun VideoInfoDialog(state: PlayerUiState, onDismiss: () -> Unit) {

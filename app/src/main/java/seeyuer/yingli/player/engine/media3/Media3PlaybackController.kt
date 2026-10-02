@@ -239,6 +239,8 @@ class Media3PlaybackController(
             return PlaybackCommandResult.AlreadyApplied
         }
         secureSessionActive = false
+        // 每个媒体项都有独立的准备生命周期，不能继承上一项的 READY 事实。
+        hasEverBeenReady = false
         mutableMediaInfo.value = PlaybackMediaInfo(
             title = source.title,
             durationMillis = source.durationMillis,
@@ -283,6 +285,8 @@ class Media3PlaybackController(
             .setMediaMetadata(MediaMetadata.Builder().setTitle(vaultTitle).setExtras(extras).build())
             .build()
         secureSessionActive = true
+        // 安全媒体同样是新会话，首次 BUFFERING 必须显示初始准备状态。
+        hasEverBeenReady = false
         mutableState.value = PlaybackState.Preparing(request)
         activeController.setMediaItem(mediaItem)
         activeController.prepare()

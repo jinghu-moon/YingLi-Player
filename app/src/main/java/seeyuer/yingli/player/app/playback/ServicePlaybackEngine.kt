@@ -51,6 +51,9 @@ class ServicePlaybackEngine(
     private val mutableMediaInfo = MutableStateFlow<PlaybackMediaInfo?>(null)
     private var currentLease: SurfaceLease? = null
 
+    /** 时长不超过该值的媒体用精确跳转（解码代价小、落点准确）；更长的用关键帧跳转保证跟手。 */
+    private val preciseSeekMaxDurationMillis = 120_000L
+
     /**
      * 是否**曾经**进入过 READY。用于区分"首次准备"与"seek/缓冲不足导致的重缓冲"：
      * 旧实现按 `currentPosition > 0` 判断，快退到接近 0 或拖到开头时 position == 0，
@@ -106,6 +109,16 @@ class ServicePlaybackEngine(
             fileSizeBytes = source.fileSizeBytes,
         )
         player.setMediaItem(item, startPositionMillis)
+        // 跳转精度（REX 同构：默认 `absolute+keyframes`，短视频/需要精确落点时才 exact）：
+        // Media3 默认是 EXACT，精确跳转要从目标前的关键帧解码到目标位置，大文件上会明显冻结；
+        // 拖动进度条要"画面跟手"就必须用关键帧跳转。
+        player.setSeekParameters(
+            if (source.durationMillis in 1..preciseSeekMaxDurationMillis) {
+                androidx.media3.exoplayer.SeekParameters.EXACT
+            } else {
+                androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC
+            },
+        )
         player.prepare()
     }
 

@@ -9,8 +9,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -405,45 +405,42 @@ fun YingLiSlider(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(thumbRadius * 2)
+                // 视觉轨道保持细，但整个控件提供标准 48dp 触摸目标。
+                .height(48.dp)
                 .then(
                     if (!enabled) {
                         Modifier
                     } else {
                         Modifier
+                            // 点击与拖动必须由同一个手势循环处理。两个 detector 会互相消费
+                            // down，导致旧实现只能点击、无法进入拖动。
                             .pointerInput(valueRange) {
-                                detectTapGestures { offset ->
-                                    val next = valueFromFraction(
-                                        sliderFractionFromTouch(offset.x, size.width.toFloat(), thumbRadiusPx),
-                                    )
-                                    draggingValue = next
-                                    onValueChange(next)
-                                    draggingValue = null
-                                    onValueChangeFinished?.invoke()
-                                }
-                            }
-                            .pointerInput(valueRange) {
-                                detectHorizontalDragGestures(
-                                    onDragStart = { draggingValue = value },
-                                    onDragEnd = {
-                                        onValueChangeFinished?.invoke()
-                                        draggingValue = null
-                                    },
-                                    onDragCancel = {
-                                        draggingValue = null
-                                    },
-                                    onHorizontalDrag = { _, dragAmount ->
-                                        val spanPx = sliderTrackSpanPx(size.width.toFloat(), thumbRadiusPx)
-                                        if (spanPx > 0f) {
-                                            val current = draggingValue ?: value
-                                            val next = valueFromFraction(
-                                                ((current - valueRange.start) / span) + dragAmount / spanPx,
-                                            )
-                                            draggingValue = next
-                                            onValueChange(next)
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    fun updateFromTouch(x: Float) {
+                                        val next = valueFromFraction(
+                                            sliderFractionFromTouch(x, size.width.toFloat(), thumbRadiusPx),
+                                        )
+                                        draggingValue = next
+                                        onValueChange(next)
+                                    }
+                                    updateFromTouch(down.position.x)
+                                    down.consume()
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (change.pressed) {
+                                            updateFromTouch(change.position.x)
+                                            change.consume()
+                                        } else {
+                                            updateFromTouch(change.position.x)
+                                            onValueChangeFinished?.invoke()
+                                            draggingValue = null
+                                            change.consume()
+                                            break
                                         }
-                                    },
-                                )
+                                    }
+                                }
                             }
                     },
                 ),

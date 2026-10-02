@@ -83,6 +83,8 @@ class PlaybackSessionRuntime(
     )
     private val mutableEvents = MutableSharedFlow<PlaybackSessionEvent>(extraBufferCapacity = 32)
     private var commandJob: Job? = null
+    /** Seek 是高频输入：只执行最新目标，避免拖动期间排队 flush 过时位置。 */
+    private var seekJob: Job? = null
     private var openGeneration = 0L
     private var queue: PlaybackQueueSnapshot? = null
     private var playWhenReady = false
@@ -121,9 +123,16 @@ class PlaybackSessionRuntime(
 
     override fun dispatch(command: PlaybackSessionCommand): PlaybackCommandHandle {
         val id = PlaybackCommandId(commandSequence.incrementAndGet())
-        commandJob = scope.launch {
-            if (command is PlaybackSessionCommand.Open) open(id, command.request)
-            else commandMutex.withLock { execute(id, command) }
+        if (command is PlaybackSessionCommand.Seek) {
+            seekJob?.cancel()
+            seekJob = scope.launch {
+                commandMutex.withLock { execute(id, command) }
+            }
+        } else {
+            commandJob = scope.launch {
+                if (command is PlaybackSessionCommand.Open) open(id, command.request)
+                else commandMutex.withLock { execute(id, command) }
+            }
         }
         return PlaybackCommandHandle(id)
     }

@@ -11,25 +11,41 @@ package seeyuer.yingli.player.domain.playback
  * 版本进入 value 后，读取侧同时拿到"写入时的格式版本"和"布局内容本身"，
  * 才能真正做到**按版本一次性回填**。
  *
- * **新增一个控件时，必须同时做两件事：**
- * 1. 把它的 id 追加到 [BACKFILLED_CONTROLS]；
- * 2. 把 [CURRENT_LAYOUT_VERSION] 加一。
+ * **新增一个控件时，必须同时做两件事（缺一不可）：**
+ * 1. 在 [BACKFILLED_CONTROLS_BY_VERSION] 里为它所属的**新版本号**登记这些 id；
+ * 2. 把 [CURRENT_LAYOUT_VERSION] 提到那个版本号。
  *
- * 只做第 1 步，老用户看不到新按钮：版本号没变，他们的数据会被判为"已回填"而原样返回。
- * 只做第 2 步，新按钮没有登记，也不会被补进"工具托盘"。
+ * 只做第 1 步：控件虽然能被补进老用户的布局，但 [encode] 仍写旧版本号，
+ * 它就一直停留在"比数据版本更新"的那一代——用户一旦移除，下次读取又会被补回来。
+ * 只做第 2 步：那个版本号上没有任何登记，回填自然补不出东西。
+ *
+ * **为什么是"按版本分代"，而不是"一个累积列表"：**
+ * 累积列表只有"数据版本 < 当前版本"这一个判据，于是版本号每提升一次，
+ * 所有老用户都会被重新补上历史上每一代的新控件——包括他们此前主动移除过的那些，
+ * "永久移除"便只在同一个版本内成立。分代登记后判据变成"这一代比数据版本新"：
+ * 已经写进用户数据的旧代控件，不会因为后续版本提升而复活，移除才是永久的。
  */
 internal object PlayerControlLayoutCodec {
     /**
-     * 当前布局格式版本。每次向 [BACKFILLED_CONTROLS] 追加控件时加一；
-     * 读取到 `version < CURRENT_LAYOUT_VERSION` 的数据才会执行回填。
+     * 当前布局格式版本。[encode] 把它写进数据，[migrate] 用它判定"比本实现更新的数据不要动"；
+     * 每次在 [BACKFILLED_CONTROLS_BY_VERSION] 里登记一代新控件，就要把它提到那一代。
      */
     const val CURRENT_LAYOUT_VERSION = 4
 
-    /** 4 版本新增并登记的低频按钮（按此顺序补进"工具托盘"）。 */
-    val BACKFILLED_CONTROLS = listOf(
-        PlayerControlId.MIRROR_HORIZONTAL,
-        PlayerControlId.MIRROR_VERTICAL,
-        PlayerControlId.BACKGROUND_PLAYBACK,
+    /**
+     * 分代回填登记表：key = 引入这些控件的布局版本，value = 该版本新增的控件（按此顺序补进"工具托盘"）。
+     *
+     * 只回填"比数据版本更新"的那几代，所以一个控件登记在哪一代，就决定了哪一代之前的用户会收到它。
+     * 约定：key 不得大于 [CURRENT_LAYOUT_VERSION]（见上面的两步规则）。
+     * 一旦登记了比当前版本还新的代，补进去的控件会跟着旧版本号写回，
+     * 用户的移除又会被复活，分代回填就失去意义。
+     */
+    val BACKFILLED_CONTROLS_BY_VERSION: Map<Int, List<PlayerControlId>> = mapOf(
+        4 to listOf(
+            PlayerControlId.MIRROR_HORIZONTAL,
+            PlayerControlId.MIRROR_VERTICAL,
+            PlayerControlId.BACKGROUND_PLAYBACK,
+        ),
     )
 
     /** 没有版本前缀的老值（v2 / v3 键写下的内容，或更早的无键格式）一律按版本 0 处理。 */
@@ -54,13 +70,33 @@ internal object PlayerControlLayoutCodec {
         val body = if (version == null) raw else raw.substring(separatorIndex + 1)
         // 结构非法（未知枚举名、超出容量、同方向重复……）时回落到默认布局，而不是让读取抛异常。
         val stored = runCatching { parse(body) }.getOrElse { PlayerControlLayout() }
-        if ((version ?: LEGACY_LAYOUT_VERSION) >= CURRENT_LAYOUT_VERSION) {
-            // 已是当前（或更新）版本：原样返回。
-            // 这样"用户主动移除过的回填按钮"不会被每次读取时反复塞回去，移除才是永久的。
-            return stored
-        }
-        // 老数据：只把用户布局里还没有的回填按钮补进"工具托盘"，其余槽位与顺序保持不变。
-        return stored.ensureControls(PlayerControlSurface.TOOLS, BACKFILLED_CONTROLS)
+        return migrate(stored, version ?: LEGACY_LAYOUT_VERSION, CURRENT_LAYOUT_VERSION)
+    }
+
+    /**
+     * 把 [backfill] 里所有"引入版本比 [dataVersion] 新"的代，按引入版本升序逐代补进"工具托盘"。
+     *
+     * - [dataVersion] 等于当前版本：没有哪一代比它新 → 原样返回，用户移除过的控件不会复活（移除是永久的）；
+     * - [dataVersion] 比当前版本还新（例如从更高版本备份恢复）：不认识的数据一律不动；
+     * - legacy（版本 0）：所有代都比它新，按升序全部回填。
+     *
+     * [backfill] 可注入：测试用虚构登记表（例如 `mapOf(4 to listOf(A), 5 to listOf(B))`）
+     * 就能验证"跨代只补新代"，无需真的提升 [CURRENT_LAYOUT_VERSION]。
+     * 容量不足或与同方向槽位冲突时补不进去（[PlayerControlLayout.ensureControls] 的语义），只跳过、不抛异常。
+     */
+    internal fun migrate(
+        layout: PlayerControlLayout,
+        dataVersion: Int,
+        currentVersion: Int,
+        backfill: Map<Int, List<PlayerControlId>> = BACKFILLED_CONTROLS_BY_VERSION,
+    ): PlayerControlLayout {
+        if (dataVersion > currentVersion) return layout
+        return backfill.entries
+            .filter { it.key > dataVersion }
+            .sortedBy { it.key }
+            .fold(layout) { migrated, generation ->
+                migrated.ensureControls(PlayerControlSurface.TOOLS, generation.value)
+            }
     }
 
     private fun parse(body: String): PlayerControlLayout {

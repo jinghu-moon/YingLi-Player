@@ -640,6 +640,8 @@ data class BackgroundPlaybackPolicy(
 规则：
 
 - 页面离开不等于停止会话；由策略决定继续播放、仅关闭视频输出或暂停。
+- 落地实现：`shouldPauseInBackground(backgroundPlaybackEnabled, inPictureInPicture) = !enabled && !inPictureInPicture`（[BackgroundPlaybackPolicy.kt](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/domain/playback/BackgroundPlaybackPolicy.kt)，纯 Kotlin）。**画中画是唯一例外**：PiP 里画面仍可见，暂停等于把 PiP 变成静态图（决策 #533）。
+- 偏好 `backgroundPlaybackEnabled` 默认 `true`：离开前台默认继续播放；只有用户关掉开关且不在 PiP 时才暂停。暂停发生在宿主 Activity `onStop()` 的**非配置变更分支**内、`super.onStop()` 之前——放在 `super.onStop()` 前是为了此刻生命周期订阅还没停、读到的是用户刚看到的偏好；旋转屏幕走配置变更分支，不会误暂停。回到前台**不自动恢复**播放。页面口径与入口见 `16` §5.17。
 - 音频焦点丢失、耳机断开、短暂失焦和 Duck 均由 Runtime 处理。
 - 关闭迷你播放器只隐藏应用内 UI，不销毁 MediaSession；用户主动停止才停止会话。
 - Vault/安全内容不能自动 PiP，必要时停止视频输出但不能泄露画面。
@@ -721,6 +723,11 @@ Media3 的 `STATE_BUFFERING`：
 - 若此前已经 `Playing`，映射为 `Buffering(reason = Rebuffer)`。
 - 若网络不在范围内但本地读取等待，仍使用 `Buffering`，错误分类不应伪造为 source unavailable。
 - UI 在 Buffering 时保留暂停/停止和当前位置，进度条是否可拖动由能力决定。
+
+跳转精度与加载指示（当前实现，REX 同构）：
+
+- `SeekParameters` 按源时长选择：`duration ∈ 1..120_000ms` 用 `EXACT`（短视频需要精确落点），更长的用 `CLOSEST_SYNC`（关键帧跳转）。Media3 默认是 `EXACT`，精确跳转要从目标前的关键帧解码到目标位置，大文件上会明显冻结；拖动进度条要"画面跟手"就必须用关键帧跳转。
+- **seek 不显示加载指示**：只有首次准备才显示全屏加载圈，即 `Preparing` 且 `isRebuffering = false`；进度条跳转、快进快退造成的重缓冲由 `Preparing.isRebuffering = true` 区分（`hasEverBeenReady` 决定该标志），否则每次 seek 都会闪一个全屏加载圈。
 
 ### 9.5 轨道和偏好
 
@@ -924,7 +931,7 @@ ShortsRoute (一级页面)
 横屏/竖屏：
 
 - 共享同一个 Runtime、媒体会话、队列、AB 和后端。
-- 横屏核心交通控件固定可见；竖屏使用悬浮栏和最多 7 个快捷槽（默认：速度、播放顺序、画面比例、旋转、PiP、全屏、锁定）。
+- 横屏核心交通控件固定可见；竖屏使用悬浮栏和最多 7 个快捷槽（默认：速度、画面比例、旋转、PiP、全屏、锁定、更多（托盘开关，固定最右）；口径修正：原默认列表含「播放顺序」且无「更多」，与代码不符），更多低频工具放在其上方的工具托盘槽位（`PlayerControlSurface.TOOLS`，容量 8），布局可用设置页槽位编辑器拖拽重排并带版本迁移（见 `16` §5.14、§6）。
 - 方向、全屏和 Insets 属于窗口 gateway，不创建第二个播放会话。
 
 YLShorts：
@@ -1006,6 +1013,11 @@ data class AbLoopState(
 ### 14.2 DataStore
 
 DataStore 只保存小型偏好：默认倍速、默认画面模式、播放顺序默认值、后台音频、自动 PiP、常规播放器快捷槽布局和 Shorts 快捷槽布局，以及画面手势设置。坏值必须回退领域默认值。
+
+两点当前口径（细节见 `16`）：
+
+- 后台播放开关 `backgroundPlaybackEnabled` 默认 `true`（离开前台继续播放；关闭后离开前台即暂停，画中画例外）——见 `16` §5.17。
+- 控件布局的存储键为 `layout_v4`，读取顺序 `layout_v4 → layout_v3 → layout_v2`（旧键只读保留）；**格式版本写在 value 前缀里**（`PlayerControlLayoutCodec.CURRENT_LAYOUT_VERSION`），没有前缀的老值按版本 0 回填，新增控件必须同时登记 `BACKFILLED_CONTROLS_BY_VERSION` 并提升 `CURRENT_LAYOUT_VERSION`——见 `16` §6「持久化与版本迁移」。
 
 画面手势设置字段（与 `UserPreferences` 一一对应）：
 

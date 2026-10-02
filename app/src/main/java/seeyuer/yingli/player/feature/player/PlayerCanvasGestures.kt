@@ -21,11 +21,13 @@ import androidx.compose.ui.platform.LocalDensity
 /**
  * 画面拖动/长按手势：**一个手写手势循环**把原始指针事件喂给 [PlayerGestureRecognizer]。
  *
- * 单击与双击仍由 `detectTapGestures` 负责（它自带双击窗口与长按/点击互斥），
- * 这里只接管拖动、长按倍速和双指变换，避免多个检测器争抢同一串事件（倍速胶囊轨踩过这个坑）。
+ * 画面手势的**唯一所有者**：单击/双击/长按倍速/竖向音量亮度/横滑进度/双指缩放平移都在这里。
+ * 画面链上**不再挂 `detectTapGestures`** —— 它在按下时就 consume 整个 down（实测 21 次画面按下
+ * 有 17 次被消费），会让手势只在少数位置生效；单击由 `recognizer.onTapReleased` 结算，
+ * 延迟 250ms 兑现双击窗口，双击到达即取消该延迟。
  *
- * 用 `requireUnconsumed = true` 起手：按钮、进度条、倍速胶囊轨上的按住拖动不会被
- * 误判成画面手势（那些控件自己会消费 down）。
+ * 用 `requireUnconsumed = false` 起手，再按 `down.isConsumed` 判定归属：按钮、进度条、倍速轨
+ * 自己消费了 down 时本次按压完全不介入（控件优先），画面空白处则始终能被手势接管。
  */
 @Composable
 internal fun Modifier.playerCanvasDragGestures(

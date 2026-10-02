@@ -153,7 +153,7 @@ object PlayerDimensions {
 
 ### 3.4 图标
 
-项目已迁移到本地生成的 Tabler Compose 图标，入口为 [YingLiIcon.kt](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/core/designsystem/icon/YingLiIcon.kt)。播放器图标必须补齐到同一语义枚举，优先使用 Tabler outline；主播放键、收藏激活可使用 filled 变体。本地图标集（Tabler Icons 3.46.0）缺少的语义图标，按 [design/README.md](/D:/100_Projects/110_Daily/YingLi-Player/design/README.md) 的约定把原素材放进 `design/assets/icons/`，在 `YingLiLocalIcons` 中合成并标为 `IconProvider.LOCAL_VECTOR`。同一屏内不同语义的控件不得共用同一图标（曾出现播放列表/播放顺序/字幕共用 `List` 的误判）。
+项目已迁移到本地生成的 Tabler Compose 图标，入口为 [YingLiIcon.kt](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/core/designsystem/icon/YingLiIcon.kt)。播放器图标必须补齐到同一语义枚举，优先使用 Tabler outline；主播放键、收藏激活可使用 filled 变体。本地图标集（Tabler Icons 3.46.0）缺少的语义图标，按 [design/README.md](/D:/100_Projects/110_Daily/YingLi-Player/design/README.md) 的约定把原素材放进 `design/assets/icons/`，在 `YingLiLocalIcons` 中合成并标为 `IconProvider.LOCAL_VECTOR`。图标库里**有**同名图标、但设计稿已定稿字形时走 `YingLiCustomIcons`（同样 `IconProvider.LOCAL_VECTOR`，逐条 path 原样移植、不依赖图标库版本）：镜像翻转的 `flip-horizontal.svg` / `flip-vertical.svg` 就是这种情况，避免图标库升级改变已定稿字形。同一屏内不同语义的控件不得共用同一图标（曾出现播放列表/播放顺序/字幕共用 `List` 的误判）。
 
 | 功能 | Tabler 图标建议 | 状态 |
 |---|---|---|
@@ -163,8 +163,10 @@ object PlayerDimensions {
 | 播放顺序 | `PlayModeSequence`（本地合成）、`ArrowsShuffle`、`Repeat`、`RepeatOnce` | 四态动态 |
 | 速度 | `BrandSpeedtest` | 点击在底栏行内展开档位条 |
 | 画面比例 | `AspectRatio`（适应）、`Crop`（裁剪）、`ArrowsHorizontal`（拉伸） | 三态动态，底栏一次点按循环 |
-| 截图 | `Camera` | 捕获按钮可 filled |
-| AB 循环 | `Repeat` | 激活态强调色 |
+| 截图 | `Aperture` | 捕获按钮可 filled；入口在「更多」托盘与设置面板「工具」分组，不再占底栏（口径修正：原表写 `Camera`，代码为 `TablerIcons.Outline.Aperture`） |
+| AB 循环 | `Repeat` | 激活态强调色；入口同样在「更多」托盘与设置面板「工具」分组 |
+| 镜像翻转 | `flip-horizontal` / `flip-vertical` 设计资产逐路径移植（`YingLiCustomIcons`，`IconProvider.LOCAL_VECTOR`） | 托盘开关，开启时 filled；只做视图层变换（见 §5.16） |
+| 后台播放 | `Headphones` | 托盘开关，开启时 filled；默认开启，关闭后离开前台即暂停（见 §5.17） |
 | 画中画 | `PictureInPicture` | 不可用时禁用 |
 | 旋转 | `Rotate2` | 四态画面旋转（视图层，不请求系统方向） |
 | 亮度 | `Brightness` | 手势反馈浮岛使用；亮度为窗口级页面亮度 |
@@ -174,7 +176,7 @@ object PlayerDimensions {
 | 音轨 | `Music` | 有轨道时启用 |
 | 字幕 | `Subtitles` | 无字幕时空状态 |
 | 信息 | `InfoCircle` | 只读 Dialog |
-| 更多 | `DotsVertical` | 顶栏常驻溢出菜单，不再是快捷槽控件 |
+| 更多 | `DotsVertical` | 竖屏底栏最右的托盘开关（`PlayerControlId.MORE`，复用 `YingLiIcon.OVERFLOW`）；横屏顶栏另有常驻溢出菜单（口径修正：原写「不再是快捷槽控件」） |
 | 移除 | `Minus` / `X` | 布局编辑/黑名单管理 |
 
 新增图标必须先扩充 `YingLiIcon` 和图标单测，再在 Feature 使用；禁止在 Composable 内直接导入任意 `composeicons` 图标。
@@ -185,15 +187,15 @@ object PlayerDimensions {
 
 横屏布局对应 Demo `.topbar + .center-controls + .bottombar`：
 
-1. 顶部覆盖层：左右 `22dp` 内边距，顶部加 `WindowInsets.safeDrawing`；左侧返回键、标题胶囊，右侧为顶部快捷槽（默认三项：播放列表、音轨、字幕），并常驻一个「更多」溢出按钮（设置、视频信息等入口都在它的菜单里，`MORE` 不再是快捷槽控件）。
+1. 顶部覆盖层：左右 `22dp` 内边距，顶部加 `WindowInsets.safeDrawing`；左侧返回键、标题胶囊，右侧为顶部快捷槽（默认三项：播放列表、音轨、字幕），并常驻一个「更多」溢出按钮（设置、视频信息等入口都在它的菜单里；控件模型里的 `MORE` 只出现在竖屏底栏最右，见 §4.2）。
 2. 中央控制：水平排列快退、播放/暂停、快进；主键视觉 `70dp`，辅助键 `58dp`。**锁定态不显示中央控制**（见 §5.13：只保留解锁与播放/暂停的浮动入口，随控件唤出、约 3 秒自动隐藏）。
 3. 底部栏：第一行时间、进度和总时长；第二行上一项/播放/下一项与快捷槽。底部使用 `edgeScrim`。
 4. 进度条触控区高度 `22dp`，轨道视觉高度 `4dp`。AB 标记叠加在同一轨道坐标系中。
 
 | 区域 | 上限 | 默认 |
 |---|---:|---|
-| 右上 | 4 | 播放列表、音轨、字幕（音轨/字幕在竖屏由顶栏过滤，`MORE` 已从控件模型删除） |
-| 左下 | 4 | 播放顺序、速度、截图、AB 循环 |
+| 右上 | 4 | 播放列表、音轨、字幕（音轨/字幕在竖屏由顶栏过滤；`MORE` 只放竖屏底栏，见 §4.2） |
+| 左下 | 4 | 播放顺序、速度（截图与 AB 循环已移入「更多」托盘，见 §5.14） |
 | 右下 | 4 | 画中画、全屏、锁定 |
 
 上一项、播放/暂停、下一项、返回属于核心交通控件，不受快捷槽删除影响。全屏若固定，布局编辑器显示锁而不是减号。
@@ -205,8 +207,8 @@ object PlayerDimensions {
 1. 顶部栏增加状态栏安全区，标题胶囊最大宽度约 `230dp`，顶部快捷按钮视觉 `38dp`。
 2. 中央播放键下移约 `20dp`，主键视觉 `58dp`，辅助键 `48dp`。
 3. 底部使用悬浮控制条：左右 `14dp`，底部 `18dp`，内边距 `13dp/12dp`，圆角 `10dp`，背景约 78% 深色并使用 blur。
-4. 竖屏快捷槽最多 7 个，默认：速度、播放顺序、画面比例、旋转、PiP、全屏、锁定。**放得下时优先铺满整行**：只要按钮本体放得下（`48dp × 数量 ≤ 行宽`），按钮间距就按剩余宽度压缩（可以压到很小），不因为间距不足就退化成横向滚动；只有连按钮本体都放不下时才横向滚动。
-5. 「更多」不再是底栏控件：设置、播放列表、视频信息等入口由顶栏常驻的溢出菜单承担，底栏那一格让给「锁定」。锁定按钮图标表达状态（未锁定 `LockOpen`、锁定后 `Lock`），文案表达动作（「锁定屏幕」/「解锁屏幕」）。
+4. 竖屏快捷槽最多 7 个，默认：速度、画面比例、旋转、PiP、全屏、锁定、更多（即 `PlayerControlSurface.PORTRAIT_BOTTOM` 的默认顺序，「更多」在最右；口径修正：原默认列表写「速度、播放顺序、画面比例、旋转、PiP、全屏、锁定」，与代码不符）。**放得下时优先铺满整行**：只要按钮本体放得下（`48dp × 数量 ≤ 行宽`），按钮间距就按剩余宽度压缩（可以压到很小），不因为间距不足就退化成横向滚动；只有连按钮本体都放不下时才横向滚动。
+5. 「更多」是竖屏底栏最右的托盘开关（`PlayerControlId.MORE`，图标复用 `YingLiIcon.OVERFLOW` = Tabler `DotsVertical`）：点击在按钮行上方展开工具托盘，托盘内容与交互见 §5.14；横屏顶栏的常驻溢出菜单继续承担设置、播放列表、视频信息等入口。锁定按钮图标表达状态（未锁定 `LockOpen`、锁定后 `Lock`），文案表达动作（「锁定屏幕」/「解锁屏幕」）。
 6. 设置、播放列表和布局编辑从底部进入，最大高度 72%；视频信息 Dialog 宽度为窗口减 `28dp`。
 
 ### 4.3 全屏与方向
@@ -335,6 +337,7 @@ Demo 包含上一帧、截图当前帧、下一帧、取消；按钮视觉 `42×
 4. 成功预览从画面缩小飞向左上角，约 `420ms`；卡片约 `116dp`，比例 `16:10`。
 5. 显示 3 秒，底部 `4dp` 倒计时条从满到空；点击图片暂停倒计时，删除按钮以 `200ms` 缩放、旋转和淡入出现。
 6. 超时只移除预览。若删除按钮只删除预览，文案应为“关闭预览”；若要删除 MediaStore 文件，必须新增返回 URI/token 的网关契约和可撤销删除用例。
+7. 入口在竖屏「更多」托盘（`PlayerControlSurface.TOOLS`）与设置面板的「工具」分组；底栏不再保留截图按钮，截图图标为 `Aperture`（见 §3.4）。口径修正原因：截图与 A-B 循环都是低频工具，底栏那两格让给高频控件，统一收进托盘（见 §5.14）。
 
 ```text
 ScreenshotState
@@ -379,7 +382,15 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 
 ### 5.14 更多与设置
 
-横屏设置抽屉从右侧进入，宽 `min(340dp, 84%)`；竖屏从底部进入，最高 72%。内容顺序：控件布局、视频信息、播放顺序、画面旋转、比例、音轨、字幕（速度不在此处，见 §5.7 的底栏档位条）。解码器只有存在真实可切换实现时显示；后台播放和睡眠定时不能用成功 Toast 伪装。
+横屏设置抽屉从右侧进入，宽 `min(340dp, 84%)`；竖屏从底部进入，最高 72%。内容顺序：控件布局、视频信息、播放顺序、画面旋转、比例、音轨、字幕（速度不在此处，见 §5.7 的底栏档位条）。解码器只有存在真实可切换实现时显示；后台播放和睡眠定时不能用成功 Toast 伪装。设置面板另有「工具」分组（截图、A-B 循环、视频信息），与托盘入口一致。
+
+竖屏底栏的「更多」托盘：
+
+- `PlayerControlId.MORE`（图标复用 `YingLiIcon.OVERFLOW` = Tabler `DotsVertical`）**默认只放竖屏底栏、位于最右**（`PORTRAIT_BOTTOM` 默认列表的最后一项）；横屏默认不安排该控件，顶栏常驻溢出菜单维持原样。
+- 点击在按钮行上方展开工具托盘（`AnimatedVisibility` + `fadeIn`/`expandVertically` 进场、`fadeOut`/`shrinkVertically` 退场）。底栏是底部对齐的悬浮控制条，因此展开时**按钮行位置不变、进度行上移一个按钮行高度**，画面区域尺寸不变（不挤压画面）。
+- 托盘按钮与底栏**同源**：复用同一个 `PlayerShortcut`；`Arrangement.spacedBy(PlayerShortcutSpacing, Alignment.End)` + 列表 `reversed()`，自右向左排列，间距与底栏一致。
+- 托盘内容是可配置槽位 `PlayerControlSurface.TOOLS`（容量 8），默认 `[SCREENSHOT, AB_LOOP, MIRROR_HORIZONTAL, MIRROR_VERTICAL, INFO, BACKGROUND_PLAYBACK]`；设置页槽位编辑器里的「工具托盘（更多）」分组可拖拽重排（见 §6）。
+- 展开状态是纯 UI 状态（`remember { mutableStateOf(false) }`），不进 ViewModel；控件自动隐藏会把整条底栏移出组合，托盘随之回到收起状态。
 
 ### 5.15 画面手势（常规播放页）
 
@@ -397,8 +408,8 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 - 缩放/平移要求**恰好两指**（`pressed == 2`）；多指会话内始终消费事件以隔离单指识别器，但不因"某一帧被消费"放弃整次手势。
 #### 区域划分与开关
 
-- 按实际可用画面宽度计算：左 `45%`、右 `45%` 承接两个垂直手势（`SIDE_ZONE_FRACTION = 0.45f`），中间 `10%` 保留给播放/缩放手势，不接垂直调节（原为 40/20，按"触发区偏小"的反馈扩大）；
-- 靠近屏幕左右边缘 `12dp`（`SYSTEM_EDGE_INSET_DP`）不接手势，避开系统手势区（原为 20dp）；垂直手势按**按下位置**分侧，滑动过程中不允许目标跳变，也不回退到另一半屏的另一个手势；
+- 竖向音量/亮度区**按画面中线严格二分**（`VERTICAL_GESTURE_ZONE_FRACTION = 0.5f`，左右各 `50%`）、不设中间死区；双击分区另算（左右各 `40%`、中间 `20%` 播放/暂停），两者不再共用一组比例（口径修正：原写「左 `45%`/右 `45%`/中间 `10%`」，与代码不符；触发舒服的位置恰好被旧比例挡掉了）；
+- 竖向手势**不做边缘避让**（`SYSTEM_EDGE_INSET_DP = 0f`）：垂直滑动不会触发系统左右返回手势，原先左右各留 `12dp` 恰好挡掉了最顺手的起手位置（口径修正：原写 `12dp`）；垂直手势按**按下位置**分侧，滑动过程中不允许目标跳变，也不回退到另一半屏的另一个手势；
 - 左右映射可配置：`gestureLeftSideIsVolume` 默认 `true`（默认左音量、右亮度），关闭后互换为左亮度、右音量。音量走**系统媒体流**（`STREAM_MUSIC`），亮度是**窗口级页面亮度**（不改系统设置、不需要 `WRITE_SETTINGS`，退出播放页恢复）；
 - 进度、音量、亮度、缩放四项手势可分别关闭（`gestureSeekEnabled`/`gestureVolumeEnabled`/`gestureBrightnessEnabled`/`gestureZoomEnabled`，默认全开）；手势进行中被关闭或锁定要立即打断并提交当前值，不做半途静默丢弃；
 - 锁定态禁用全部画面手势（音量键仍然有效），下滑退出（`gestureSwipeDownToExitEnabled`）默认关闭，只作可选手势。
@@ -410,15 +421,15 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 | 起手不跟手 | `6dp` | 小于该位移只当作点击候选 |
 | 主轴锁定 | `10dp` | 超过后锁定垂直或水平轴，方向锁定后不触发另一轴 |
 | 长按 | `360ms` | 移动超过 `8dp` 取消长按 |
-| 侧区比例 | 左右各 `40%` | 中间 `20%` 保留播放/缩放手势 |
-| 边缘避让 | `12dp` | 系统手势边缘不接手势（从 20dp 收紧） |
+| 竖向分区 | 左右各 `50%` | 按画面中线严格二分，不设中间死区（与双击分区无关） |
+| 边缘避让 | `0dp` | 竖向手势不做边缘避让；垂直滑动不会触发系统返回手势（口径修正：原为 `12dp`） |
 | 双击分区 | 左 `40%` / 中 `20%` / 右 `40%` | 快退 / 播放暂停 / 快进 |
 
 #### 点击与双击
 
 - 单击画面只切换控制层，不自动播放/暂停，也不缩放；
 - 双击中央 `20%` 默认播放/暂停；双击左/右分区快退/快进，步长为 `gestureDoubleTapSeekMillis`，可选 `5/10/15/30` 秒，默认 `10000`；
-- 双击落在边缘 `12dp` 内按快退/快进处理，避免与系统返回手势冲突；
+- 双击分区只按左右各 `40%` / 中间 `20%` 划分，与竖向音量亮度区解耦，且不再做边缘避让（`SYSTEM_EDGE_INSET_DP = 0f`；口径修正：原写「双击落在边缘 `12dp` 内按快退/快进处理」）；
 - 双击反馈与手势字段同源（决策 #339），不额外弹出对话框。
 
 #### 长按临时倍速
@@ -454,20 +465,53 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 - 首次进入常规播放页展示一次性手势提示（说明左右调节、进度拖动、长按快进、双击分区与双指缩放，约 `2800ms` 后自动消退，且显示过一次后持久化不再出现）；
 - 下滑退出播放页是可选手势（设置项 `gestureSwipeDownToExitEnabled`，默认关闭）：只在**中间 20% 区域**向下滑超过约 `64dp` 才触发，系统返回始终是主返回方式（决策 #386）。
 
+### 5.16 画面镜像翻转
+
+- 领域模型 `VideoMirror(horizontal, vertical)`（[PlaybackTrackContracts.kt](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/domain/playback/PlaybackTrackContracts.kt)）：两个方向相互独立，`isActive = horizontal || vertical`；与自由缩放同样是**本次播放的临时状态**，在当前播放内保留、随媒体切换复位（页面按 `mediaId` 记忆）。
+- 只做视图层变换：与缩放叠加在同一个 `graphicsLayer` 上，`scaleX = zoomScale * mirrorScaleX`、`scaleY = zoomScale * mirrorScaleY`，平移量不受翻转影响（翻转不改变画面中心所在位置）；不进播放管线，也不写任何偏好。
+- **翻面动画**：`animateFloatAsState(1f ↔ -1f, tween(240ms))`，时长与缩放过渡同源（`ZOOM_TRANSITION_MILLIS`）。从 `1f` 动画到 `-1f` 必然经过 `0`，画面先压扁再朝另一侧展开，视觉上就是"翻面"，不需要额外做 3D 旋转。
+- 必须让播放输出走可被视图层级变换的 `TextureView`：`VideoRotationStage(zoomActive = zoom.isActive || mirror.isActive)`。`SurfaceView` 的画面由 SurfaceFlinger 单独合成，**不跟随父级 `graphicsLayer` 的负缩放**，只切按钮不改输出会出现"按钮状态变了、画面纹丝不动"。
+- 入口在「更多」托盘：`PlayerControlId.MIRROR_HORIZONTAL` / `MIRROR_VERTICAL`，图标 `YingLiIcon.FLIP_HORIZONTAL` / `FLIP_VERTICAL`（`YingLiCustomIcons.FlipHorizontal` / `FlipVertical`，即 `design/assets/icons/flip-horizontal.svg`、`flip-vertical.svg` **逐路径移植**的 `ImageVector`，`IconProvider.LOCAL_VECTOR`，各 5 条 path），开启时按钮为**实心**（`filled`）；文案「水平翻转」/「垂直翻转」。
+
+### 5.17 后台播放开关
+
+- 偏好 `backgroundPlaybackEnabled` **默认 `true`**：维持"前台服务继续播放"，即离开前台默认不暂停（口径修正：早期规范写"离开应用默认暂停、需用户主动开启"，现按实现改为默认开启，见 `04` FR-PLAYER-008、`06` M5）。
+- 判定是纯规则 [BackgroundPlaybackPolicy.kt](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/domain/playback/BackgroundPlaybackPolicy.kt) 里的 `shouldPauseInBackground(enabled, inPictureInPicture) = !enabled && !inPictureInPicture`，可 JVM 单测。**画中画是唯一例外**：画面仍可见，暂停等于把 PiP 变成静态图（决策 #533"画中画仍属于画面可见状态，不套用音频-only 策略"）。
+- 暂停点在 `MainActivity.onStop()` 的**非配置变更分支**（`!isChangingConfigurations`）内、`super.onStop()` **之前**：放在 `super.onStop()` 前是因为此刻 `collectAsStateWithLifecycle` 的订阅还没停，读到的是用户刚看到的那份偏好，而不是 StateFlow 的初始默认值；旋转屏幕走配置变更分支，不会误暂停。**回到前台不自动恢复**：`onStart` 不调播放，要不要继续由用户决定。
+- 入口在「更多」托盘：`PlayerControlId.BACKGROUND_PLAYBACK`，图标 `YingLiIcon.BACKGROUND_PLAYBACK`（Tabler `Headphones`，"声音继续、画面不可见"比齿轮/扬声器更直观），开启时按钮为**实心**（`filled`）；文案「后台播放」（见 §5.14、§3.4）。
+
 ## 6. 控件布局编辑器
 
 Demo 的卡片式编辑方式保留：每区显示“已选数/上限”；已选卡片右下角是减号；可添加卡片右下角是加号；固定控件显示锁。
 
 ```kotlin
+enum class PlayerControlSurface(val capacity: Int) {
+    LANDSCAPE_TOP_RIGHT(4),
+    LANDSCAPE_BOTTOM_LEFT(4),
+    LANDSCAPE_BOTTOM_RIGHT(4),
+    PORTRAIT_BOTTOM(7),
+    TOOLS(8), // 竖屏底栏上方的「更多」托盘，见 §5.14
+}
+
 data class PlayerControlLayout(
-    val landscapeTop: List<PlayerControlId>,
-    val landscapeLeft: List<PlayerControlId>,
-    val landscapeRight: List<PlayerControlId>,
-    val portraitBottom: List<PlayerControlId>,
+    val slots: Map<PlayerControlSurface, List<PlayerControlId>>,
 )
 ```
 
-约束：同区不重复；超过上限拒绝；核心控件不可移除；只允许同区排序；恢复推荐一次性替换默认。布局写入 DataStore，坏数据过滤并补默认。
+（口径修正：原示例写 `landscapeTop/landscapeLeft/landscapeRight/portraitBottom` 四个字段，代码已收敛为「槽位 → 控件列表」的映射，并新增 `TOOLS` 槽位。）
+
+约束：同区不重复；超过上限拒绝；同名控件在同一朝向的不同槽位之间也不允许重复；固定控件（`fixed`，当前只有全屏）不可移除，编辑器显示锁而不是减号；编辑器只允许同区拖拽排序；恢复推荐一次性替换默认。坏数据（未知枚举名、超容量、同向重复）过滤后回落默认布局，不让读取抛异常。
+
+#### 持久化与版本迁移（新增控件前必读）
+
+编解码在 [PlayerControlLayoutCodec.kt](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/domain/playback/PlayerControlLayoutCodec.kt)（纯 Kotlin，不依赖 Android，可 JVM 驱动）：
+
+- 存储键：当前写入 `layout_v4`，读取顺序 `layout_v4 → layout_v3 → layout_v2`；旧键只读保留、永不删除，升级后第一次写入即落到新键。
+- **格式版本写在 value 前缀里**（`PlayerControlLayoutCodec.CURRENT_LAYOUT_VERSION`，当前为 `4`；前缀分隔符 `;`）。没有版本前缀的老值一律按版本 `0`（legacy）处理。版本进 value 而不是进 key 名，是因为 key 名只能表达"这份数据由哪一代实现写下"：用户在设置页动过一次布局，旧实现就会写满当时的最新键，"写入时的格式版本"和"是否已补齐该版本新增按钮"就再也分不开了。
+- 迁移规则（`migrate`）：只对 `dataVersion < generation <= currentVersion` 的代次按引入版本升序逐代 `ensureControls(TOOLS, …)` 回填；`dataVersion` 已等于当前版本 → 原样返回；`dataVersion` 比实现更新（例如从更高版本恢复）→ 原样返回，不认识的数据一律不动；legacy（版本 0）→ 登记表里所有不超过当前版本的代全部回填。
+- **用户主动移除的回填按钮不会被复活**：回填只认"比数据版本新的代"，已写进用户数据的旧代不会因后续提升版本号而重新补上，"永久移除"才成立。容量不足或与同方向槽位冲突时只跳过、不抛异常。
+- **新增一个低频控件的两步（缺一不可）**：① 在 `BACKFILLED_CONTROLS_BY_VERSION` 里为它所属的**新版本号**登记这些 id；② 把 `CURRENT_LAYOUT_VERSION` 提到那个版本号。漏做第 ② 步的后果是"该代按钮不出现"（立刻可见，因为回填的上界就是 `CURRENT_LAYOUT_VERSION`），而**不是**"用户移除被复活"（那才是静默错误）。只做第 ② 步则那一代没有任何登记，自然补不出东西。
+- 以上语义由 `PlayerControlLayoutCodecTest` 覆盖（版本前缀、legacy 回填、跨代只补新代、超出当前版本的登记不参与回填、容量不足不抛异常、更新版本数据原样返回）。
 
 Compose 使用 `LazyVerticalGrid/LazyRow` 与稳定 reorder 方案，同时提供 TalkBack 的“上移/下移”自定义语义。卡片最小高度 `56dp`，加减按钮触控区 `48dp`。
 
@@ -650,6 +694,8 @@ sealed interface PlayerEvent {
 | 删除按钮 | 200ms | scale `.55 -> 1` + alpha + 轻微旋转 |
 | Shorts 切换 | 320ms | 双层视频 translation |
 | 快退/快进反馈 | 1000ms 内 | alpha + 数值变化 |
+| 「更多」托盘展开/收起 | 框架默认（未显式指定） | fade + expandVertically 进场、fade + shrinkVertically 退场（见 §5.14） |
+| 镜像翻面 | 240ms | `animateFloatAsState(1 ↔ -1)`，经过 0 自然"压扁再展开"（见 §5.16） |
 
 尊重系统 `AnimatorDurationScale=0`；状态和点击顺序不能依赖动画回调。
 
@@ -681,7 +727,7 @@ YLShorts 的优先级只在 Shorts Feature 内计算，不能反向提升常规�
 - `PlaybackOrder/QueueNavigator`：四态、首尾、随机不重复、单曲重复、空队列拒绝。
 - `AbLoopReducer/Limiter`：A/B 顺序、最小一帧、Seek/Ended/切换视频。
 - `PlayerOverlayReducer`：3 秒隐藏（锁定态同样生效）、拖动不隐藏、锁定态单击只唤出解锁与播放/暂停入口、面板互斥。
-- `PlayerGestureRecognizer`：6/10dp 起手与主轴锁定、长按 360ms（移动 8dp 取消）、左右 45%＋中间 10% 分区、边缘 12dp 不接手势、双击分区、开关与锁定打断、左右映射互换。
+- `PlayerGestureRecognizer`：6/10dp 起手与主轴锁定、长按 360ms（移动 8dp 取消）、竖向音量/亮度按中线 50/50 二分且不做边缘避让（口径修正：原写「左右 45%＋中间 10% 分区、边缘 12dp 不接手势」）、双击分区（左右各 40%、中间 20%）、开关与锁定打断、左右映射互换。
 - `PlayerViewModel` 手势：拖动只预览松手提交并受 AB 钳制、临时倍速不写媒体偏好且恢复先前倍速、亮度退出播放页恢复。
 - `ScreenshotReducer`：Armed/Capturing/Saved/Failed、3 秒超时、点击暂停倒计时、删除。
 - `TrackPreference`：每媒体覆盖全局、坏值回退、速度和比例边界。
@@ -819,7 +865,7 @@ Demo 明确使用下列视觉事实，正式实现应转换为 Compose `PlayerTo
 - 中央播放按钮约 `70dp`，白色半透明背景、`1dp` 边框和阴影，悬停/按下状态只做轻微放大，不改变布局尺寸。
 - 横屏底部快捷控件约 `38dp`，主播放按钮约 `42dp`，圆角约 `7dp`；激活状态使用强调色容器而不是改变整个播放器色调。播放列表入口固定使用强调色。
 - 竖屏顶部安全区后的起始内边距约 `44dp`，标题最大宽约 `230dp`，顶部按钮视觉尺寸约 `38dp`。
-- 竖屏底部浮岛左右 `14dp`、底部 `18dp`，内边距约 `13dp 13dp 12dp`，圆角 `10dp`，半透明深色背景并带约 `12dp` 模糊。第一行是播放键和最多六个快捷槽，第二行是当前时间、进度条和总时长；竖屏不显示横屏底栏，默认不把音轨/字幕槽塞入顶部。
+- 竖屏底部浮岛左右 `14dp`、底部 `18dp`，内边距约 `13dp 13dp 12dp`，圆角 `10dp`，半透明深色背景并带约 `12dp` 模糊。自下而上是：按钮行（`PlayerControlSurface.PORTRAIT_BOTTOM` 槽位，默认 7 个、最右是「更多」）、「更多」托盘（展开时插在按钮行上方）、进度行（当前时间、进度条和总时长）；竖屏不显示横屏底栏，默认不把音轨/字幕槽塞入顶部（口径修正：原写「第一行是播放键和最多六个快捷槽，第二行是当前时间、进度条和总时长」，顺序与槽位数均已变化，见 §4.2、§5.14）。
 - 所有按钮触控区域仍必须至少 `48dp`；上述尺寸是视觉尺寸，触控区可以通过透明外层扩大。
 
 ### 18.5 进度条、元数据和 AB 实时同步

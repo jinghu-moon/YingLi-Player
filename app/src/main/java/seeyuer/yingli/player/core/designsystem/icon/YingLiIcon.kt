@@ -26,8 +26,6 @@ import composeicons.tabler.outline.Eye
 import composeicons.tabler.outline.EyeOff
 import composeicons.tabler.outline.FileText
 import composeicons.tabler.outline.Folder
-import composeicons.tabler.outline.FlipHorizontal
-import composeicons.tabler.outline.FlipVertical
 import composeicons.tabler.outline.Ban
 import composeicons.tabler.outline.GripVertical
 import composeicons.tabler.outline.Headphones
@@ -108,8 +106,8 @@ enum class YingLiIcon(
     CROP(IconProvider.TABLER),
     STRETCH(IconProvider.TABLER),
     // 镜像翻转：左右/上下成对的方向变换图标，与旋转、缩放同属画面变换一族。
-    FLIP_HORIZONTAL(IconProvider.TABLER),
-    FLIP_VERTICAL(IconProvider.TABLER),
+    FLIP_HORIZONTAL(IconProvider.LOCAL_VECTOR),
+    FLIP_VERTICAL(IconProvider.LOCAL_VECTOR),
     EXIT_FULLSCREEN(IconProvider.TABLER),
     SCREENSHOT(IconProvider.TABLER),
     FAVORITE(IconProvider.TABLER),
@@ -176,9 +174,10 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.BRIGHTNESS -> TablerIcons.Outline.Brightness
         YingLiIcon.CROP -> TablerIcons.Outline.Crop
         YingLiIcon.STRETCH -> TablerIcons.Outline.ArrowsHorizontal
-        // 镜像翻转与旋转/缩放同属"画面方向变换"：用 Tabler 的翻转字形，左右与上下各一个。
-        YingLiIcon.FLIP_HORIZONTAL -> TablerIcons.Outline.FlipHorizontal
-        YingLiIcon.FLIP_VERTICAL -> TablerIcons.Outline.FlipVertical
+        // 镜像翻转与旋转/缩放同属"画面方向变换"：字形以设计资产 design/assets/icons/flip-*.svg 为准，
+        // 逐路径移植，避免图标库版本漂移改变已定稿的字形。
+        YingLiIcon.FLIP_HORIZONTAL -> YingLiCustomIcons.FlipHorizontal
+        YingLiIcon.FLIP_VERTICAL -> YingLiCustomIcons.FlipVertical
         YingLiIcon.EXIT_FULLSCREEN -> TablerIcons.Outline.Minimize
         YingLiIcon.SCREENSHOT -> TablerIcons.Outline.Aperture
         YingLiIcon.FAVORITE -> TablerIcons.Outline.Star

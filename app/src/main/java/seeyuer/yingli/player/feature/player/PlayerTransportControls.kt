@@ -455,6 +455,7 @@ private fun PlayerShortcut(
         PlayerControlId.PIP -> if (allowPictureInPicture) onPictureInPicture else null
         PlayerControlId.ORIENTATION -> onRotateVideo
         PlayerControlId.LOCK -> onToggleLock
+        PlayerControlId.SETTINGS -> onOpenSettings
         PlayerControlId.PREVIOUS -> onPrevious
         PlayerControlId.NEXT -> onNext
         PlayerControlId.FULLSCREEN -> onToggleFullscreen
@@ -475,6 +476,7 @@ private fun PlayerShortcut(
         PlayerControlId.FULLSCREEN -> if (state.isFullscreen) YingLiIcon.EXIT_FULLSCREEN else YingLiIcon.FULLSCREEN
         // 锁定按钮的图标表达"当前状态"：未锁定是开锁，锁定后是闭合锁。
         PlayerControlId.LOCK -> if (state.overlay.locked) YingLiIcon.LOCK else YingLiIcon.UNLOCK
+        PlayerControlId.SETTINGS -> YingLiIcon.SETTINGS
         PlayerControlId.PREVIOUS -> YingLiIcon.PREVIOUS
         PlayerControlId.NEXT -> YingLiIcon.NEXT
     }
@@ -501,6 +503,7 @@ private fun PlayerShortcut(
         )
         // 图标表达状态，文案表达动作：未锁定点击后锁定，锁定后点击解锁。
         PlayerControlId.LOCK -> stringResource(if (state.overlay.locked) R.string.player_unlock else R.string.player_lock)
+        PlayerControlId.SETTINGS -> "播放设置"
         PlayerControlId.PREVIOUS -> "上一项"
         PlayerControlId.NEXT -> "下一项"
         PlayerControlId.FULLSCREEN -> stringResource(

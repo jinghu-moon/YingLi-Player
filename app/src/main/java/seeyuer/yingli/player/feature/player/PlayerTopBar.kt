@@ -105,6 +105,7 @@ internal fun PlayerTopBar(
                     PlayerControlId.AB_LOOP -> onOpenAbTool
                     PlayerControlId.PIP -> onPictureInPicture
                     PlayerControlId.LOCK -> onToggleLock
+                    PlayerControlId.SETTINGS -> onOpenSettings
                     PlayerControlId.PREVIOUS -> onPrevious
                     PlayerControlId.NEXT -> onNext
                     else -> onOpenSettings
@@ -119,6 +120,7 @@ internal fun PlayerTopBar(
                     PlayerControlId.AB_LOOP -> YingLiIcon.REPLAY
                     PlayerControlId.PIP -> YingLiIcon.PICTURE_IN_PICTURE
                     PlayerControlId.LOCK -> YingLiIcon.LOCK
+                    PlayerControlId.SETTINGS -> YingLiIcon.SETTINGS
                     PlayerControlId.PREVIOUS -> YingLiIcon.PREVIOUS
                     PlayerControlId.NEXT -> YingLiIcon.NEXT
                     else -> YingLiIcon.SETTINGS

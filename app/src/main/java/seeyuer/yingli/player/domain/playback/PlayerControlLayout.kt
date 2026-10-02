@@ -27,6 +27,7 @@ enum class PlayerControlId(val fixed: Boolean = false) {
     PIP,
     ORIENTATION,
     LOCK,
+    SETTINGS,
     FULLSCREEN(true),
 }
 
@@ -95,12 +96,12 @@ data class PlayerControlLayout(
 
     companion object {
         fun defaultSlots() = mapOf(
-            PlayerControlSurface.LANDSCAPE_TOP_RIGHT to listOf(PlayerControlId.PLAYLIST, PlayerControlId.AUDIO, PlayerControlId.SUBTITLE),
+            PlayerControlSurface.LANDSCAPE_TOP_RIGHT to listOf(PlayerControlId.PLAYLIST, PlayerControlId.AUDIO, PlayerControlId.SUBTITLE, PlayerControlId.SETTINGS),
             PlayerControlSurface.LANDSCAPE_BOTTOM_LEFT to listOf(PlayerControlId.ORDER, PlayerControlId.SPEED),
             PlayerControlSurface.LANDSCAPE_BOTTOM_RIGHT to listOf(PlayerControlId.PIP, PlayerControlId.FULLSCREEN, PlayerControlId.LOCK),
             PlayerControlSurface.PORTRAIT_BOTTOM to listOf(
                 PlayerControlId.SPEED,
-                PlayerControlId.ORDER,
+                PlayerControlId.SETTINGS,
                 PlayerControlId.SCALE,
                 PlayerControlId.ORIENTATION,
                 PlayerControlId.PIP,

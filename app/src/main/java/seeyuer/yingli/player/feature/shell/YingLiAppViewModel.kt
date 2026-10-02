@@ -17,6 +17,7 @@ import seeyuer.yingli.player.domain.navigation.GlobalAppAction
 import seeyuer.yingli.player.domain.navigation.NavigationState
 import seeyuer.yingli.player.domain.navigation.RootDestination
 import seeyuer.yingli.player.domain.navigation.SavedStateNavigationStateStore
+import seeyuer.yingli.player.domain.playback.PlaybackQueueSource
 import seeyuer.yingli.player.domain.pagestate.PageViewStateStore
 import seeyuer.yingli.player.domain.pagestate.SavedStatePageViewStateStore
 
@@ -37,7 +38,7 @@ class YingLiAppViewModel(
 
     fun openGlobalAction(action: GlobalAppAction) = navigationStore.openGlobalAction(action)
 
-    fun openPlayer(mediaId: String) = navigationStore.openPlayer(mediaId)
+    fun openPlayer(mediaId: String, queueSource: PlaybackQueueSource? = null) = navigationStore.openPlayer(mediaId, queueSource)
 
     fun openVault() = navigationStore.openVault()
 

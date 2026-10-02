@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  画面需要被视图层变换（旋转）时使用的播放输出。
+  SurfaceView 的内容由系统单独合成，不跟随视图层级变换，只会看到画框在转、画面被拉伸，
+  因此这里改用 TextureView；代价是额外一次 GPU 拷贝且 HDR 不能直通，
+  所以只在真的需要变换时才用这份布局（见 Media3VideoSurface）。
+-->
+<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view" />

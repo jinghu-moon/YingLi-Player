@@ -1,5 +1,9 @@
 package seeyuer.yingli.player.core.designsystem.theme
 
+import androidx.compose.foundation.Indication
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -9,6 +13,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -144,7 +150,11 @@ fun YingLiTheme(
         components = YingLiComponentTokenDefaults.Default,
     )
 
-    CompositionLocalProvider(LocalYingLiTheme provides values) {
+    CompositionLocalProvider(
+        LocalYingLiTheme provides values,
+        // No ripple/pressed flash; state feedback comes from each control's own visuals.
+        LocalIndication provides NoIndication,
+    ) {
         MaterialTheme(
             colorScheme = scheme,
             typography = YingLiTypography,
@@ -176,3 +186,12 @@ private val YingLiShapes = Shapes(
     large = YingLiComponentTokenDefaults.Default.componentCorner,
     extraLarge = YingLiComponentTokenDefaults.Default.componentCorner,
 )
+
+private object NoIndication : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode =
+        object : Modifier.Node() {}
+
+    override fun equals(other: Any?): Boolean = other === this
+
+    override fun hashCode(): Int = 0
+}

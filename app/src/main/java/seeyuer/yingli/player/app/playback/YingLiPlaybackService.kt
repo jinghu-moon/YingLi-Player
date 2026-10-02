@@ -30,6 +30,14 @@ import seeyuer.yingli.player.domain.playback.PlaybackProgressSample
 import seeyuer.yingli.player.domain.playback.PlaybackProgressWritePolicy
 import seeyuer.yingli.player.domain.playback.ProgressWriteDecision
 import seeyuer.yingli.player.domain.playback.ProgressWriteReason
+import seeyuer.yingli.player.domain.playback.PlaybackOpenRequest
+import seeyuer.yingli.player.domain.playback.PlaybackSessionId
+import seeyuer.yingli.player.domain.playback.PlaybackSourceResolver
+import seeyuer.yingli.player.domain.playback.SourceAccessHandleId
+import seeyuer.yingli.player.domain.playback.ElapsedTimeSource
+import seeyuer.yingli.player.domain.playback.PlaybackSourceHandle
+import seeyuer.yingli.player.domain.security.VaultItemId
+import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.data.security.VaultAwareDataSource
 import seeyuer.yingli.player.engine.media3.PlaybackMediaMetadata
 
@@ -39,6 +47,8 @@ class YingLiPlaybackService : MediaSessionService() {
     private lateinit var application: YingLiApplication
     private lateinit var serviceScope: CoroutineScope
     private lateinit var writeScope: CoroutineScope
+    private lateinit var sessionRuntime: PlaybackSessionRuntime
+    private lateinit var sessionEngine: ServicePlaybackEngine
     private val progressPolicy = PlaybackProgressWritePolicy()
     private var periodicProgressJob: Job? = null
     private var historyRecordedMediaId: String? = null
@@ -83,13 +93,66 @@ class YingLiPlaybackService : MediaSessionService() {
             it.setHandleAudioBecomingNoisy(true)
             it.addListener(listener)
         }
+        val sourceRegistry = SourceHandleRegistry()
+        sessionEngine = ServicePlaybackEngine(player, sourceRegistry)
+        val resolver = PlaybackSourceResolver { request: PlaybackOpenRequest ->
+            runCatching {
+                sourceRegistry.resolvePending(request)?.let { return@runCatching Result.success(it) }
+                val resolved = application.mediaContainer.playbackSourceRepository.resolve(
+                    request.mediaId,
+                    request.sourceContext,
+                    request.incognito,
+                ) ?: return@runCatching Result.failure<seeyuer.yingli.player.domain.playback.PlaybackSourceHandle>(
+                    IllegalStateException("SOURCE_NOT_FOUND"),
+                )
+                val accessId = "${request.sessionId.value}:${request.mediaId.value}"
+                sourceRegistry.put(accessId, resolved.uri)
+                Result.success(
+                    seeyuer.yingli.player.domain.playback.PlaybackSourceHandle(
+                        mediaId = request.mediaId,
+                        locationId = resolved.request.locationId,
+                        accessHandleId = SourceAccessHandleId(accessId),
+                        displayName = resolved.title,
+                        durationMillis = resolved.durationMillis,
+                        width = resolved.width,
+                        height = resolved.height,
+                        fileSizeBytes = resolved.fileSizeBytes,
+                        mimeType = resolved.mimeType,
+                    ),
+                )
+            }.getOrElse { Result.failure(it) }
+        }
+        sessionRuntime = PlaybackSessionRuntime(
+            resolver = resolver,
+            engine = sessionEngine,
+            dispatchers = application.container.dispatchers,
+            sessionId = PlaybackSessionId("service-${hashCode()}"),
+            speedControl = sessionEngine,
+            transformControl = sessionEngine,
+            elapsedTimeSource = ElapsedTimeSource(android.os.SystemClock::elapsedRealtime),
+            vaultResolver = { itemId: VaultItemId, displayTitle: String ->
+                val mediaId = MediaItemId("vault-${itemId.value}")
+                val accessId = "${sessionRuntimeId()}:${mediaId.value}"
+                sourceRegistry.put(accessId, "vault://${itemId.value}")
+                Result.success(
+                    PlaybackSourceHandle(
+                        mediaId = mediaId,
+                        locationId = MediaLocationId("vault-${itemId.value}"),
+                        accessHandleId = SourceAccessHandleId(accessId),
+                        displayName = displayTitle,
+                        durationMillis = null,
+                        mimeType = "video/*",
+                    ),
+                )
+            },
+        )
         val sessionActivity = PendingIntent.getActivity(
             this,
             0,
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        mediaSession = MediaSession.Builder(this, player)
+        mediaSession = MediaSession.Builder(this, MediaSessionPlayerAdapter(player, sessionRuntime, sourceRegistry))
             .setSessionActivity(sessionActivity)
             .build()
     }
@@ -105,6 +168,7 @@ class YingLiPlaybackService : MediaSessionService() {
         stopPeriodicProgress()
         val finalWrite = persistProgress(ProgressWriteReason.STOPPED)
         mediaSession.release()
+        sessionRuntime.close()
         player.removeListener(listener)
         player.release()
         serviceScope.cancel()
@@ -201,4 +265,6 @@ class YingLiPlaybackService : MediaSessionService() {
         const val PROGRESS_INTERVAL_MILLIS = 5_000L
         const val MINIMUM_HISTORY_POSITION_MILLIS = 10_000L
     }
+
+    private fun sessionRuntimeId(): String = "service-${hashCode()}"
 }

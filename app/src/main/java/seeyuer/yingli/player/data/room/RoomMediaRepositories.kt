@@ -16,6 +16,7 @@ class RoomMediaSourceRepository(private val dao: MediaSourceDao) : MediaSourceRe
     override suspend fun upsert(source: MediaSource) = dao.upsert(source.toEntity())
     override suspend fun markAccessState(sourceId: MediaSourceId, state: MediaSourceAccessState) =
         dao.updateAccessState(sourceId.value, state.name)
+
 }
 
 class RoomMediaCatalogRepository(private val database: YingLiDatabase) : MediaCatalogRepository {
@@ -103,13 +104,13 @@ class RoomMediaCatalogRepository(private val database: YingLiDatabase) : MediaCa
 
 private fun MediaSource.toEntity() = MediaSourceEntity(
     id.value, displayName, rootUri.value, mode.name, volumeId?.value, accessState.name,
-    includeHidden, lastSyncedEpochMillis, mediaCount,
+    includeHidden, lastSyncedEpochMillis, mediaCount, includeNomedia,
 )
 
 private fun MediaSourceEntity.toModel() = MediaSource(
     MediaSourceId(id), displayName, MediaUri(rootUri), MediaSourceMode.valueOf(mode),
     volumeId?.let(::VolumeId), MediaSourceAccessState.valueOf(accessState), includeHidden,
-    lastSyncedEpochMillis, mediaCount,
+    lastSyncedEpochMillis, mediaCount, includeNomedia,
 )
 
 private fun MediaItem.toEntity() = MediaItemEntity(id.value, title, playbackPositionMillis, completed)

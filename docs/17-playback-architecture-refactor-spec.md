@@ -890,16 +890,20 @@ interface ScreenshotPreviewController {
 | 进度条 | `Seek(position, DRAG_END)` | 拖动只更新 preview；松手才提交；AB 时仅允许 `[A,B]` |
 | 播放顺序胶囊 | `SetOrder` | `SEQUENCE/SHUFFLE/QUEUE_REPEAT/SINGLE_REPEAT` 四态，DataStore 持久化 |
 | 倍速 | `SetSpeed` | 领域固定值校验；后端拒绝不更新 UI；按媒体保存偏好 |
-| 画面比例 | `SetScale` | Media3 映射 resize mode；不支持 ORIGINAL 时返回降级结果 |
+| 画面比例 | `SetScale` | Media3 映射 resize mode；不支持 ORIGINAL 时返回降级结果；底栏按钮一次点按循环三态并走统一瞬时反馈 |
 | 音轨 | `SelectTrack(Audio)` | 显示真实轨道；按 fingerprint 恢复；单轨不伪造可选列表 |
 | 字幕 | `SelectTrack(Subtitle)` | 包含关闭项；ASS 能力由后端报告；切换失败反馈稳定错误 |
 | 截图胶囊 | `FrameStepControl` + `SnapshotControl` | Ready/Paused/Playing 都可；不以“未播放”作为失败条件 |
 | 截图预览 | `ScreenshotPreviewState` | 420ms 缩小到左上角、3 秒倒计时、点击暂停、删除按钮动画；预览和文件删除分开授权 |
 | AB 循环 | `SetAbPoint/ClearAb` | A/B marker 是时间线投影；B 到达由 Runtime 回跳 A；拖动重新定义范围 |
 | PiP | `WindowPlaybackGateway.enterPictureInPicture` | 系统确认后更新状态；Vault/无能力时禁用；MediaSession 不停止 |
+| 画面旋转 | 视图层 `VideoRotation` + 按媒体偏好 | 四态 0/90/180/270，视图层 `graphicsLayer` 变换并带过渡动画；不进播放管线，不请求系统方向 |
 | 旋转 | `requestOrientation` | Activity 请求系统方向，真实配置变化回流；失败不改变已确认状态 |
-| 全屏 | `setFullscreen` | WindowInsets/system bars 的真实状态；不使用浏览器 Fullscreen API |
-| 锁定 | 页面 `PlayerOverlayReducer` | 只影响页面控件可见性；不暂停会话、不改变 Engine |
+| 全屏 | `setFullscreen` + `requestOrientation` | WindowInsets/system bars 的真实状态；全屏语义由 `FullscreenPolicy` 决定（竖屏横版→横屏全屏，竖屏竖版→填满，横屏→沉浸），失败不乐观更新；不使用浏览器 Fullscreen API |
+| 锁定 | 页面 `PlayerOverlayReducer` | 只影响页面控件可见性；不暂停会话、不改变 Engine；锁定态保留右下角解锁与播放/暂停入口（单击唤出、3 秒自动隐藏），锁定/解锁走统一瞬时反馈，画面手势全部禁用但音量键仍有效 |
+| 音量手势 | `DeviceControlGateway.setVolume` | 走**系统媒体流**（`STREAM_MUSIC`）：手势与音量键必须是同一套音量；读取用 `getStreamVolume`，写入失败不改 UI；UI 只持有 0f..1f 归一化值 |
+| 亮度手势 | `DeviceControlGateway.setBrightness` / `resetBrightness` | 走**窗口级 `screenBrightness`**（0f..1f，`BRIGHTNESS_OVERRIDE_NONE` 表示跟随系统）：不需要 `WRITE_SETTINGS`，不改系统设置，退出播放页必须恢复到系统亮度 |
+| 长按临时倍速 | `beginTemporarySpeed` / `endTemporarySpeed` | 走独立通道，**不写入按媒体的倍速偏好**（`SetSpeed` 会持久化，不能用来实现临时倍速）；松手恢复到按下前的倍速，页面关闭时收尾 |
 | 更多/设置 | 面板事件 + 会话命令 | 面板互斥由页面状态机，实际偏好通过 Runtime/DataStore |
 | 播放列表 | `snapshot.queue` + QueueRepository | Room 快照；排序、删除、选择项由 Runtime 原子更新 |
 | 视频信息 | `MediaInfoRepository` 查询 | UI 展示媒体事实；不从 Engine 反推文件路径 |
@@ -920,7 +924,7 @@ ShortsRoute (一级页面)
 横屏/竖屏：
 
 - 共享同一个 Runtime、媒体会话、队列、AB 和后端。
-- 横屏核心交通控件固定可见；竖屏使用悬浮栏和最多 6 个快捷槽。
+- 横屏核心交通控件固定可见；竖屏使用悬浮栏和最多 7 个快捷槽（默认：速度、播放顺序、画面比例、旋转、PiP、全屏、锁定）。
 - 方向、全屏和 Insets 属于窗口 gateway，不创建第二个播放会话。
 
 YLShorts：
@@ -1001,7 +1005,20 @@ data class AbLoopState(
 
 ### 14.2 DataStore
 
-DataStore 只保存小型偏好：默认倍速、默认画面模式、播放顺序默认值、后台音频、自动 PiP、长按倍速、常规播放器快捷槽布局和 Shorts 快捷槽布局。坏值必须回退领域默认值。
+DataStore 只保存小型偏好：默认倍速、默认画面模式、播放顺序默认值、后台音频、自动 PiP、常规播放器快捷槽布局和 Shorts 快捷槽布局，以及画面手势设置。坏值必须回退领域默认值。
+
+画面手势设置字段（与 `UserPreferences` 一一对应）：
+
+| 字段 | 默认值 | 取值与说明 |
+| --- | --- | --- |
+| `gestureSeekEnabled` | `true` | 水平拖动调整进度，可单独关闭 |
+| `gestureVolumeEnabled` | `true` | 垂直手势调音量（系统媒体流），可单独关闭 |
+| `gestureBrightnessEnabled` | `true` | 垂直手势调亮度（窗口级），可单独关闭 |
+| `gestureZoomEnabled` | `true` | 双指捏合缩放，可单独关闭 |
+| `gestureLeftSideIsVolume` | `true` | 左右映射：默认左音量、右亮度；关闭后互换 |
+| `gestureDoubleTapSeekMillis` | `10000` | 只接受 `5000/10000/15000/30000`，越界回退默认 |
+| `gestureSwipeDownToExitEnabled` | `false` | 下滑退出只作可选手势 |
+| `gestureLongPressSpeed` | `2f` | 长按临时倍速，只接受 `1.5/2/3`，越界回退默认；**长按倍速已可配置**，且不写入按媒体的倍速偏好 |
 
 ### 14.3 不持久化内容
 

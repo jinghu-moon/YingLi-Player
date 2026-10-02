@@ -4,10 +4,12 @@ import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import seeyuer.yingli.player.domain.playback.PlaybackQueueSource
 
 enum class RootDestination {
     HOME,
     LIBRARY,
+    SHORTS,
     ORGANIZE,
     PROCESSING,
 }
@@ -37,6 +39,7 @@ sealed interface AppRoute {
     data class Player(
         val mediaId: String,
         val source: RootDestination,
+        val queueSource: PlaybackQueueSource? = null,
     ) : AppRoute
 
     data class VaultPlayer(val itemId: String) : AppRoute
@@ -54,7 +57,7 @@ data class NavigationState(
         get() = overlay ?: stacks[currentRoot].orEmpty().lastOrNull() ?: AppRoute.Root(currentRoot)
 
     val primaryDestinations: List<RootDestination>
-        get() = listOf(RootDestination.HOME, RootDestination.LIBRARY, RootDestination.ORGANIZE)
+        get() = listOf(RootDestination.HOME, RootDestination.LIBRARY, RootDestination.SHORTS, RootDestination.ORGANIZE)
 
     val showPrimaryNavigation: Boolean
         get() = currentRoute !is AppRoute.Player && currentRoute !is AppRoute.VaultPlayer &&
@@ -78,7 +81,7 @@ interface NavigationStateStore {
 
     fun openDetail(mediaId: String)
 
-    fun openPlayer(mediaId: String)
+    fun openPlayer(mediaId: String, queueSource: PlaybackQueueSource? = null)
 
     fun openAppLock()
 
@@ -125,9 +128,9 @@ class SavedStateNavigationStateStore(
         push(AppRoute.Detail(mediaId = mediaId, source = mutableState.value.currentRoot))
     }
 
-    override fun openPlayer(mediaId: String) {
+    override fun openPlayer(mediaId: String, queueSource: PlaybackQueueSource?) {
         if (!mediaId.isStableRouteId()) return
-        push(AppRoute.Player(mediaId = mediaId, source = mutableState.value.currentRoot))
+        push(AppRoute.Player(mediaId = mediaId, source = mutableState.value.currentRoot, queueSource = queueSource))
     }
 
     override fun openAppLock() {
@@ -156,6 +159,7 @@ class SavedStateNavigationStateStore(
         when (route.trim('/')) {
             "home" -> selectRoot(RootDestination.HOME)
             "library" -> selectRoot(RootDestination.LIBRARY)
+            "shorts" -> selectRoot(RootDestination.SHORTS)
             "organize" -> selectRoot(RootDestination.ORGANIZE)
             "processing" -> openGlobalAction(GlobalAppAction.OPEN_PROCESSING)
             "settings" -> openGlobalAction(GlobalAppAction.OPEN_SETTINGS)
@@ -238,7 +242,13 @@ class SavedStateNavigationStateStore(
         AppRoute.HomeStats -> "home-stats"
         AppRoute.Vault -> "vault"
         is AppRoute.Detail -> "detail:${source.name}:$mediaId"
-        is AppRoute.Player -> "player:${source.name}:$mediaId"
+        is AppRoute.Player -> buildString {
+            append("player:").append(source.name).append(':').append(mediaId)
+            this@encode.queueSource?.let { queue ->
+                append(':').append(queue.browseMode.name)
+                append(':').append(encodeRoutePart(queue.currentPath))
+            }
+        }
         is AppRoute.VaultPlayer -> "vault-player:$itemId"
         AppRoute.AppLock -> "lock"
     }
@@ -255,8 +265,20 @@ class SavedStateNavigationStateStore(
                 segments[1].toRootOrNull()?.let(AppRoute::Root)
             segments.size == 3 && segments[0] == "detail" && segments[2].isStableRouteId() ->
                 segments[1].toRootOrNull()?.let { source -> AppRoute.Detail(segments[2], source) }
-            segments.size == 3 && segments[0] == "player" && segments[2].isStableRouteId() ->
-                segments[1].toRootOrNull()?.let { source -> AppRoute.Player(segments[2], source) }
+            segments.size >= 3 && segments[0] == "player" && segments[2].isStableRouteId() -> {
+                val source = segments[1].toRootOrNull()
+                val queueSource = if (segments.size >= 5) {
+                    val mode = runCatching { seeyuer.yingli.player.domain.library.LibraryBrowseMode.valueOf(segments[3]) }.getOrNull()
+                    mode?.let {
+                        if (it == seeyuer.yingli.player.domain.library.LibraryBrowseMode.ALL_VIDEOS) {
+                            PlaybackQueueSource.allVideos()
+                        } else {
+                            runCatching { PlaybackQueueSource.folderTree(decodeRoutePart(segments.drop(4).joinToString(":"))) }.getOrNull()
+                        }
+                    }
+                } else null
+                source?.let { AppRoute.Player(segments[2], it, queueSource) }
+            }
             segments.size == 2 && segments[0] == "vault-player" && segments[1].isStableRouteId() ->
                 AppRoute.VaultPlayer(segments[1])
             else -> null
@@ -267,6 +289,14 @@ class SavedStateNavigationStateStore(
         RootDestination.entries.firstOrNull { it.name == this }
 
     private fun String.isStableRouteId(): Boolean = matches(STABLE_ID_PATTERN)
+
+    private fun encodeRoutePart(value: String): String = value
+        .replace("%", "%25")
+        .replace(":", "%3A")
+
+    private fun decodeRoutePart(value: String): String = value
+        .replace("%3A", ":")
+        .replace("%25", "%")
 
     private companion object {
         const val CURRENT_ROOT_KEY = "navigation.current_root"

@@ -15,6 +15,7 @@ data class MediaSourceEntity(
     val includeHidden: Boolean,
     val lastSyncedEpochMillis: Long?,
     val mediaCount: Int,
+    val includeNomedia: Boolean = false,
 )
 
 @Entity(

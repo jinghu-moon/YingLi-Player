@@ -4,8 +4,12 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
@@ -104,7 +108,33 @@ class MediaHomeStateTest {
         assert(statsTop < recentTop)
         composeRule.onNodeWithText("继续观看").assertDoesNotExist()
         composeRule.onNodeWithText("我的合集").assertExists()
-        composeRule.onNodeWithText("需要处理").assertExists()
+        composeRule.onNodeWithTag(HomeTestTags.DASHBOARD).performScrollToNode(hasText("需要处理"))
+        composeRule.onNodeWithText("需要处理").assertIsDisplayed()
+    }
+
+    @Test
+    fun mediaOverviewHeaderActionOpensStatistics() {
+        var opened = false
+        composeRule.setContent {
+            YingLiTheme(darkTheme = false) {
+                HomeScreen(
+                    state = MediaLibraryUiState(
+                        onboarding = false,
+                        items = listOf(MediaItem(MediaItemId("item_1"), "首页测试")),
+                    ),
+                    onRecommendedSource = {},
+                    onSafSource = {},
+                    onSkip = {},
+                    onRescan = {},
+                    dashboardState = dashboard(),
+                    onOpenStats = { opened = true },
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("打开媒体统计").performClick()
+
+        assertTrue(opened)
     }
 
     @Test

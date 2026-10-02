@@ -42,7 +42,7 @@ import seeyuer.yingli.player.testing.SequenceIdGenerator
 @OptIn(ExperimentalCoroutinesApi::class)
 class DefaultMediaScannerTest {
     @Test
-    fun `incremental scan links a second physical location to the existing logical item`() = runTest {
+    fun `incremental scan keeps a second physical location as a separate item`() = runTest {
         val existingLocation = location("location_existing", "content://media/video/existing")
         val existingItem = MediaItem(MediaItemId("item_existing"), "影片")
         val catalog = FakeCatalogRepository(CatalogSnapshot(
@@ -56,13 +56,13 @@ class DefaultMediaScannerTest {
 
         val mutation = catalog.mutations.single()
         val newLocation = mutation.upsertLocations.single()
-        assertEquals(existingItem.id, mutation.links.getValue(newLocation.id))
+        assertTrue(mutation.links.getValue(newLocation.id) != existingItem.id)
         assertFalse(newLocation.id == existingLocation.id)
         assertEquals(1, result.added)
     }
 
     @Test
-    fun `same scan can link matching physical locations to one logical item`() = runTest {
+    fun `same scan keeps matching physical locations as separate items`() = runTest {
         val catalog = FakeCatalogRepository(CatalogSnapshot(emptyList(), emptyList(), emptyMap()))
         val scanner = scanner(catalog, listOf(
             MediaDiscoveryEvent.Candidate(candidate("first")),
@@ -73,7 +73,7 @@ class DefaultMediaScannerTest {
 
         val mutation = catalog.mutations.single()
         assertEquals(2, mutation.upsertLocations.size)
-        assertEquals(1, mutation.links.values.toSet().size)
+        assertEquals(2, mutation.links.values.toSet().size)
     }
 
     @Test
@@ -116,7 +116,7 @@ class DefaultMediaScannerTest {
     }
 
     @Test
-    fun `full content hash runs only for conflicting identity candidates`() = runTest {
+    fun `content hash does not trigger identity merging`() = runTest {
         val first = location("location_1", "content://media/video/one")
         val second = location("location_2", "content://media/video/two")
         val catalog = FakeCatalogRepository(CatalogSnapshot(
@@ -142,10 +142,9 @@ class DefaultMediaScannerTest {
         scanner.scan(ScanRequest(setOf(SOURCE.id)))
 
         val mutation = catalog.mutations.single()
-        assertEquals(MediaItemId("item_1"), mutation.links.values.single())
-        assertEquals("same-content", mutation.upsertLocations.single().contentHash)
-        assertEquals(3, hashes.size)
-        assertEquals(2, mutation.evidenceUpdates.size)
+        assertTrue(mutation.links.values.single() !in setOf(MediaItemId("item_1"), MediaItemId("item_2")))
+        assertEquals(0, hashes.size)
+        assertEquals(0, mutation.evidenceUpdates.size)
     }
 
     @Test
@@ -184,7 +183,7 @@ class DefaultMediaScannerTest {
     }
 
     @Test
-    fun `ten thousand relocated locations use bounded identity buckets`() = runTest {
+    fun `ten thousand relocated locations remain separate without metadata merging`() = runTest {
         val count = 10_000
         val locations = (0 until count).map { index ->
             location("location_$index", "file:///storage/emulated/0/movie_$index.mp4").copy(
@@ -209,7 +208,7 @@ class DefaultMediaScannerTest {
         val elapsed = measureTimeMillis { scanner.scan(ScanRequest(setOf(SOURCE.id))) }
 
         assertEquals(count, catalog.mutations.sumOf { it.upsertLocations.size })
-        assertEquals(items.map(MediaItem::id).toSet(), catalog.mutations.flatMap { it.links.values }.toSet())
+        assertEquals(count, catalog.mutations.flatMap { it.links.values }.toSet().size)
         assertTrue("$count relocated locations took ${elapsed}ms", elapsed < 3_000)
     }
 

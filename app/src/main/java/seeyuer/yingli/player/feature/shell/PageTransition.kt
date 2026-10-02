@@ -60,6 +60,7 @@ private fun AppRoute.rootDestinationOrNull(): RootDestination? = when (this) {
 private fun RootDestination.primaryIndex(): Int = when (this) {
     RootDestination.HOME -> 0
     RootDestination.LIBRARY -> 1
-    RootDestination.ORGANIZE -> 2
-    RootDestination.PROCESSING -> 3
+    RootDestination.SHORTS -> 2
+    RootDestination.ORGANIZE -> 3
+    RootDestination.PROCESSING -> 4
 }

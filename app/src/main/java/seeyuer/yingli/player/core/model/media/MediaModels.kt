@@ -59,6 +59,7 @@ data class MediaSource(
     val includeHidden: Boolean = false,
     val lastSyncedEpochMillis: Long? = null,
     val mediaCount: Int = 0,
+    val includeNomedia: Boolean = false,
 ) {
     init {
         require(displayName.isNotBlank())

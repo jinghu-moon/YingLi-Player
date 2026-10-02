@@ -16,6 +16,7 @@ data class YingLiComponentTokens(
     val pagePadding: Dp,
     val sectionSpacing: Dp,
     val itemSpacing: Dp,
+    val cardHeaderSpacing: Dp,
     val compactCorner: RoundedCornerShape,
     val componentCorner: RoundedCornerShape,
 )
@@ -31,6 +32,7 @@ object YingLiComponentTokenDefaults {
         pagePadding = 16.dp,
         sectionSpacing = 24.dp,
         itemSpacing = 8.dp,
+        cardHeaderSpacing = 12.dp,
         compactCorner = RoundedCornerShape(4.dp),
         componentCorner = RoundedCornerShape(8.dp),
     )

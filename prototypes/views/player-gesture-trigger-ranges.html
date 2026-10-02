@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>影里播放器 · 手势触发范围</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d10;
+      --panel: #15191f;
+      --panel-2: #1b2028;
+      --text: #f2f4f7;
+      --muted: #9aa4b2;
+      --line: #303844;
+      --volume: #58a6ff;
+      --brightness: #ffd166;
+      --zoom: #c084fc;
+      --longpress: #5eead4;
+      --scrim: rgba(8, 10, 13, .72);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 Inter, "Noto Sans SC", system-ui, sans-serif;
+    }
+    .page { max-width: 1180px; margin: 0 auto; padding: 28px 22px 48px; }
+    h1 { margin: 0 0 8px; font-size: clamp(24px, 4vw, 38px); letter-spacing: 0; }
+    h2 { margin: 0 0 14px; font-size: 18px; }
+    p { margin: 0; color: var(--muted); }
+    .intro { max-width: 760px; margin-bottom: 24px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    .viewer-panel { padding: 16px; }
+    .viewer-toolbar { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; margin-bottom: 14px; }
+    .field { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); }
+    .field input[type="number"] { width: 78px; }
+    input, select, button { font: inherit; }
+    input[type="number"], select {
+      color: var(--text); background: var(--panel-2); border: 1px solid var(--line);
+      border-radius: 5px; padding: 6px 8px;
+    }
+    .viewer {
+      position: relative; width: 100%; aspect-ratio: 16 / 9; min-height: 300px;
+      overflow: hidden; border: 1px solid #46505e; border-radius: 7px;
+      background:
+        linear-gradient(130deg, rgba(55, 72, 93, .65), rgba(19, 26, 34, .8) 50%, rgba(82, 56, 48, .55)),
+        radial-gradient(circle at 72% 30%, rgba(255, 193, 97, .5), transparent 24%),
+        #242b35;
+      isolation: isolate;
+    }
+    .viewer::before {
+      content: "播放画布"; position: absolute; inset: 0; display: grid; place-items: center;
+      color: rgba(255,255,255,.32); font-size: clamp(18px, 4vw, 34px); letter-spacing: .12em;
+      pointer-events: none;
+    }
+    .zone { position: absolute; inset-block: 0; pointer-events: none; }
+    .zone.volume { left: 0; width: 48%; background: color-mix(in srgb, var(--volume) 23%, transparent); border-right: 1px solid color-mix(in srgb, var(--volume) 70%, transparent); }
+    .zone.brightness { right: 0; width: 48%; background: color-mix(in srgb, var(--brightness) 23%, transparent); border-left: 1px solid color-mix(in srgb, var(--brightness) 70%, transparent); }
+    .center-zone { left: 48%; width: 4%; background: color-mix(in srgb, var(--zoom) 35%, transparent); border-inline: 1px dashed color-mix(in srgb, var(--zoom) 85%, transparent); }
+    .edge { position: absolute; inset-block: 0; width: var(--edge); background: repeating-linear-gradient(135deg, rgba(255,255,255,.16) 0 4px, transparent 4px 8px); pointer-events: none; }
+    .edge.left { left: 0; }
+    .edge.right { right: 0; }
+    .zone-label { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-weight: 700; text-shadow: 0 1px 3px #000; }
+    .zone-sub { position: absolute; top: 42px; left: 50%; transform: translateX(-50%); white-space: nowrap; color: rgba(255,255,255,.78); font-size: 12px; text-shadow: 0 1px 3px #000; }
+    .center-zone .zone-label, .center-zone .zone-sub { display: none; }
+    .center-copy { position: absolute; inset: auto 12px 18px; text-align: center; color: rgba(255,255,255,.82); font-size: 12px; text-shadow: 0 1px 3px #000; pointer-events: none; }
+    .topbar, .bottombar { position: absolute; left: 4%; right: 4%; height: 30px; background: var(--scrim); border: 1px solid rgba(255,255,255,.16); border-radius: 5px; display: grid; place-items: center; color: rgba(255,255,255,.72); font-size: 11px; pointer-events: none; }
+    .topbar { top: 12px; }
+    .bottombar { bottom: 12px; }
+    .topbar span, .bottombar span { opacity: .8; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 14px; color: var(--muted); font-size: 12px; }
+    .legend-item { display: inline-flex; gap: 6px; align-items: center; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; }
+    .swatch.volume { position: static; background: var(--volume); border: 0; }
+    .swatch.brightness { position: static; background: var(--brightness); border: 0; }
+    .swatch.zoom { background: var(--zoom); }
+    .swatch.longpress { background: var(--longpress); }
+    .swatch.edge { position: static; background: repeating-linear-gradient(135deg, #7d8795 0 3px, transparent 3px 6px); border: 1px solid #7d8795; }
+    .side-panel { padding: 16px; }
+    .switches { display: grid; gap: 10px; margin: 12px 0 18px; }
+    .switch { display: flex; gap: 9px; align-items: flex-start; color: var(--text); }
+    .switch input { margin-top: 3px; accent-color: var(--zoom); }
+    .metric { padding: 12px 0; border-top: 1px solid var(--line); }
+    .metric:first-of-type { border-top: 0; padding-top: 0; }
+    .metric-title { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .metric-title strong { font-weight: 700; }
+    .metric-title output { color: var(--text); font-variant-numeric: tabular-nums; }
+    .metric p { font-size: 12px; }
+    .notes { margin-top: 18px; padding: 14px 16px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; }
+    .notes strong { color: var(--text); }
+    .notes ul { margin: 8px 0 0 18px; padding: 0; color: var(--muted); }
+    .notes li + li { margin-top: 5px; }
+    .touch-readout { margin-top: 14px; min-height: 40px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 6px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 820px) {
+      .layout { grid-template-columns: 1fr; }
+      .viewer { min-height: 210px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>播放页手势触发范围</h1>
+    <p class="intro">这是按新规则规划的触发区域预览，不是最终 UI。左右竖向调节区扩大到各 48%；双指缩放和单指长按二倍速只允许从中间剩余的 4% 区域起手。</p>
+
+    <div class="layout">
+      <section class="panel viewer-panel">
+        <div class="viewer-toolbar">
+          <label class="field">画布宽度 <input id="width" type="number" min="240" max="2400" value="1080"> px</label>
+          <label class="field">画布高度 <input id="height" type="number" min="180" max="1600" value="720"> px</label>
+          <label class="field">密度 <input id="density" type="number" min="0.5" max="5" step="0.1" value="3"> px/dp</label>
+        </div>
+
+        <div id="viewer" class="viewer" aria-label="手势触发范围预览">
+          <div id="volumeZone" class="zone volume"><span class="zone-label">音量</span><span class="zone-sub">垂直拖动</span></div>
+          <div id="brightnessZone" class="zone brightness"><span class="zone-label">亮度</span><span class="zone-sub">垂直拖动</span></div>
+          <div id="centerZone" class="zone center-zone" aria-label="双指缩放和长按区域"></div>
+          <div id="edgeLeft" class="edge left" aria-hidden="true"></div>
+          <div id="edgeRight" class="edge right" aria-hidden="true"></div>
+          <div class="topbar"><span>顶部控件可能消费触摸</span></div>
+          <div class="bottombar"><span>底部控件可能消费触摸</span></div>
+          <div id="center-copy" class="center-copy">双指缩放与长按二倍速只从中央 4% 区域起手</div>
+        </div>
+        <div class="legend">
+          <span class="legend-item"><i class="swatch volume"></i>音量竖滑区</span>
+          <span class="legend-item"><i class="swatch brightness"></i>亮度竖滑区</span>
+          <span class="legend-item"><i class="swatch zoom"></i>双指缩放 / 长按区</span>
+          <span class="legend-item"><i class="swatch edge"></i>系统边缘避让</span>
+        </div>
+        <div id="touchReadout" class="touch-readout">点击画布查看该位置会进入哪一类手势区域。</div>
+      </section>
+
+      <aside class="panel side-panel">
+        <h2>当前规则</h2>
+        <div class="switches">
+          <label class="switch"><input id="showControls" type="checkbox" checked><span>显示顶部/底部控件消费区</span></label>
+          <label class="switch"><input id="showUniversal" type="checkbox" checked><span>显示双指缩放与长按的全画布覆盖</span></label>
+        </div>
+
+        <div class="metric">
+          <div class="metric-title"><strong>左右竖向调节</strong><output id="sideOutput"></output></div>
+          <p>每侧 48% 宽度；左右屏幕边缘各避让 12dp。区域按按下起点判定，之后移动不会跨区切换。</p>
+        </div>
+        <div class="metric">
+          <div class="metric-title"><strong>双指缩放</strong><output id="zoomOutput"></output></div>
+          <p>两根手指都必须从中央 4% 区域起手；任何一个触点落在音量/亮度侧区都不进入缩放。</p>
+        </div>
+        <div class="metric">
+          <div class="metric-title"><strong>长按二倍速</strong><output id="longPressOutput"></output></div>
+          <p>从中央 4% 区域按住至少 360ms，移动不超过 8dp；侧区专用于音量/亮度，不触发长按倍速。</p>
+        </div>
+
+        <div class="notes">
+          <strong>怎么读这张图</strong>
+          <ul>
+            <li>蓝色、黄色是“按下位置”决定的竖向调节区，分别占画布 48%。</li>
+            <li>紫色中央窄区是双指缩放与单指长按的专属起手区，占画布 4%。</li>
+            <li>顶部/底部控件仍会优先消费触摸；左右边缘还需避让 Android 系统返回手势。</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const viewer = $('viewer');
+    const inputs = [$('width'), $('height'), $('density')];
+
+    function update() {
+      const width = Math.max(240, Number($('width').value) || 1080);
+      const height = Math.max(180, Number($('height').value) || 720);
+      const density = Math.max(.5, Number($('density').value) || 3);
+      $('width').value = width;
+      $('height').value = height;
+      $('density').value = density;
+      viewer.style.aspectRatio = `${width} / ${height}`;
+      const edgePercent = Math.min(50, (12 * density / width) * 100);
+      viewer.style.setProperty('--edge', `${edgePercent}%`);
+      $('sideOutput').textContent = `左右各 ${Math.round(width * .48)}px`;
+      $('zoomOutput').textContent = `中央 4% · ${Math.round(width * .04)}px 宽`;
+      $('longPressOutput').textContent = `360ms / ≤${(8 * density).toFixed(0)}px`;
+      $('edgeLeft').hidden = false;
+      $('edgeRight').hidden = false;
+      $('centerZone').hidden = false;
+      const controlsVisible = $('showControls').checked;
+      document.querySelectorAll('.topbar, .bottombar').forEach((node) => node.hidden = !controlsVisible);
+      const universalVisible = $('showUniversal').checked;
+      $('center-copy').hidden = !universalVisible;
+      $('centerZone').hidden = !universalVisible;
+    }
+
+    inputs.forEach((input) => input.addEventListener('input', update));
+    $('showControls').addEventListener('change', update);
+    $('showUniversal').addEventListener('change', update);
+
+    viewer.addEventListener('click', (event) => {
+      const rect = viewer.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const xRatio = x / rect.width;
+      const density = Math.max(.5, Number($('density').value) || 3);
+      const edgeRatio = (12 * density) / Number($('width').value);
+      let area = '双指缩放 / 长按二倍速区域';
+      if (xRatio < edgeRatio || xRatio > 1 - edgeRatio) area = '系统边缘避让区：当前代码不接竖向调节';
+      else if (xRatio < .48) area = '左侧竖向调节区（音量/亮度按用户映射）';
+      else if (xRatio >= .52) area = '右侧竖向调节区（亮度/音量按用户映射）';
+      else area = '中心专属区：双指缩放 / 单指长按二倍速';
+      $('touchReadout').textContent = `位置 ${(xRatio * 100).toFixed(1)}% × ${(y / rect.height * 100).toFixed(1)}%：${area}`;
+    });
+
+    update();
+  </script>
+</body>
+</html>

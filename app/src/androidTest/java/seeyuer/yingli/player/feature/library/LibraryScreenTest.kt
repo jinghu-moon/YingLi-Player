@@ -3,7 +3,13 @@ package seeyuer.yingli.player.feature.library
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import kotlinx.coroutines.flow.flowOf
@@ -14,6 +20,7 @@ import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.core.model.media.MediaUri
 import seeyuer.yingli.player.domain.library.LibraryDisplayPreference
+import seeyuer.yingli.player.domain.library.LibraryBrowseMode
 import seeyuer.yingli.player.domain.library.LibraryMedia
 import seeyuer.yingli.player.domain.library.LibraryViewMode
 
@@ -26,6 +33,7 @@ class LibraryScreenTest {
         setLibrary(LibraryViewMode.GRID)
         composeRule.onNodeWithTag(LibraryTestTags.GRID).assertIsDisplayed()
         composeRule.onNodeWithText("本地影片").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("搜索本地视频、文件夹或标签").performClick()
         composeRule.onNodeWithText("搜索本地视频、文件夹或标签").assertIsDisplayed()
     }
 
@@ -42,10 +50,13 @@ class LibraryScreenTest {
     private fun setLibrary(mode: LibraryViewMode) {
         composeRule.setContent {
             YingLiTheme(darkTheme = false) {
+                var searchOpen by remember { mutableStateOf(false) }
                 val pagingItems = flowOf(PagingData.from(listOf(MEDIA))).collectAsLazyPagingItems()
                 LibraryScreen(
                     state = LibraryUiState(
                         totalCount = 1,
+                        browseMode = LibraryBrowseMode.ALL_VIDEOS,
+                        searchOpen = searchOpen,
                         preference = LibraryDisplayPreference(mode),
                     ),
                     pagingItems = pagingItems,
@@ -66,6 +77,7 @@ class LibraryScreenTest {
                     onRestore = {},
                     onPurge = {},
                     onMediaSelected = {},
+                    onToggleSearch = { searchOpen = !searchOpen },
                 )
             }
         }

@@ -55,6 +55,7 @@ import seeyuer.yingli.player.domain.organize.OrganizeRepository
 import seeyuer.yingli.player.domain.playback.PlayerPreferenceRepository
 import seeyuer.yingli.player.domain.playback.TrackPreferenceRepository
 import seeyuer.yingli.player.domain.playback.PlaybackQueueRepository
+import seeyuer.yingli.player.domain.playback.PlayerControlLayoutRepository
 import seeyuer.yingli.player.domain.settings.BackupGateway
 import seeyuer.yingli.player.domain.settings.DiagnosticsReporter
 import seeyuer.yingli.player.domain.settings.SettingsDocumentGateway
@@ -74,10 +75,13 @@ import seeyuer.yingli.player.domain.duplicates.DuplicateScanner
 import seeyuer.yingli.player.data.security.AppLockManager
 import seeyuer.yingli.player.domain.security.SecurePlaybackSource
 import seeyuer.yingli.player.domain.security.VaultRepository
+import seeyuer.yingli.player.domain.shorts.ShortsPreferenceRepository
+import seeyuer.yingli.player.data.preferences.DataStoreShortsPreferenceRepository
 import seeyuer.yingli.player.data.organize.RoomOrganizeRepository
 import seeyuer.yingli.player.data.preferences.DataStorePlayerPreferenceRepository
+import seeyuer.yingli.player.data.preferences.DataStorePlayerControlLayoutRepository
 import seeyuer.yingli.player.data.preferences.DataStoreLibraryPreferenceRepository
-import seeyuer.yingli.player.data.preferences.InMemoryPlaybackQueueRepository
+import seeyuer.yingli.player.data.preferences.DataStorePlaybackQueueRepository
 import seeyuer.yingli.player.data.room.RoomPlaybackRepository
 
 data class MediaContainer(
@@ -102,6 +106,7 @@ data class MediaContainer(
     val playerPreferenceRepository: PlayerPreferenceRepository,
     val trackPreferenceRepository: TrackPreferenceRepository,
     val playbackQueueRepository: PlaybackQueueRepository,
+    val playerControlLayoutRepository: PlayerControlLayoutRepository,
     val backupGateway: BackupGateway,
     val diagnosticsReporter: DiagnosticsReporter,
     val settingsDocumentGateway: SettingsDocumentGateway,
@@ -121,6 +126,7 @@ data class MediaContainer(
     val appLockManager: AppLockManager,
     val vaultRepository: VaultRepository,
     val securePlaybackSource: SecurePlaybackSource,
+    val shortsPreferenceRepository: ShortsPreferenceRepository,
 )
 
 object ProductionMediaContainerFactory {
@@ -136,6 +142,7 @@ object ProductionMediaContainerFactory {
                 YingLiDatabase.MIGRATION_5_6,
                 YingLiDatabase.MIGRATION_6_7,
                 YingLiDatabase.MIGRATION_7_8,
+                YingLiDatabase.MIGRATION_8_9,
             )
             .build()
         val sourceRepository = RoomMediaSourceRepository(database.mediaSourceDao())
@@ -221,6 +228,7 @@ object ProductionMediaContainerFactory {
             foundation.dispatchers,
         )
         val playerPreferences = DataStorePlayerPreferenceRepository(context, foundation.themeRepository)
+        val shortsPreferences = DataStoreShortsPreferenceRepository(context)
         val backupGateway = seeyuer.yingli.player.data.settings.RoomBackupGateway(
             database,
             foundation.themeRepository,
@@ -312,7 +320,8 @@ object ProductionMediaContainerFactory {
             organizeRepository,
             playerPreferences,
             playerPreferences,
-            InMemoryPlaybackQueueRepository(),
+            DataStorePlaybackQueueRepository(context),
+            DataStorePlayerControlLayoutRepository(context),
             backupGateway,
             seeyuer.yingli.player.data.settings.LocalDiagnosticsReporter(
                 context,
@@ -336,6 +345,7 @@ object ProductionMediaContainerFactory {
             appLockManager,
             vaultRepository,
             vaultRepository,
+            shortsPreferences,
         )
     }
 

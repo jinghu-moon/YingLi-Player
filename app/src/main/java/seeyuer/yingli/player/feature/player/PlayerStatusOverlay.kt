@@ -29,6 +29,8 @@ internal fun PlayerStatusOverlay(
     onReplay: () -> Unit,
     onRetry: () -> Unit,
     onRecovery: (PlaybackRecoveryAction) -> Unit,
+    onNext: () -> Unit,
+    canNavigateNext: Boolean,
     modifier: Modifier,
 ) {
     when {
@@ -52,18 +54,24 @@ internal fun PlayerStatusOverlay(
             modifier = modifier.testTag(PlayerTestTags.LOADING),
             color = YingLiTheme.player.controlPrimary,
         )
-        state.playback is PlaybackState.Ended -> EndedControls(onReplay, onBack, modifier)
+        state.playback is PlaybackState.Ended -> EndedControls(onReplay, onNext, canNavigateNext, onBack, modifier)
     }
 }
 
 @Composable
-private fun EndedControls(onReplay: () -> Unit, onBack: () -> Unit, modifier: Modifier) {
+private fun EndedControls(
+    onReplay: () -> Unit,
+    onNext: () -> Unit,
+    canNavigateNext: Boolean,
+    onBack: () -> Unit,
+    modifier: Modifier,
+) {
     Column(modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(stringResource(R.string.player_ended), color = YingLiTheme.player.controlPrimary)
         Spacer(Modifier.height(YingLiTheme.components.itemSpacing))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             YingLiButton(stringResource(R.string.player_replay), onReplay, leadingIcon = YingLiIcon.REPLAY)
-            YingLiButton(stringResource(R.string.player_next), onClick = {}, enabled = false)
+            YingLiButton(stringResource(R.string.player_next), onClick = onNext, enabled = canNavigateNext)
             YingLiButton(stringResource(R.string.action_back), onBack)
         }
     }

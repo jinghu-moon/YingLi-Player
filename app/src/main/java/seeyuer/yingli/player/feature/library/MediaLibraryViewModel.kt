@@ -31,6 +31,7 @@ data class MediaLibraryUiState(
     val scanning: Boolean = false,
     val scanProgress: ScanProgress = ScanProgress(),
     val notice: MediaLibraryNotice? = null,
+    val allFilesAccess: Boolean = false,
 )
 
 sealed interface MediaLibraryEffect {
@@ -53,6 +54,7 @@ class MediaLibraryViewModel(
     private val effects = Channel<MediaLibraryEffect>(Channel.BUFFERED)
     private var initializeStarted = false
     private val initialized = MutableStateFlow(false)
+    private val allFilesAccess = MutableStateFlow(false)
     val effect: Flow<MediaLibraryEffect> = effects.receiveAsFlow()
     private val baseState = combine(
         onboardingRepository.completed,
@@ -71,8 +73,8 @@ class MediaLibraryViewModel(
         )
     }
 
-    val state: StateFlow<MediaLibraryUiState> = combine(baseState, scanProgress, initialized) { base, progress, ready ->
-        base.copy(initialized = ready, scanProgress = progress)
+    val state: StateFlow<MediaLibraryUiState> = combine(baseState, scanProgress, initialized, allFilesAccess) { base, progress, ready, hasAllFiles ->
+        base.copy(initialized = ready, scanProgress = progress, allFilesAccess = hasAllFiles)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), MediaLibraryUiState())
 
     /** Restores granted access after process start and starts the initial index scan. */
@@ -83,11 +85,15 @@ class MediaLibraryViewModel(
             // Do not expose the default onboarding state before persisted state is available.
             baseState.first()
             val permission = permissionGateway.inspect()
+            allFilesAccess.value = permission.allFilesAccess
             when {
                 permission.allFilesAccess -> {
                     val source = deviceVideoSource()
                     val existing = sourceRepository.get(source.id)
-                    sourceRepository.upsert(source)
+                    sourceRepository.upsert(source.copy(
+                        includeHidden = existing?.includeHidden ?: source.includeHidden,
+                        includeNomedia = existing?.includeNomedia ?: source.includeNomedia,
+                    ))
                     onboardingRepository.setCompleted(true)
                     initialized.value = true
                     if (existing.requiresInitialScan(source)) scan(setOf(source.id))
@@ -95,7 +101,10 @@ class MediaLibraryViewModel(
                 permission.mediaStoreReadAccess -> {
                     val source = deviceVideoSource()
                     val existing = sourceRepository.get(source.id)
-                    sourceRepository.upsert(source)
+                    sourceRepository.upsert(source.copy(
+                        includeHidden = existing?.includeHidden ?: source.includeHidden,
+                        includeNomedia = existing?.includeNomedia ?: source.includeNomedia,
+                    ))
                     onboardingRepository.setCompleted(true)
                     initialized.value = true
                     if (existing.requiresInitialScan(source)) scan(setOf(source.id))
@@ -127,9 +136,14 @@ class MediaLibraryViewModel(
     fun onAllFilesSettingsReturned() {
         viewModelScope.launch {
             val permission = permissionGateway.inspect()
+            allFilesAccess.value = permission.allFilesAccess
             if (permission.allFilesAccess) {
                 val source = deviceVideoSource()
-                sourceRepository.upsert(source)
+                val existing = sourceRepository.get(source.id)
+                sourceRepository.upsert(source.copy(
+                    includeHidden = existing?.includeHidden ?: source.includeHidden,
+                    includeNomedia = existing?.includeNomedia ?: source.includeNomedia,
+                ))
                 onboardingRepository.setCompleted(true)
                 scan(setOf(source.id), force = true)
             } else {
@@ -142,8 +156,13 @@ class MediaLibraryViewModel(
         viewModelScope.launch {
             onboardingRepository.setCompleted(true)
             if (granted) {
+                allFilesAccess.value = permissionGateway.inspect().allFilesAccess
                 val source = deviceVideoSource()
-                sourceRepository.upsert(source)
+                val existing = sourceRepository.get(source.id)
+                sourceRepository.upsert(source.copy(
+                    includeHidden = existing?.includeHidden ?: source.includeHidden,
+                    includeNomedia = existing?.includeNomedia ?: source.includeNomedia,
+                ))
                 scan(setOf(source.id), force = true)
             } else {
                 notice.value = MediaLibraryNotice.PERMISSION_DENIED
@@ -179,6 +198,38 @@ class MediaLibraryViewModel(
         viewModelScope.launch {
             val sourceIds = state.value.sources.filter { it.accessState == MediaSourceAccessState.AVAILABLE }.map { it.id }.toSet()
             if (sourceIds.isNotEmpty()) scan(sourceIds, force = true)
+        }
+    }
+
+    fun setIncludeHidden(includeHidden: Boolean) {
+        viewModelScope.launch {
+            val sources = sourceRepository.observeSources().first()
+            sources.filter { it.includeHidden != includeHidden }
+                .forEach { sourceRepository.upsert(it.copy(includeHidden = includeHidden)) }
+            val sourceIds = sources
+                .filter { it.accessState == MediaSourceAccessState.AVAILABLE }
+                .map { it.id }
+                .toSet()
+            if (sourceIds.isNotEmpty()) scan(sourceIds, force = true)
+        }
+    }
+
+    fun setSourceIncludeHidden(sourceId: MediaSourceId, includeHidden: Boolean) {
+        viewModelScope.launch {
+            val source = sourceRepository.get(sourceId) ?: return@launch
+            if (source.includeHidden == includeHidden) return@launch
+            sourceRepository.upsert(source.copy(includeHidden = includeHidden))
+            scan(setOf(sourceId), force = true)
+        }
+    }
+
+    fun setIncludeNomedia(sourceId: MediaSourceId, includeNomedia: Boolean) {
+        viewModelScope.launch {
+            val source = sourceRepository.get(sourceId) ?: return@launch
+            if (includeNomedia && source.mode != MediaSourceMode.SAF_TREE && !allFilesAccess.value) return@launch
+            if (source.includeNomedia == includeNomedia) return@launch
+            sourceRepository.upsert(source.copy(includeNomedia = includeNomedia))
+            scan(setOf(sourceId), force = true)
         }
     }
 

@@ -23,8 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -57,9 +56,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.compose.collectAsLazyPagingItems
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.data.preferences.AppearanceSettings
 import seeyuer.yingli.player.core.designsystem.component.YingLiEmptyState
+import seeyuer.yingli.player.core.designsystem.component.YingLiDropdownMenu
+import seeyuer.yingli.player.core.designsystem.component.YingLiDropdownMenuItem
 import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
 import seeyuer.yingli.player.core.designsystem.component.YingLiTopBar
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
@@ -72,6 +74,7 @@ import seeyuer.yingli.player.domain.navigation.GlobalAppAction
 import seeyuer.yingli.player.domain.navigation.NavigationState
 import seeyuer.yingli.player.domain.navigation.RootDestination
 import seeyuer.yingli.player.domain.playback.PlaybackSourceContext
+import seeyuer.yingli.player.domain.playback.PlaybackQueueSource
 import seeyuer.yingli.player.domain.playback.PlaybackRecoveryAction
 import seeyuer.yingli.player.domain.playback.PlaybackState
 import seeyuer.yingli.player.domain.playback.PlayerPreferences
@@ -86,8 +89,10 @@ import seeyuer.yingli.player.feature.organize.OrganizeRoute
 import seeyuer.yingli.player.feature.organize.OrganizeViewModel
 import seeyuer.yingli.player.feature.processing.ProcessingRoute
 import seeyuer.yingli.player.feature.processing.ProcessingViewModel
+import seeyuer.yingli.player.feature.player.PlayerGestureCallbacks
 import seeyuer.yingli.player.feature.player.PlayerScreen
 import seeyuer.yingli.player.feature.player.PlayerViewModel
+import seeyuer.yingli.player.feature.player.PlayerUiEvent
 import seeyuer.yingli.player.feature.player.MiniPlayerBar
 import seeyuer.yingli.player.feature.settings.SettingsScreen
 import seeyuer.yingli.player.feature.settings.SettingsEffect
@@ -98,6 +103,8 @@ import seeyuer.yingli.player.feature.security.AppLockRoute
 import seeyuer.yingli.player.feature.security.SecurityViewModel
 import seeyuer.yingli.player.feature.security.VaultRoute
 import seeyuer.yingli.player.feature.security.VaultViewModel
+import seeyuer.yingli.player.feature.shorts.ShortsViewModel
+import seeyuer.yingli.player.feature.shorts.ShortsCandidate
 import seeyuer.yingli.player.domain.security.VaultItemId
 import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
 
@@ -114,9 +121,14 @@ fun YingLiApp(
     processingViewModel: ProcessingViewModel,
     securityViewModel: SecurityViewModel,
     vaultViewModel: VaultViewModel,
+    shortsViewModel: ShortsViewModel,
     windowWidthSizeClass: WindowWidthSizeClass,
     videoSurface: @Composable () -> Unit,
-    onToggleOrientation: () -> Unit = {},
+    /**
+     * 常规/Vault 播放页的视频输出。参数 `transformed` 表示当前画面会被视图层级变换（画面旋转），
+     * 调用方需要据此选择可被变换的输出类型；Shorts 等不旋转的页面继续用 [videoSurface]。
+     */
+    playerVideoSurface: @Composable (transformed: Boolean) -> Unit = { videoSurface() },
     onSecureContentChanged: (Boolean) -> Unit = {},
     onSecureSessionLocked: () -> Unit = {},
     biometricAvailable: Boolean = false,
@@ -200,6 +212,13 @@ fun YingLiApp(
         YingLiTheme(darkTheme = darkTheme) {
             val navigationState by viewModel.navigationState.collectAsStateWithLifecycle()
         val playerState by playerViewModel.state.collectAsStateWithLifecycle()
+        val playlistItems = playerViewModel.playlistPagingData.collectAsLazyPagingItems()
+        var playerTransientMessage by remember { mutableStateOf<PlayerUiEvent.TransientMessage?>(null) }
+        LaunchedEffect(playerViewModel) {
+            playerViewModel.event.collect { event ->
+                if (event is PlayerUiEvent.TransientMessage) playerTransientMessage = event
+            }
+        }
         val settingsToolsState by settingsViewModel.state.collectAsStateWithLifecycle()
         SideEffect {
             onSecureContentChanged(
@@ -207,13 +226,25 @@ fun YingLiApp(
             )
         }
         val systemBarMode = when {
-            navigationState.currentRoute is AppRoute.Player || navigationState.currentRoute is AppRoute.VaultPlayer ->
+                navigationState.currentRoute is AppRoute.Player || navigationState.currentRoute is AppRoute.VaultPlayer ||
+                    navigationState.currentRoute == AppRoute.Root(RootDestination.SHORTS) ->
                 SystemBarMode.PLAYER
             darkTheme -> SystemBarMode.DARK_APP
             else -> SystemBarMode.LIGHT_APP
         }
         YingLiSystemBars(systemBarMode)
-        BackHandler(enabled = navigationState.canNavigateBack, onBack = viewModel::navigateBack)
+        // Global route stack first; fall back to Home tab instead of finishing the
+        // activity when the user is on another root destination. Home root leaves
+        // the handler disabled so the system can background/close the task.
+        BackHandler(
+            enabled = navigationState.canNavigateBack ||
+                navigationState.currentRoot != RootDestination.HOME,
+        ) {
+            when {
+                navigationState.canNavigateBack -> viewModel.navigateBack()
+                else -> viewModel.selectRoot(RootDestination.HOME)
+            }
+        }
         AdaptiveAppShell(
             navigationState = navigationState,
             settings = settings,
@@ -225,7 +256,19 @@ fun YingLiApp(
             onMiniPlayerChanged = playerViewModel::setMiniPlayerEnabled,
             onAutoPipChanged = playerViewModel::setAutoPictureInPicture,
             settingsTools = SettingsToolActions(
+                onGestureSeekEnabled = playerViewModel::setGestureSeekEnabled,
+                onGestureVolumeEnabled = playerViewModel::setGestureVolumeEnabled,
+                onGestureBrightnessEnabled = playerViewModel::setGestureBrightnessEnabled,
+                onGestureZoomEnabled = playerViewModel::setGestureZoomEnabled,
+                onGestureLeftSideIsVolume = playerViewModel::setGestureLeftSideIsVolume,
+                onGestureDoubleTapSeekMillis = playerViewModel::setGestureDoubleTapSeekMillis,
+                onGestureSwipeDownToExitEnabled = playerViewModel::setGestureSwipeDownToExitEnabled,
+                onGestureLongPressSpeed = playerViewModel::setGestureLongPressSpeed,
                 state = settingsToolsState,
+                mediaSources = mediaState.sources,
+                allFilesAccess = mediaState.allFilesAccess,
+                onSourceIncludeHiddenChanged = mediaLibraryViewModel::setSourceIncludeHidden,
+                onSourceIncludeNomediaChanged = mediaLibraryViewModel::setIncludeNomedia,
                 onLibraryLayoutChanged = viewModel::setLibraryLayout,
                 onThumbnailScaleChanged = viewModel::setThumbnailScale,
                 onTrashRetentionDaysChanged = viewModel::setTrashRetentionDays,
@@ -249,6 +292,7 @@ fun YingLiApp(
             ),
             processingViewModel = processingViewModel,
             vaultViewModel = vaultViewModel,
+            shortsViewModel = shortsViewModel,
             onVaultImport = { vaultImportLauncher.launch(arrayOf("video/*")) },
             onVaultPlay = { viewModel.openVaultPlayer(it.value) },
             onVaultExport = { itemId ->
@@ -271,9 +315,22 @@ fun YingLiApp(
             onRescan = mediaLibraryViewModel::rescan,
             onMediaSelected = viewModel::openPlayer,
             thumbnailRepository = thumbnailRepository,
+            videoSurface = videoSurface,
+            onShareShorts = { candidate ->
+                context.startActivity(Intent(Intent.ACTION_SEND).apply {
+                    type = "video/*"
+                    putExtra(Intent.EXTRA_TEXT, candidate.title)
+                    candidate.uri?.value?.let { putExtra(Intent.EXTRA_STREAM, Uri.parse(it)) }
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                })
+            },
             playerContent = { route, onBack ->
-                LaunchedEffect(route.mediaId) {
-                    playerViewModel.open(route.mediaId, route.source.toPlaybackSourceContext())
+                LaunchedEffect(route.mediaId, route.queueSource) {
+                    playerViewModel.open(route.mediaId, route.source.toPlaybackSourceContext(), route.queueSource)
+                }
+                // 离开播放页必须还原系统栏与方向，否则全屏会泄漏到其他页面。
+                DisposableEffect(Unit) {
+                    onDispose(playerViewModel::exitFullscreen)
                 }
                 PlayerScreen(
                     state = playerState,
@@ -298,7 +355,11 @@ fun YingLiApp(
                             -> onBack()
                         }
                     },
-                    videoSurface = videoSurface,
+                    videoSurface = playerVideoSurface,
+                    onPrevious = playerViewModel::previous,
+                    onNext = playerViewModel::next,
+                    canNavigatePrevious = playerState.queue?.let { it.mediaIds.size > 1 && it.currentIndex > 0 } == true,
+                    canNavigateNext = playerState.queue?.let { it.currentIndex < it.mediaIds.lastIndex } == true,
                     onSeekBackward = { playerViewModel.seekBackward() },
                     onSeekForward = { playerViewModel.seekForward() },
                     onToggleOverlay = playerViewModel::toggleOverlay,
@@ -307,9 +368,53 @@ fun YingLiApp(
                     onSetScaleMode = { playerViewModel.setScaleMode(it) },
                     onSelectAudioTrack = { playerViewModel.selectAudioTrack(it) },
                     onSelectSubtitleTrack = { playerViewModel.selectSubtitleTrack(it) },
+                    onSetPlaybackOrder = { playerViewModel.setPlaybackOrder(it) },
+                    onRotateVideo = playerViewModel::rotateVideo,
+                    onToggleSpeedPanel = playerViewModel::toggleSpeedPanel,
+                    onCycleScaleMode = { playerViewModel.cycleScaleMode() },
+                    onGestureHintShown = playerViewModel::markGestureHintShown,
+                    gestureCallbacks = PlayerGestureCallbacks(
+                        onVolumeBegin = playerViewModel::beginVolumeGesture,
+                        onVolume = playerViewModel::applyVolumeGesture,
+                        onVolumeEnd = playerViewModel::endVolumeGesture,
+                        onBrightnessBegin = playerViewModel::beginBrightnessGesture,
+                        onBrightness = playerViewModel::applyBrightnessGesture,
+                        onBrightnessEnd = playerViewModel::endBrightnessGesture,
+                        onSeekBegin = playerViewModel::beginSeekGesture,
+                        onSeekPreview = playerViewModel::applySeekGesture,
+                        onSeekEnd = playerViewModel::endSeekGesture,
+                        onLongPressSpeedBegin = playerViewModel::beginTemporarySpeed,
+                        onLongPressSpeedEnd = playerViewModel::endTemporarySpeed,
+                        onZoomBegin = playerViewModel::captureZoomAnchor,
+                        onZoom = playerViewModel::applyZoomGesture,
+                        onPanZoom = playerViewModel::panZoom,
+                        onResetZoom = playerViewModel::resetZoom,
+                        onToggleAutoBrightness = playerViewModel::toggleAutoBrightness,
+                    ),
+                    onSetRotation = playerViewModel::setRotation,
+                    onSetControlLayout = playerViewModel::setControlLayout,
                     onPictureInPicture = { playerViewModel.enterPictureInPicture() },
-                    onScreenshot = playerViewModel::captureScreenshot,
-                    onToggleOrientation = onToggleOrientation,
+                    onScreenshot = playerViewModel::armScreenshot,
+                    onCaptureScreenshot = playerViewModel::captureScreenshot,
+                    onPreviousScreenshotFrame = { playerViewModel.stepScreenshotFrame(false) },
+                    onNextScreenshotFrame = { playerViewModel.stepScreenshotFrame(true) },
+                    onToggleScreenshotPreview = playerViewModel::toggleScreenshotExpiry,
+                    onCloseScreenshot = playerViewModel::closeScreenshot,
+                    onDeleteScreenshot = playerViewModel::deleteScreenshot,
+                    onOpenAbTool = playerViewModel::openAbTool,
+                    onSetAbPoint = { playerViewModel.setAbPoint(it) },
+                    onClearAb = playerViewModel::clearAb,
+                    onCloseAbTool = playerViewModel::closeAbTool,
+                    onToggleFullscreen = playerViewModel::toggleFullscreen,
+                    onExitFullscreen = playerViewModel::exitFullscreen,
+                    onOpenPanel = playerViewModel::openPanel,
+                    onClosePanel = playerViewModel::closePanel,
+                    onOpenPlaylist = { playerViewModel.openPanel(seeyuer.yingli.player.domain.playback.PlayerPanel.PLAYLIST) },
+                    onSelectPlaylistItem = playerViewModel::selectQueueItem,
+                    playlistItems = playlistItems,
+                    thumbnailRepository = thumbnailRepository,
+                    transientMessage = playerTransientMessage,
+                    onTransientMessageConsumed = { playerTransientMessage = null },
                 )
             },
             vaultPlayerContent = { route, onBack ->
@@ -317,6 +422,9 @@ fun YingLiApp(
                 LaunchedEffect(route.itemId) { playerViewModel.openVault(route.itemId, vaultTitle) }
                 DisposableEffect(route.itemId) {
                     onDispose(playerViewModel::closeVault)
+                }
+                DisposableEffect(Unit) {
+                    onDispose(playerViewModel::exitFullscreen)
                 }
                 PlayerScreen(
                     state = playerState,
@@ -327,7 +435,7 @@ fun YingLiApp(
                     onReplay = { playerViewModel.replay() },
                     onRetry = { playerViewModel.retry() },
                     onRecovery = { onBack() },
-                    videoSurface = videoSurface,
+                    videoSurface = playerVideoSurface,
                     onSeekBackward = { playerViewModel.seekBackward() },
                     onSeekForward = { playerViewModel.seekForward() },
                     onToggleOverlay = playerViewModel::toggleOverlay,
@@ -336,9 +444,39 @@ fun YingLiApp(
                     onSetScaleMode = { playerViewModel.setScaleMode(it) },
                     onSelectAudioTrack = { playerViewModel.selectAudioTrack(it) },
                     onSelectSubtitleTrack = { playerViewModel.selectSubtitleTrack(it) },
-                    onToggleOrientation = onToggleOrientation,
+                    onSetPlaybackOrder = { playerViewModel.setPlaybackOrder(it) },
+                    onRotateVideo = playerViewModel::rotateVideo,
+                    onToggleSpeedPanel = playerViewModel::toggleSpeedPanel,
+                    onCycleScaleMode = { playerViewModel.cycleScaleMode() },
+                    onGestureHintShown = playerViewModel::markGestureHintShown,
+                    gestureCallbacks = PlayerGestureCallbacks(
+                        onVolumeBegin = playerViewModel::beginVolumeGesture,
+                        onVolume = playerViewModel::applyVolumeGesture,
+                        onVolumeEnd = playerViewModel::endVolumeGesture,
+                        onBrightnessBegin = playerViewModel::beginBrightnessGesture,
+                        onBrightness = playerViewModel::applyBrightnessGesture,
+                        onBrightnessEnd = playerViewModel::endBrightnessGesture,
+                        onSeekBegin = playerViewModel::beginSeekGesture,
+                        onSeekPreview = playerViewModel::applySeekGesture,
+                        onSeekEnd = playerViewModel::endSeekGesture,
+                        onLongPressSpeedBegin = playerViewModel::beginTemporarySpeed,
+                        onLongPressSpeedEnd = playerViewModel::endTemporarySpeed,
+                        onZoomBegin = playerViewModel::captureZoomAnchor,
+                        onZoom = playerViewModel::applyZoomGesture,
+                        onPanZoom = playerViewModel::panZoom,
+                        onResetZoom = playerViewModel::resetZoom,
+                        onToggleAutoBrightness = playerViewModel::toggleAutoBrightness,
+                    ),
+                    onSetRotation = playerViewModel::setRotation,
+                    onSetControlLayout = playerViewModel::setControlLayout,
+                    onToggleFullscreen = playerViewModel::toggleFullscreen,
+                    onExitFullscreen = playerViewModel::exitFullscreen,
+                    onOpenPanel = playerViewModel::openPanel,
+                    onClosePanel = playerViewModel::closePanel,
                     allowPictureInPicture = false,
                     allowScreenshot = false,
+                    transientMessage = playerTransientMessage,
+                    onTransientMessageConsumed = { playerTransientMessage = null },
                 )
             },
             miniPlayerContent = {
@@ -388,6 +526,7 @@ internal fun AdaptiveAppShell(
     securitySettings: SecuritySettingsActions = SecuritySettingsActions(),
     processingViewModel: ProcessingViewModel? = null,
     vaultViewModel: VaultViewModel? = null,
+    shortsViewModel: ShortsViewModel? = null,
     onVaultImport: () -> Unit = {},
     onVaultPlay: (VaultItemId) -> Unit = {},
     onVaultExport: (VaultItemId) -> Unit = {},
@@ -400,8 +539,10 @@ internal fun AdaptiveAppShell(
     onSafSource: () -> Unit = {},
     onSkipMediaOnboarding: () -> Unit = {},
     onRescan: () -> Unit = {},
-    onMediaSelected: (String) -> Unit = {},
+    onMediaSelected: (String, PlaybackQueueSource?) -> Unit = { _, _ -> },
     thumbnailRepository: ThumbnailLoader? = null,
+    videoSurface: @Composable () -> Unit = {},
+    onShareShorts: (ShortsCandidate) -> Unit = {},
     playerContent: @Composable (AppRoute.Player, () -> Unit) -> Unit = { _, onBack ->
         FullScreenPlayerPlaceholder(onBack)
     },
@@ -413,6 +554,16 @@ internal fun AdaptiveAppShell(
     val mediaOnboarding = navigationState.currentRoute == AppRoute.Root(RootDestination.HOME) && mediaState.onboarding
     val usesNavigationRail = !mediaOnboarding && windowWidthSizeClass != WindowWidthSizeClass.Compact
     val destinations = navigationState.primaryDestinations
+
+    if (navigationState.currentRoute == AppRoute.Root(RootDestination.SHORTS) && shortsViewModel != null) {
+        seeyuer.yingli.player.feature.shorts.ShortsRoute(
+            viewModel = shortsViewModel,
+            videoSurface = videoSurface,
+            onBack = onBack,
+            modifier = Modifier.fillMaxSize(),
+        )
+        return
+    }
 
     if (!navigationState.showPrimaryNavigation) {
         FullScreenRoute(navigationState.currentRoute, onBack, playerContent, vaultPlayerContent)
@@ -439,6 +590,7 @@ internal fun AdaptiveAppShell(
                 securitySettings = securitySettings,
                 processingViewModel = processingViewModel,
                 vaultViewModel = vaultViewModel,
+                shortsViewModel = shortsViewModel,
                 onVaultImport = onVaultImport,
                 onVaultPlay = onVaultPlay,
                 onVaultExport = onVaultExport,
@@ -456,6 +608,8 @@ internal fun AdaptiveAppShell(
                 thumbnailRepository = thumbnailRepository,
                 modifier = Modifier.weight(1f),
                 bottomBar = miniPlayerContent,
+                videoSurface = videoSurface,
+                onShareShorts = onShareShorts,
             )
         }
     } else {
@@ -472,6 +626,7 @@ internal fun AdaptiveAppShell(
             securitySettings = securitySettings,
             processingViewModel = processingViewModel,
             vaultViewModel = vaultViewModel,
+            shortsViewModel = shortsViewModel,
             onVaultImport = onVaultImport,
             onVaultPlay = onVaultPlay,
             onVaultExport = onVaultExport,
@@ -497,6 +652,8 @@ internal fun AdaptiveAppShell(
                 )
                 }
             },
+            videoSurface = videoSurface,
+            onShareShorts = onShareShorts,
         )
     }
 }
@@ -516,6 +673,7 @@ private fun AppScaffold(
     securitySettings: SecuritySettingsActions,
     processingViewModel: ProcessingViewModel?,
     vaultViewModel: VaultViewModel?,
+    shortsViewModel: ShortsViewModel?,
     onVaultImport: () -> Unit,
     onVaultPlay: (VaultItemId) -> Unit,
     onVaultExport: (VaultItemId) -> Unit,
@@ -529,10 +687,12 @@ private fun AppScaffold(
     onSafSource: () -> Unit,
     onSkipMediaOnboarding: () -> Unit,
     onRescan: () -> Unit,
-    onMediaSelected: (String) -> Unit,
+    onMediaSelected: (String, PlaybackQueueSource?) -> Unit,
     thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier = Modifier,
     bottomBar: @Composable () -> Unit = {},
+    videoSurface: @Composable () -> Unit = {},
+    onShareShorts: (ShortsCandidate) -> Unit = {},
 ) {
     val route = navigationState.currentRoute
     val mediaOnboarding = route == AppRoute.Root(RootDestination.HOME) && mediaState.onboarding
@@ -553,6 +713,7 @@ private fun AppScaffold(
                     route = route,
                     mediaState = mediaState,
                     homeViewModel = homeViewModel,
+                    libraryViewModel = libraryViewModel,
                     onBack = onBack,
                     onSafSource = onSafSource,
                     onRescan = onRescan,
@@ -568,6 +729,7 @@ private fun AppScaffold(
                     securitySettings = securitySettings,
                     processingViewModel = processingViewModel,
                     vaultViewModel = vaultViewModel,
+                    shortsViewModel = shortsViewModel,
                     onVaultImport = onVaultImport,
                     onVaultPlay = onVaultPlay,
                     onVaultExport = onVaultExport,
@@ -584,7 +746,10 @@ private fun AppScaffold(
                     onMediaSelected = onMediaSelected,
                     onRootSelected = onRootSelected,
                     onGlobalAction = onGlobalAction,
+                    onBack = onBack,
                     thumbnailRepository = thumbnailRepository,
+                    videoSurface = videoSurface,
+                    onShareShorts = onShareShorts,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -597,6 +762,7 @@ private fun AppRouteTopBar(
     route: AppRoute,
     mediaState: MediaLibraryUiState,
     homeViewModel: HomeViewModel?,
+    libraryViewModel: LibraryViewModel? = null,
     onBack: () -> Unit,
     onSafSource: () -> Unit,
     onRescan: () -> Unit,
@@ -637,26 +803,26 @@ private fun AppRouteTopBar(
                                 homeMoreExpanded = true
                             },
                         )
-                        DropdownMenu(expanded = homeMoreExpanded, onDismissRequest = { homeMoreExpanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.home_add_media_directory)) },
-                                leadingIcon = { Icon(YingLiIcon.ORGANIZE.imageVector, contentDescription = null) },
-                                onClick = { homeMoreExpanded = false; onSafSource() },
+                        YingLiDropdownMenu(expanded = homeMoreExpanded, onDismissRequest = { homeMoreExpanded = false }) {
+                            YingLiDropdownMenuItem(
+                                text = stringResource(R.string.home_add_media_directory),
+                                icon = YingLiIcon.ORGANIZE,
+                                onClick = { onSafSource() },
                             )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.media_rescan)) },
-                                leadingIcon = { Icon(YingLiIcon.REPLAY.imageVector, contentDescription = null) },
-                                onClick = { homeMoreExpanded = false; onRescan() },
+                            YingLiDropdownMenuItem(
+                                text = stringResource(R.string.media_rescan),
+                                icon = YingLiIcon.REPLAY,
+                                onClick = { onRescan() },
                             )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.home_customize)) },
-                                leadingIcon = { Icon(YingLiIcon.GRID.imageVector, contentDescription = null) },
-                                onClick = { homeMoreExpanded = false; homeViewModel?.showEditor() },
+                            YingLiDropdownMenuItem(
+                                text = stringResource(R.string.home_customize),
+                                icon = YingLiIcon.GRID,
+                                onClick = { homeViewModel?.showEditor() },
                             )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.nav_settings)) },
-                                leadingIcon = { Icon(YingLiIcon.SETTINGS.imageVector, contentDescription = null) },
-                                onClick = { homeMoreExpanded = false; onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
+                            YingLiDropdownMenuItem(
+                                text = stringResource(R.string.nav_settings),
+                                icon = YingLiIcon.SETTINGS,
+                                onClick = { onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
                             )
                         }
                     }
@@ -684,7 +850,8 @@ private fun AppRouteTopBar(
                 }
             }
         }
-        route == AppRoute.Root(RootDestination.LIBRARY) -> Unit
+        route == AppRoute.Root(RootDestination.LIBRARY) && libraryViewModel != null -> Unit
+        route == AppRoute.Root(RootDestination.LIBRARY) -> LibraryFallbackTopBar(onGlobalAction)
         else -> YingLiTopBar(
             title = { Text(route.title()) },
             navigationIcon = {
@@ -703,6 +870,29 @@ private fun AppRouteTopBar(
             },
         )
     }
+}
+
+@Composable
+private fun LibraryFallbackTopBar(onGlobalAction: (GlobalAppAction) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    YingLiTopBar(
+        title = { Text(stringResource(R.string.nav_library)) },
+        actions = {
+            Box {
+                YingLiIconButton(
+                    icon = YingLiIcon.OVERFLOW,
+                    contentDescription = stringResource(R.string.home_more),
+                    onClick = { expanded = true },
+                )
+                YingLiDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    YingLiDropdownMenuItem(
+                        text = stringResource(R.string.library_view_settings),
+                        onClick = { onGlobalAction(GlobalAppAction.OPEN_SETTINGS) },
+                    )
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -725,6 +915,7 @@ private fun RouteContent(
     securitySettings: SecuritySettingsActions,
     processingViewModel: ProcessingViewModel?,
     vaultViewModel: VaultViewModel?,
+    shortsViewModel: ShortsViewModel?,
     onVaultImport: () -> Unit,
     onVaultPlay: (VaultItemId) -> Unit,
     onVaultExport: (VaultItemId) -> Unit,
@@ -738,17 +929,28 @@ private fun RouteContent(
     onSafSource: () -> Unit,
     onSkipMediaOnboarding: () -> Unit,
     onRescan: () -> Unit,
-    onMediaSelected: (String) -> Unit,
+    onMediaSelected: (String, PlaybackQueueSource?) -> Unit,
     onRootSelected: (RootDestination) -> Unit,
     onGlobalAction: (GlobalAppAction) -> Unit,
+    onBack: () -> Unit,
     thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier = Modifier,
+    videoSurface: @Composable () -> Unit = {},
+    onShareShorts: (ShortsCandidate) -> Unit = {},
 ) {
     when (route) {
         AppRoute.Processing, AppRoute.Root(RootDestination.PROCESSING) -> processingViewModel?.let {
             ProcessingRoute(it, onOpenProcessingOutput, modifier)
         } ?: ProcessingPlaceholder(modifier)
         AppRoute.Settings -> SettingsScreen(
+            onGestureSeekEnabledChanged = settingsTools.onGestureSeekEnabled,
+            onGestureVolumeEnabledChanged = settingsTools.onGestureVolumeEnabled,
+            onGestureBrightnessEnabledChanged = settingsTools.onGestureBrightnessEnabled,
+            onGestureZoomEnabledChanged = settingsTools.onGestureZoomEnabled,
+            onGestureLeftSideIsVolumeChanged = settingsTools.onGestureLeftSideIsVolume,
+            onGestureDoubleTapSeekMillisChanged = settingsTools.onGestureDoubleTapSeekMillis,
+            onGestureSwipeDownToExitEnabledChanged = settingsTools.onGestureSwipeDownToExitEnabled,
+            onGestureLongPressSpeedChanged = settingsTools.onGestureLongPressSpeed,
             settings = settings,
             playerPreferences = playerPreferences,
             onMiniPlayerChanged = onMiniPlayerChanged,
@@ -778,7 +980,7 @@ private fun RouteContent(
                     onSafSource,
                     onSkipMediaOnboarding,
                     onRescan,
-                    onMediaSelected,
+                    onMediaSelected = { mediaId -> onMediaSelected(mediaId, null) },
                     thumbnailRepository = thumbnailRepository,
                     onOpenLibrary = { onRootSelected(RootDestination.LIBRARY) },
                     onOpenOrganize = { onRootSelected(RootDestination.ORGANIZE) },
@@ -795,6 +997,15 @@ private fun RouteContent(
                     onAddDirectory = onSafSource,
                     onRescan = onRescan,
                     thumbnailRepository = thumbnailRepository,
+                    modifier = modifier,
+                )
+            } ?: Unit
+            RootDestination.SHORTS -> shortsViewModel?.let { viewModel ->
+                seeyuer.yingli.player.feature.shorts.ShortsRoute(
+                    viewModel = viewModel,
+                    videoSurface = videoSurface,
+                    onBack = onBack,
+                    onShare = onShareShorts,
                     modifier = modifier,
                 )
             } ?: Unit
@@ -881,6 +1092,7 @@ private fun FullScreenPlayerPlaceholder(onBack: () -> Unit) {
 private fun RootDestination.toPlaybackSourceContext(): PlaybackSourceContext = when (this) {
     RootDestination.HOME -> PlaybackSourceContext.HOME
     RootDestination.LIBRARY -> PlaybackSourceContext.LIBRARY
+    RootDestination.SHORTS -> PlaybackSourceContext.LIBRARY
     RootDestination.ORGANIZE, RootDestination.PROCESSING -> PlaybackSourceContext.DETAIL
 }
 
@@ -965,6 +1177,7 @@ private fun RootDestination.label(): String = stringResource(
     when (this) {
         RootDestination.HOME -> R.string.nav_home
         RootDestination.LIBRARY -> R.string.nav_library
+        RootDestination.SHORTS -> R.string.nav_shorts
         RootDestination.ORGANIZE -> R.string.nav_organize
         RootDestination.PROCESSING -> R.string.nav_processing
     },
@@ -973,6 +1186,7 @@ private fun RootDestination.label(): String = stringResource(
 private fun RootDestination.icon(): YingLiIcon = when (this) {
     RootDestination.HOME -> YingLiIcon.HOME
     RootDestination.LIBRARY -> YingLiIcon.LIBRARY
+    RootDestination.SHORTS -> YingLiIcon.SHORTS
     RootDestination.ORGANIZE -> YingLiIcon.ORGANIZE
     RootDestination.PROCESSING -> YingLiIcon.PROCESSING
 }

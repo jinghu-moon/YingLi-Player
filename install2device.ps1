@@ -79,7 +79,11 @@ function Select-BuildVariant {
             throw "已取消"
         }
 
-        return if ($choice -eq "1") { "debug" } else { "release" }
+        if ($choice -eq "1") {
+            return "debug"
+        } else {
+            return "release"
+        }
     }
     finally {
         Hide-Cursor

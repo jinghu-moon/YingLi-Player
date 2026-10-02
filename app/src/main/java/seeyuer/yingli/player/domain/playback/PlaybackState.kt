@@ -4,6 +4,7 @@ data class PlaybackTimeline(
     val positionMillis: Long = 0,
     val durationMillis: Long? = null,
     val bufferedPositionMillis: Long = 0,
+    val isSeekable: Boolean = true,
 ) {
     init {
         require(positionMillis >= 0)

@@ -21,10 +21,13 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"
         android:supportsRtl="true"
-        android:theme="@style/Theme.YingLi.Starting">
+        android:theme="@style/Theme.YingLi">
         <activity
             android:name=".app.MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|density|fontScale|layoutDirection"
+            android:theme="@style/Theme.YingLi.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

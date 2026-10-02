@@ -31,11 +31,23 @@ class AdvancedPlaybackContractsTest {
     }
 
     @Test
-    fun `overlay auto hides unless locked or dragging`() {
+    fun `overlay auto hides unless dragging`() {
         val visible = PlayerOverlayState(lastInteractionEpochMillis = 1_000)
         assertFalse(PlayerOverlayReducer.reduce(visible, PlayerOverlayEvent.Timeout(4_000)).controlsVisible)
-        assertTrue(PlayerOverlayReducer.reduce(visible.copy(locked = true), PlayerOverlayEvent.Timeout(4_000)).controlsVisible)
         assertTrue(PlayerOverlayReducer.reduce(visible.copy(dragging = true), PlayerOverlayEvent.Timeout(4_000)).controlsVisible)
+    }
+
+    @Test
+    fun `locked overlay reveals the unlock entry on tap then auto hides again`() {
+        val locked = PlayerOverlayState(controlsVisible = false, locked = true, lastInteractionEpochMillis = 1_000)
+        // 锁定态单击只唤出解锁入口，不切换成"隐藏"。
+        val revealed = PlayerOverlayReducer.reduce(locked, PlayerOverlayEvent.Tap(1_500))
+        assertTrue(revealed.controlsVisible)
+        assertEquals(1_500, revealed.lastInteractionEpochMillis)
+        assertTrue(revealed.locked)
+        // 唤出后同样吃 3 秒自动隐藏。
+        assertFalse(PlayerOverlayReducer.reduce(revealed, PlayerOverlayEvent.Timeout(4_600)).controlsVisible)
+        assertTrue(PlayerOverlayReducer.reduce(revealed, PlayerOverlayEvent.Timeout(3_000)).controlsVisible)
     }
 
     @Test

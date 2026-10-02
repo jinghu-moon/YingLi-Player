@@ -6,6 +6,11 @@ enum class PlaybackCommandRejection {
     NOT_CONNECTED,
     INVALID_STATE,
     SOURCE_UNAVAILABLE,
+    NO_CANDIDATE,
+    CAPABILITY_UNAVAILABLE,
+    TRACK_UNAVAILABLE,
+    INVALID_AB_RANGE,
+    STALE_COMMAND,
 }
 
 enum class PlaybackConnectionState {
@@ -28,6 +33,7 @@ interface PlaybackStateRepository {
 
 interface PlaybackController : PlaybackStateRepository {
     fun prepare(request: PlaybackRequest): PlaybackCommandResult
+    fun prepare(source: ResolvedPlaybackSource): PlaybackCommandResult = prepare(source.request)
     fun play(): PlaybackCommandResult
     fun pause(): PlaybackCommandResult
     fun seekTo(positionMillis: Long): PlaybackCommandResult

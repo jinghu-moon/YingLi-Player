@@ -100,12 +100,24 @@ class YingLiDatabaseMigrationTest {
     }
 
     @Test
-    fun migrateFromOneToEightValidatesCompleteUpgradeChain() {
-        helper.createDatabase("migration-1-8", 1).close()
+    fun migrateFromEightToNineAddsNomediaSetting() {
+        helper.createDatabase("migration-8-9", 8).close()
 
         helper.runMigrationsAndValidate(
-            "migration-1-8",
-            8,
+            "migration-8-9",
+            9,
+            true,
+            YingLiDatabase.MIGRATION_8_9,
+        ).close()
+    }
+
+    @Test
+    fun migrateFromOneToNineValidatesCompleteUpgradeChain() {
+        helper.createDatabase("migration-1-9", 1).close()
+
+        helper.runMigrationsAndValidate(
+            "migration-1-9",
+            9,
             true,
             YingLiDatabase.MIGRATION_1_2,
             YingLiDatabase.MIGRATION_2_3,
@@ -114,6 +126,7 @@ class YingLiDatabaseMigrationTest {
             YingLiDatabase.MIGRATION_5_6,
             YingLiDatabase.MIGRATION_6_7,
             YingLiDatabase.MIGRATION_7_8,
+            YingLiDatabase.MIGRATION_8_9,
         ).close()
     }
 

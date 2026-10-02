@@ -25,6 +25,11 @@ data class ResolvedPlaybackSource(
     val request: PlaybackRequest,
     val uri: String,
     val title: String,
+    val durationMillis: Long? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val fileSizeBytes: Long? = null,
+    val mimeType: String? = null,
 )
 
 interface PlaybackSourceRepository {

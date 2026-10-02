@@ -7,6 +7,7 @@ import org.junit.Test
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.core.model.media.MediaUri
+import seeyuer.yingli.player.domain.playback.PlaybackQueueSource
 
 class LibraryContractsTest {
     @Test
@@ -51,6 +52,18 @@ class LibraryContractsTest {
         assertEquals("设备存储", folder.currentPath)
         assertEquals(LibraryBrowseMode.ALL_VIDEOS, flat.browseMode)
         assertTrue(flat.currentPath.isEmpty())
+    }
+
+    @Test
+    fun `playback queue source maps folder playback to recursive library query`() {
+        val folder = PlaybackQueueSource.folderTree("Movies/Season 1")
+        val all = PlaybackQueueSource.allVideos()
+
+        assertEquals(LibraryBrowseMode.FOLDER, folder.toQuery().browseMode)
+        assertEquals("Movies/Season 1", folder.toQuery().currentPath)
+        assertTrue(folder.toQuery().includeDescendants)
+        assertEquals(LibraryBrowseMode.ALL_VIDEOS, all.toQuery().browseMode)
+        assertFalse(all.toQuery().includeDescendants)
     }
 
     @Test(expected = IllegalArgumentException::class)

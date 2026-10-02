@@ -227,6 +227,49 @@ class RoomLibraryRepositoryTest {
     }
 
     @Test
+    fun recursiveFolderQueryReturnsDirectAndNestedVideosButExcludesSimilarPrefixes() = runTest {
+        seedSource()
+        val entries = listOf(
+            "direct" to "Movies",
+            "nested" to "Movies/Season 1",
+            "deep" to "Movies/Season 1/Bonus",
+            "similar" to "Movies2/Season 1",
+        )
+        database.mediaCatalogDao().upsertItems(entries.map { (id) -> MediaItemEntity(id, id, 0, false) })
+        database.mediaCatalogDao().insertLocations(entries.map { (id, path) ->
+            location(id, "content://media/$id", lastSeen = 1, missing = 0, relativePath = path)
+        })
+        database.mediaCatalogDao().upsertLinks(entries.map { (id) -> MediaItemLocationEntity(id, id) })
+
+        val page = repository.page(
+            LibraryQuery(
+                browseMode = LibraryBrowseMode.FOLDER,
+                currentPath = "Movies",
+                includeDescendants = true,
+                pageSize = 10,
+            ),
+            LibraryPageDirection.REFRESH,
+        )
+
+        assertEquals(listOf("deep", "direct", "nested"), page.items.map { it.id.value }.sorted())
+    }
+
+    @Test
+    fun findByIdsBatchesLargePlaybackQueues() = runTest {
+        seedSource()
+        val ids = (0 until 1_200).map { "queue_$it" }
+        database.mediaCatalogDao().upsertItems(ids.map { id -> MediaItemEntity(id, id, 0, false) })
+        database.mediaCatalogDao().insertLocations(ids.map { id ->
+            location(id, "content://media/$id", lastSeen = 1, missing = 0, relativePath = "Movies")
+        })
+        database.mediaCatalogDao().upsertLinks(ids.map { id -> MediaItemLocationEntity(id, id) })
+
+        val media = repository.findByIds(ids.map(::MediaItemId).toSet())
+
+        assertEquals(ids.size, media.size)
+    }
+
+    @Test
     fun folderAggregatesUseOneCurrentLocationPerMediaAndExposePresentationCounts() = runTest {
         seedSource()
         database.mediaCatalogDao().upsertItems(

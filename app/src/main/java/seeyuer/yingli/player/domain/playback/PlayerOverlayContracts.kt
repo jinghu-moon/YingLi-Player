@@ -28,7 +28,11 @@ object PlayerOverlayReducer {
     const val AUTO_HIDE_MILLIS = 3_000L
 
     fun reduce(state: PlayerOverlayState, event: PlayerOverlayEvent): PlayerOverlayState = when (event) {
-        is PlayerOverlayEvent.Tap -> if (state.locked) state else state.copy(
+        // 锁定时单击不切换控件显隐，只用来唤出解锁入口；解锁入口同样吃 3 秒自动隐藏。
+        is PlayerOverlayEvent.Tap -> if (state.locked) state.copy(
+            controlsVisible = true,
+            lastInteractionEpochMillis = event.nowEpochMillis,
+        ) else state.copy(
             controlsVisible = !state.controlsVisible,
             lastInteractionEpochMillis = event.nowEpochMillis,
         )
@@ -51,7 +55,31 @@ object PlayerOverlayReducer {
         )
         PlayerOverlayEvent.DragEnded -> state.copy(dragging = false)
         is PlayerOverlayEvent.Timeout -> if (
-            state.locked || state.dragging || event.nowEpochMillis - state.lastInteractionEpochMillis < AUTO_HIDE_MILLIS
+            state.dragging || event.nowEpochMillis - state.lastInteractionEpochMillis < AUTO_HIDE_MILLIS
         ) state else state.copy(controlsVisible = false)
+    }
+}
+
+enum class PlayerPanel {
+    NONE,
+    SETTINGS,
+    PLAYLIST,
+    VIDEO_INFO,
+    /** 倍速档位条：就地展开在底栏按钮行内，不是浮层。 */
+    SPEED,
+}
+
+sealed interface PlayerPanelEvent {
+    data class Open(val panel: PlayerPanel) : PlayerPanelEvent {
+        init { require(panel != PlayerPanel.NONE) }
+    }
+    data object Close : PlayerPanelEvent
+    data object Back : PlayerPanelEvent
+}
+
+object PlayerPanelReducer {
+    fun reduce(state: PlayerPanel, event: PlayerPanelEvent): PlayerPanel = when (event) {
+        is PlayerPanelEvent.Open -> event.panel
+        PlayerPanelEvent.Close, PlayerPanelEvent.Back -> PlayerPanel.NONE
     }
 }

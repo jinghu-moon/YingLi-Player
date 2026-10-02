@@ -34,13 +34,31 @@ class RoomPlaybackRepository(
             sourceContext = sourceContext,
             incognito = incognito,
         )
-        ResolvedPlaybackSource(request, location.uri, item.title)
+        ResolvedPlaybackSource(
+            request = request,
+            uri = location.uri,
+            title = item.title,
+            durationMillis = location.durationMillis,
+            width = location.width,
+            height = location.height,
+            fileSizeBytes = location.sizeBytes,
+            mimeType = location.mimeType,
+        )
     }
 
     override suspend fun resolve(request: PlaybackRequest): ResolvedPlaybackSource? = database.withTransaction {
         val item = dao.item(request.mediaId.value) ?: return@withTransaction null
         val location = dao.playableLocationById(request.locationId.value) ?: return@withTransaction null
-        ResolvedPlaybackSource(request, location.uri, item.title)
+        ResolvedPlaybackSource(
+            request = request,
+            uri = location.uri,
+            title = item.title,
+            durationMillis = location.durationMillis,
+            width = location.width,
+            height = location.height,
+            fileSizeBytes = location.sizeBytes,
+            mimeType = location.mimeType,
+        )
     }
 
     override suspend fun saveProgress(mediaId: MediaItemId, positionMillis: Long, completed: Boolean) {

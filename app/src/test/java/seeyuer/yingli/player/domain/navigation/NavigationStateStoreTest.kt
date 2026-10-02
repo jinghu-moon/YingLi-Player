@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import seeyuer.yingli.player.domain.playback.PlaybackQueueSource
 
 class NavigationStateStoreTest {
     @Test
@@ -31,7 +32,7 @@ class NavigationStateStoreTest {
         assertEquals(AppRoute.Processing, store.state.value.currentRoute)
 
         store.selectRoot(RootDestination.PROCESSING)
-        assertEquals(3, store.state.value.primaryDestinations.size)
+        assertEquals(4, store.state.value.primaryDestinations.size)
         assertEquals(RootDestination.HOME, store.state.value.currentRoot)
     }
 
@@ -93,5 +94,18 @@ class NavigationStateStoreTest {
 
         assertEquals(first.state.value, restored.state.value)
         assertEquals(AppRoute.Player("movie_42", RootDestination.LIBRARY), restored.state.value.currentRoute)
+    }
+
+    @Test
+    fun `player route preserves the library queue scope across restoration`() {
+        val handle = SavedStateHandle()
+        val scope = PlaybackQueueSource.folderTree("Movies/Season 1")
+        val first = SavedStateNavigationStateStore(handle)
+        first.selectRoot(RootDestination.LIBRARY)
+        first.openPlayer("movie_42", scope)
+
+        val restored = SavedStateNavigationStateStore(handle)
+
+        assertEquals(AppRoute.Player("movie_42", RootDestination.LIBRARY, scope), restored.state.value.currentRoute)
     }
 }

@@ -13,7 +13,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
@@ -24,6 +25,7 @@ import seeyuer.yingli.player.domain.navigation.AppRoute
 import seeyuer.yingli.player.domain.navigation.NavigationState
 import seeyuer.yingli.player.domain.navigation.RootDestination
 import seeyuer.yingli.player.feature.library.MediaLibraryUiState
+import seeyuer.yingli.player.feature.settings.SettingsTestTags
 
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Suppress("DEPRECATION")
@@ -43,7 +45,7 @@ class AdaptiveAppShellTest {
         composeRule.onNodeWithText("设置").assertDoesNotExist()
         composeRule.onNodeWithText("处理").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("首页", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithContentDescription("搜索").assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithContentDescription("搜索本地视频、文件夹或标签").assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithContentDescription("更多").assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithContentDescription("打开处理中心").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("设置", useUnmergedTree = true).assertDoesNotExist()
@@ -84,7 +86,8 @@ class AdaptiveAppShellTest {
             navigationState = NavigationState(currentRoot = RootDestination.LIBRARY),
         )
 
-        composeRule.onNodeWithContentDescription("视频视图设置").assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithContentDescription("更多").assertHeightIsAtLeast(48.dp).performClick()
+        composeRule.onNodeWithText("视频视图设置").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("打开设置").assertDoesNotExist()
     }
 
@@ -126,9 +129,10 @@ class AdaptiveAppShellTest {
             fontScale = 2f,
         )
 
-        composeRule.onNodeWithText("媒体库").assertIsDisplayed()
+        composeRule.onNodeWithText("视频库").assertIsDisplayed()
         composeRule.onNode(hasText("首页") and isSelected()).assertExists()
-        composeRule.onNodeWithText("自动画中画").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(SettingsTestTags.CONTENT).performScrollToNode(hasText("画中画", substring = true))
+        composeRule.onNodeWithText("画中画", substring = true).assertIsDisplayed()
     }
 
     private fun setShell(

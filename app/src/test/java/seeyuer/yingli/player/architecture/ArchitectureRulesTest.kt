@@ -50,6 +50,60 @@ class ArchitectureRulesTest {
     }
 
     @Test
+    fun `player feature uses playback session instead of legacy controllers`() {
+        val forbiddenTypes = setOf(
+            "$ROOT_PACKAGE.domain.playback.PlaybackController",
+            "$ROOT_PACKAGE.domain.playback.AdvancedPlaybackController",
+            "$ROOT_PACKAGE.engine.media3.Media3PlaybackController",
+        )
+        val violations = sources
+            .filter { it.packageName.startsWith("$ROOT_PACKAGE.feature.player") }
+            .flatMap { source ->
+                source.imports.filter(forbiddenTypes::contains).map { imported ->
+                    "${source.relativePath} imports $imported"
+                }
+            }
+
+        assertTrue(
+            "Player feature depends on a legacy playback controller:\n${violations.joinToString("\n")}",
+            violations.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `playback domain is platform and backend independent`() {
+        val forbiddenPrefixes = listOf(
+            "android.",
+            "androidx.compose.",
+            "androidx.media3.",
+            "androidx.room.",
+        )
+        val violations = sources
+            .filter { it.packageName.startsWith("$ROOT_PACKAGE.domain.playback") }
+            .flatMap { source ->
+                source.imports
+                    .filter { imported -> forbiddenPrefixes.any(imported::startsWith) }
+                    .map { imported -> "${source.relativePath} imports $imported" }
+            }
+
+        assertTrue("Playback domain leaks platform types:\n${violations.joinToString("\n")}", violations.isEmpty())
+    }
+
+    @Test
+    fun `media3 engine does not depend on feature or app composition`() {
+        val forbiddenPrefixes = listOf("$ROOT_PACKAGE.feature.", "$ROOT_PACKAGE.app.")
+        val violations = sources
+            .filter { it.packageName.startsWith("$ROOT_PACKAGE.engine.media3") }
+            .flatMap { source ->
+                source.imports
+                    .filter { imported -> forbiddenPrefixes.any(imported::startsWith) }
+                    .map { imported -> "${source.relativePath} imports $imported" }
+            }
+
+        assertTrue("Media3 engine leaks upward dependencies:\n${violations.joinToString("\n")}", violations.isEmpty())
+    }
+
+    @Test
     fun `ui does not access dao files or exoplayer directly`() {
         val forbiddenPrefixes = listOf(
             "androidx.room",

@@ -190,6 +190,7 @@ data class LibraryQuery(
     val pageSize: Int = DEFAULT_PAGE_SIZE,
     val browseMode: LibraryBrowseMode = LibraryBrowseMode.ALL_VIDEOS,
     val currentPath: String = "",
+    val includeDescendants: Boolean = false,
 ) {
     val normalizedKeyword: String = keyword.trim().take(MAX_KEYWORD_LENGTH)
 
@@ -280,6 +281,17 @@ interface LibraryPagingRepository : LibraryRepository {
     fun observeInvalidations(): Flow<Unit>
     suspend fun folders(query: LibraryQuery): List<LibraryFolder> = emptyList()
     suspend fun findByIds(ids: Set<MediaItemId>): List<LibraryMedia> = emptyList()
+
+    suspend fun findAll(query: LibraryQuery): List<LibraryMedia> {
+        val result = mutableListOf<LibraryMedia>()
+        var cursor: LibraryCursor? = null
+        do {
+            val page = page(query.copy(cursor = cursor), LibraryPageDirection.APPEND)
+            result += page.items
+            cursor = page.nextCursor
+        } while (cursor != null)
+        return result
+    }
 }
 
 interface SearchRepository {

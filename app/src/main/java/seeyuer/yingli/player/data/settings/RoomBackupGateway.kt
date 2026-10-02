@@ -172,30 +172,49 @@ class RoomBackupGateway(
         conflictCount = conflicts,
         tagAssignmentCount = tagAssignments.size,
     )
-
-    private fun UserPreferences.toBackupMap(): Map<String, String> = mapOf(
-        "libraryLayout" to libraryLayout.name,
-        "libraryBreadcrumb" to libraryBreadcrumb.name,
-        "thumbnailScale" to thumbnailScale.toString(),
-        "librarySort" to librarySort.name,
-        "librarySortDirection" to librarySortDirection.name,
-        "trashRetentionDays" to trashRetentionDays.toString(),
-        "miniPlayer" to miniPlayerEnabled.toString(),
-        "autoPip" to autoPictureInPicture.toString(),
-        "exportDirectory" to exportDirectory.name,
-    )
-
-    private fun Map<String, String>.toUserPreferences(fallback: UserPreferences): UserPreferences = UserPreferences.sanitize(
-        schemaVersion = UserPreferences.CURRENT_SCHEMA_VERSION,
-        libraryLayout = get("libraryLayout") ?: fallback.libraryLayout.name,
-        libraryBreadcrumb = get("libraryBreadcrumb") ?: fallback.libraryBreadcrumb.name,
-        thumbnailScale = get("thumbnailScale")?.toFloatOrNull() ?: fallback.thumbnailScale,
-        librarySort = get("librarySort") ?: fallback.librarySort.name,
-        librarySortDirection = get("librarySortDirection") ?: fallback.librarySortDirection.name,
-        trashRetentionDays = get("trashRetentionDays")?.toIntOrNull() ?: fallback.trashRetentionDays,
-        miniPlayerEnabled = get("miniPlayer")?.toBooleanStrictOrNull() ?: fallback.miniPlayerEnabled,
-        autoPictureInPicture = get("autoPip")?.toBooleanStrictOrNull() ?: fallback.autoPictureInPicture,
-        exportDirectory = get("exportDirectory") ?: ExportDirectoryPreference.YINGLI_OUTPUT.name,
-        customExportTreeUri = null,
-    )
 }
+
+/** 导出设置备份：键名与 [toUserPreferences] 必须成对维护。 */
+internal fun UserPreferences.toBackupMap(): Map<String, String> = mapOf(
+    "libraryLayout" to libraryLayout.name,
+    "libraryBreadcrumb" to libraryBreadcrumb.name,
+    "thumbnailScale" to thumbnailScale.toString(),
+    "librarySort" to librarySort.name,
+    "librarySortDirection" to librarySortDirection.name,
+    "trashRetentionDays" to trashRetentionDays.toString(),
+    "miniPlayer" to miniPlayerEnabled.toString(),
+    "autoPip" to autoPictureInPicture.toString(),
+    "gestureSeekEnabled" to gestureSeekEnabled.toString(),
+    "gestureVolumeEnabled" to gestureVolumeEnabled.toString(),
+    "gestureBrightnessEnabled" to gestureBrightnessEnabled.toString(),
+    "gestureZoomEnabled" to gestureZoomEnabled.toString(),
+    "gestureLeftSideIsVolume" to gestureLeftSideIsVolume.toString(),
+    "gestureDoubleTapSeekMillis" to gestureDoubleTapSeekMillis.toString(),
+    "gestureSwipeDownToExitEnabled" to gestureSwipeDownToExitEnabled.toString(),
+    "gestureLongPressSpeed" to gestureLongPressSpeed.toString(),
+    "exportDirectory" to exportDirectory.name,
+)
+
+/** 导入设置备份：缺失或坏值回退 [fallback]，其余交给 [UserPreferences.sanitize] 清洗。 */
+internal fun Map<String, String>.toUserPreferences(fallback: UserPreferences): UserPreferences = UserPreferences.sanitize(
+    schemaVersion = UserPreferences.CURRENT_SCHEMA_VERSION,
+    libraryLayout = get("libraryLayout") ?: fallback.libraryLayout.name,
+    libraryBreadcrumb = get("libraryBreadcrumb") ?: fallback.libraryBreadcrumb.name,
+    thumbnailScale = get("thumbnailScale")?.toFloatOrNull() ?: fallback.thumbnailScale,
+    librarySort = get("librarySort") ?: fallback.librarySort.name,
+    librarySortDirection = get("librarySortDirection") ?: fallback.librarySortDirection.name,
+    trashRetentionDays = get("trashRetentionDays")?.toIntOrNull() ?: fallback.trashRetentionDays,
+    miniPlayerEnabled = get("miniPlayer")?.toBooleanStrictOrNull() ?: fallback.miniPlayerEnabled,
+    autoPictureInPicture = get("autoPip")?.toBooleanStrictOrNull() ?: fallback.autoPictureInPicture,
+    gestureSeekEnabled = get("gestureSeekEnabled")?.toBooleanStrictOrNull() ?: fallback.gestureSeekEnabled,
+    gestureVolumeEnabled = get("gestureVolumeEnabled")?.toBooleanStrictOrNull() ?: fallback.gestureVolumeEnabled,
+    gestureBrightnessEnabled = get("gestureBrightnessEnabled")?.toBooleanStrictOrNull() ?: fallback.gestureBrightnessEnabled,
+    gestureZoomEnabled = get("gestureZoomEnabled")?.toBooleanStrictOrNull() ?: fallback.gestureZoomEnabled,
+    gestureLeftSideIsVolume = get("gestureLeftSideIsVolume")?.toBooleanStrictOrNull() ?: fallback.gestureLeftSideIsVolume,
+    gestureDoubleTapSeekMillis = get("gestureDoubleTapSeekMillis")?.toIntOrNull() ?: fallback.gestureDoubleTapSeekMillis,
+    gestureSwipeDownToExitEnabled = get("gestureSwipeDownToExitEnabled")?.toBooleanStrictOrNull()
+        ?: fallback.gestureSwipeDownToExitEnabled,
+    gestureLongPressSpeed = get("gestureLongPressSpeed")?.toFloatOrNull() ?: fallback.gestureLongPressSpeed,
+    exportDirectory = get("exportDirectory") ?: ExportDirectoryPreference.YINGLI_OUTPUT.name,
+    customExportTreeUri = null,
+)

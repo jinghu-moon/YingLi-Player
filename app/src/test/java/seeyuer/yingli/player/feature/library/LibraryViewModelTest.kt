@@ -104,10 +104,13 @@ class LibraryViewModelTest {
         runCurrent()
         repository.folderQueries.clear()
 
-        viewModel.setBrowseMode(LibraryBrowseMode.ALL_VIDEOS)
+        viewModel.enterFolder(LibraryPathSegment("DCIM", "DCIM"))
         runCurrent()
+        viewModel.setBrowseMode(LibraryBrowseMode.ALL_VIDEOS)
+        val state = viewModel.state.first { it.browseMode == LibraryBrowseMode.ALL_VIDEOS }
 
         assertEquals(emptyList<LibraryQuery>(), repository.folderQueries)
+        assertEquals(emptyList<LibraryPathSegment>(), state.currentPath)
         collectJob.cancel()
     }
 

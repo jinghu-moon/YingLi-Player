@@ -16,14 +16,14 @@ class PrototypeConformanceTest {
     private val productionRoot = File("src/main/java")
 
     @Test
-    fun `home refactor keeps exactly three primary destinations`() {
+    fun `primary navigation includes independent shorts destination`() {
         val defaultState = NavigationState()
 
         assertEquals(
-            listOf(RootDestination.HOME, RootDestination.LIBRARY, RootDestination.ORGANIZE),
+            listOf(RootDestination.HOME, RootDestination.LIBRARY, RootDestination.SHORTS, RootDestination.ORGANIZE),
             defaultState.primaryDestinations,
         )
-        assertEquals(3, defaultState.primaryDestinations.size)
+        assertEquals(4, defaultState.primaryDestinations.size)
     }
 
     @Test

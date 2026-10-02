@@ -1,7 +1,7 @@
 package seeyuer.yingli.player.app
 
 import android.os.Bundle
-import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.StatFs
 import android.view.WindowManager
 import android.hardware.biometrics.BiometricManager
@@ -15,7 +15,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import seeyuer.yingli.player.app.playback.ActivityDeviceControlGateway
 import seeyuer.yingli.player.app.playback.ActivityPictureInPictureGateway
+import seeyuer.yingli.player.app.playback.ActivityWindowPlaybackGateway
 import seeyuer.yingli.player.engine.media3.Media3ScreenshotGateway
 import seeyuer.yingli.player.engine.media3.Media3VideoSurface
 import seeyuer.yingli.player.engine.media3.Media3PlaybackController
@@ -28,13 +30,16 @@ import seeyuer.yingli.player.feature.organize.OrganizeViewModel
 import seeyuer.yingli.player.feature.home.HomeViewModel
 import seeyuer.yingli.player.feature.settings.SettingsViewModel
 import seeyuer.yingli.player.feature.processing.ProcessingViewModel
+import seeyuer.yingli.player.feature.shorts.ShortsViewModel
 import seeyuer.yingli.player.feature.security.SecurityViewModel
 import seeyuer.yingli.player.feature.security.VaultViewModel
 import seeyuer.yingli.player.domain.security.AppLockMode
 
 class MainActivity : ComponentActivity() {
-    private var landscapeRequested = false
     private var secureContent = true
+    private val windowPlaybackGateway by lazy {
+        ActivityWindowPlaybackGateway(this, ActivityPictureInPictureGateway(this))
+    }
     private val viewModel: YingLiAppViewModel by viewModels {
         YingLiAppViewModel.factory((application as YingLiApplication).container.themeRepository)
     }
@@ -51,11 +56,29 @@ class MainActivity : ComponentActivity() {
     private val playerViewModel: PlayerViewModel by viewModels {
         val app = application as YingLiApplication
         PlayerViewModel.factory(
-            app.playbackController,
-            app.mediaContainer.playbackSourceRepository,
+            app.playbackSessionClient,
             app.container.dispatchers,
             app.mediaContainer.playerPreferenceRepository,
             app.mediaContainer.trackPreferenceRepository,
+            Media3ScreenshotGateway(this, app.playbackController, app.container.dispatchers, app.container.clock),
+            ActivityPictureInPictureGateway(this),
+            app.mediaContainer.playbackQueueRepository,
+            app.mediaContainer.playerControlLayoutRepository,
+            app.mediaContainer.libraryRepository,
+            windowPlaybackGateway,
+            ActivityDeviceControlGateway(this),
+            ownsSessionClient = false,
+        )
+    }
+    private val shortsViewModel: ShortsViewModel by viewModels {
+        val app = application as YingLiApplication
+        ShortsViewModel.factory(
+            app.playbackSessionClient,
+            app.mediaContainer.libraryRepository,
+            app.container.dispatchers,
+            app.mediaContainer.shortsPreferenceRepository,
+            app.mediaContainer.organizeRepository,
+            app.mediaContainer.libraryMutationRepository,
             Media3ScreenshotGateway(this, app.playbackController, app.container.dispatchers, app.container.clock),
             ActivityPictureInPictureGateway(this),
         )
@@ -147,11 +170,17 @@ class MainActivity : ComponentActivity() {
                 processingViewModel = processingViewModel,
                 securityViewModel = securityViewModel,
                 vaultViewModel = vaultViewModel,
+                shortsViewModel = shortsViewModel,
                 windowWidthSizeClass = calculateWindowSizeClass(this).widthSizeClass,
                 videoSurface = {
                     Media3VideoSurface((application as YingLiApplication).playbackController)
                 },
-                onToggleOrientation = ::toggleOrientation,
+                playerVideoSurface = { transformed ->
+                    Media3VideoSurface(
+                        (application as YingLiApplication).playbackController,
+                        transformed = transformed,
+                    )
+                },
                 onSecureContentChanged = ::setSecureContent,
                 onSecureSessionLocked = (application as YingLiApplication).playbackController::invalidateSecureSession,
                 biometricAvailable = biometricAvailable(),
@@ -236,12 +265,14 @@ class MainActivity : ComponentActivity() {
             )
     }
 
-    private fun toggleOrientation() {
-        landscapeRequested = !landscapeRequested
-        requestedOrientation = if (landscapeRequested) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        }
+    /** Manifest 声明自行处理方向/尺寸变化，因此这里把真实结果回传给窗口网关。 */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        windowPlaybackGateway.onConfigurationChanged(newConfig)
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        windowPlaybackGateway.onPictureInPictureModeChanged(isInPictureInPictureMode)
     }
 }

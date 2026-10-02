@@ -1,8 +1,8 @@
 package seeyuer.yingli.player.feature.settings
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import org.junit.Rule
 import org.junit.Test
 import seeyuer.yingli.player.data.preferences.AppearanceSettings

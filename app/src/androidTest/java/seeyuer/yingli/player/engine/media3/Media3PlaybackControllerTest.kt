@@ -1,6 +1,7 @@
 package seeyuer.yingli.player.engine.media3
 
 import android.content.Context
+import android.content.ComponentName
 import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -10,6 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import seeyuer.yingli.player.app.YingLiApplication
+import seeyuer.yingli.player.app.playback.YingLiPlaybackService
 import seeyuer.yingli.player.engine.media3.Media3PlaybackController
 import seeyuer.yingli.player.domain.playback.PlaybackCommandRejection
 import seeyuer.yingli.player.domain.playback.PlaybackCommandResult
@@ -52,8 +54,31 @@ class Media3PlaybackControllerTest {
         assertSame(application.playbackController, application.playbackController)
     }
 
-    private fun waitForConnection(controller: Media3PlaybackController): Boolean {
-        val deadline = SystemClock.elapsedRealtime() + CONNECTION_TIMEOUT_MILLIS
+    @Test
+    fun newControllerReconnectsAfterPreviousClientCloses() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val application = context as YingLiApplication
+        assertTrue(waitForConnection(application.playbackController))
+
+        val replacement = Media3PlaybackController(
+            context,
+            ComponentName(context, YingLiPlaybackService::class.java),
+            application.mediaContainer.playbackSourceRepository,
+            application.container.dispatchers,
+            application.container.logger,
+        )
+        try {
+            assertTrue(waitForConnection(replacement))
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { replacement.close() }
+        }
+    }
+
+    private fun waitForConnection(
+        controller: Media3PlaybackController,
+        timeoutMillis: Long = CONNECTION_TIMEOUT_MILLIS,
+    ): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
         while (SystemClock.elapsedRealtime() < deadline) {
             if (controller.connectionState.value == PlaybackConnectionState.CONNECTED) return true
             SystemClock.sleep(25)

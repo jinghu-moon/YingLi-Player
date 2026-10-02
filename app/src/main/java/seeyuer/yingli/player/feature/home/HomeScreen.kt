@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -167,7 +168,7 @@ private fun HomeDashboardContent(
     modifier: Modifier,
 ) {
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().testTag(HomeTestTags.DASHBOARD),
         contentPadding = PaddingValues(YingLiTheme.components.pagePadding),
         verticalArrangement = Arrangement.spacedBy(YingLiTheme.components.sectionSpacing),
     ) {
@@ -217,36 +218,13 @@ private fun HomeDashboardContent(
     }
 }
 
-@Composable
-private fun HomeSectionTitle(title: String, count: Int) {
-    Text("$title · $count", style = MaterialTheme.typography.titleMedium)
+internal object HomeTestTags {
+    const val DASHBOARD = "home.dashboard"
 }
 
 @Composable
-private fun HomeCard(
-    title: String,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().border(1.dp, YingLiTheme.colors.borderDefault, RoundedCornerShape(8.dp)),
-        color = YingLiTheme.colors.surface,
-        shape = RoundedCornerShape(8.dp),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                if (onAction != null) {
-                    TextButton(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) {
-                        if (actionLabel != null) Text(actionLabel)
-                        Icon(YingLiIcon.ARROW_RIGHT.imageVector, contentDescription = actionLabel, modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-            content()
-        }
-    }
+private fun HomeSectionTitle(title: String, count: Int) {
+    Text("$title · $count", style = MaterialTheme.typography.titleMedium)
 }
 
 @Composable
@@ -260,8 +238,11 @@ private fun HomeStatsCard(stats: HomeStats, onOpenStats: () -> Unit) {
     val video = stats.videoBytes.coerceAtMost(used)
     val other = (used - video).coerceAtLeast(0)
     val barTotal = (video + other + deviceAvailable).coerceAtLeast(1)
-    HomeCard(stringResource(R.string.home_media_overview), onAction = onOpenStats) {
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+    YingLiCard(
+        title = stringResource(R.string.home_media_overview),
+        action = YingLiCardAction(stringResource(R.string.home_open_media_stats), onOpenStats),
+    ) {
+        Row(Modifier.fillMaxWidth()) {
             StatMetric(formatCount(stats.videoCount), stringResource(R.string.home_video_count), Modifier.weight(1f))
             StatMetric(formatFileSize(stats.videoBytes), stringResource(R.string.home_space_used), Modifier.weight(1f))
         }
@@ -304,8 +285,8 @@ private fun StorageLegend(color: Color, label: String, bytes: Long, total: Long)
 
 @Composable
 private fun ContinueWatchingCard(items: List<HomeMediaPreview>, onMediaSelected: (String) -> Unit, thumbnails: ThumbnailLoader?) {
-    HomeCard(stringResource(R.string.home_continue_watching)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(top = 10.dp)) {
+    YingLiCard(stringResource(R.string.home_continue_watching)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(items, key = { it.mediaId.value }) { item ->
                 Surface(onClick = { onMediaSelected(item.mediaId.value) }, modifier = Modifier.width(220.dp), color = Color.Transparent, shape = RoundedCornerShape(8.dp)) {
                     Column {
@@ -332,8 +313,11 @@ private fun ContinueWatchingCard(items: List<HomeMediaPreview>, onMediaSelected:
 
 @Composable
 private fun RecentlyAddedCard(items: List<HomeMediaPreview>, onMediaSelected: (String) -> Unit, thumbnails: ThumbnailLoader?, onOpenLibrary: () -> Unit) {
-    HomeCard(stringResource(R.string.home_recently_added), stringResource(R.string.home_all), onOpenLibrary) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(top = 8.dp)) {
+    YingLiCard(
+        title = stringResource(R.string.home_recently_added),
+        action = YingLiCardAction(stringResource(R.string.home_open_recently_added), onOpenLibrary),
+    ) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(items, key = { it.mediaId.value }) { item ->
                 Surface(onClick = { onMediaSelected(item.mediaId.value) }, modifier = Modifier.width(154.dp), color = Color.Transparent, shape = RoundedCornerShape(8.dp)) {
                     Column {
@@ -354,8 +338,11 @@ private fun RecentlyAddedCard(items: List<HomeMediaPreview>, onMediaSelected: (S
 
 @Composable
 private fun MyCollectionsCard(items: List<HomeCollectionPreview>, onOpenOrganize: () -> Unit) {
-    HomeCard(stringResource(R.string.home_my_collections), stringResource(R.string.home_all), onOpenOrganize) {
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    YingLiCard(
+        title = stringResource(R.string.home_my_collections),
+        action = YingLiCardAction(stringResource(R.string.home_open_collections), onOpenOrganize),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items.forEach { item ->
                 Surface(onClick = onOpenOrganize, modifier = Modifier.weight(1f), color = Color.Transparent, shape = RoundedCornerShape(8.dp)) {
                     Column {
@@ -373,10 +360,15 @@ private fun MyCollectionsCard(items: List<HomeCollectionPreview>, onOpenOrganize
 
 @Composable
 private fun FrequentFoldersCard(items: List<HomeFolderPreview>, onFolderSelected: (String) -> Unit) {
-    HomeCard(stringResource(R.string.home_frequent_folders)) {
-        items.forEach { folder ->
+    YingLiCard(stringResource(R.string.home_frequent_folders)) {
+        items.forEachIndexed { index, folder ->
             Surface(onClick = { onFolderSelected(folder.sourceId) }, color = Color.Transparent, modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp)) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = if (index == 0) 0.dp else 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Surface(shape = RoundedCornerShape(6.dp), color = YingLiTheme.colors.surfaceMuted) {
                         Icon(YingLiIcon.ORGANIZE.imageVector, contentDescription = null, modifier = Modifier.padding(9.dp).size(20.dp))
                     }
@@ -393,8 +385,11 @@ private fun FrequentFoldersCard(items: List<HomeFolderPreview>, onFolderSelected
 
 @Composable
 private fun MaintenanceCard(items: List<MaintenanceItem>, onOpenOrganize: () -> Unit) {
-    HomeCard(stringResource(R.string.home_maintenance), stringResource(R.string.home_go_organize), onOpenOrganize) {
-        items.forEach { item ->
+    YingLiCard(
+        title = stringResource(R.string.home_maintenance),
+        action = YingLiCardAction(stringResource(R.string.home_go_organize), onOpenOrganize),
+    ) {
+        items.forEachIndexed { index, item ->
             val title = when (item.kind) {
                 MaintenanceKind.DUPLICATES -> stringResource(R.string.home_duplicates_found)
                 MaintenanceKind.TRASH -> stringResource(R.string.home_trash_pending)
@@ -404,7 +399,12 @@ private fun MaintenanceCard(items: List<MaintenanceItem>, onOpenOrganize: () -> 
                 MaintenanceKind.TRASH -> stringResource(R.string.home_trash_summary, item.itemCount)
             }
             Surface(onClick = onOpenOrganize, color = Color.Transparent, modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp)) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = if (index == 0) 0.dp else 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Surface(shape = RoundedCornerShape(6.dp), color = YingLiTheme.colors.surfaceMuted) {
                         Icon(YingLiIcon.SETTINGS.imageVector, contentDescription = null, modifier = Modifier.padding(9.dp).size(20.dp))
                     }
@@ -464,7 +464,7 @@ private fun HomeMediaPreview.resolutionLabel(): String = width?.let { width ->
     }
 } ?: "--P"
 
-private fun formatCount(value: Int): String = String.format(Locale.US, "%,d", value)
+private fun formatCount(value: Int): String = value.toString()
 
 private fun formatFileSize(bytes: Long): String {
     if (bytes < 1_024) return "${bytes}B"

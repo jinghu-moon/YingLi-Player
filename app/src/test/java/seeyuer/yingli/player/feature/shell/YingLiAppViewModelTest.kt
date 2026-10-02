@@ -23,7 +23,7 @@ class YingLiAppViewModelTest {
         val viewModel = YingLiAppViewModel(FakeThemeRepository(), SavedStateHandle())
 
         assertEquals(
-            listOf(RootDestination.HOME, RootDestination.LIBRARY, RootDestination.ORGANIZE),
+            listOf(RootDestination.HOME, RootDestination.LIBRARY, RootDestination.SHORTS, RootDestination.ORGANIZE),
             viewModel.navigationState.value.primaryDestinations,
         )
     }

@@ -65,6 +65,25 @@ class MediaStoreDiscoveryDataSourceTest {
     }
 
     @Test
+    fun missingMediaStoreMetadataIsReadFromVideoUri() = runTest {
+        val provider = CursorProvider { projection ->
+            MatrixCursor(projection).apply {
+                addRow(row(projection, id = 8, name = ".hidden.mp4", duration = null, width = null, height = null))
+            }
+        }
+        val reader = MediaMetadataReader { uri ->
+            assertEquals("content://media/external/file/8", uri.value)
+            VideoMetadata(durationMillis = 12_000, width = 1_280, height = 720)
+        }
+        val events = dataSource(provider, reader).discover(SOURCE.copy(includeHidden = true)).toList()
+
+        val evidence = (events.single() as MediaDiscoveryEvent.Candidate).value.evidence
+        assertEquals(12_000, evidence.durationMillis)
+        assertEquals(1_280, evidence.width)
+        assertEquals(720, evidence.height)
+    }
+
+    @Test
     fun securityExceptionBecomesRecoverablePermissionFailure() = runTest {
         val provider = CursorProvider { throw SecurityException("permission revoked") }
         val events = dataSource(provider).discover(SOURCE).toList()
@@ -94,10 +113,14 @@ class MediaStoreDiscoveryDataSourceTest {
         assertTrue("$count MediaStore rows took ${elapsed}ms", elapsed < 3_000)
     }
 
-    private fun dataSource(provider: CursorProvider): MediaStoreDiscoveryDataSource =
+    private fun dataSource(
+        provider: CursorProvider,
+        metadataReader: MediaMetadataReader = MediaMetadataReader.None,
+    ): MediaStoreDiscoveryDataSource =
         MediaStoreDiscoveryDataSource(
-            query = MediaStoreQuery { projection, _ -> provider.query(projection) },
+            query = MediaStoreQuery { _, projection, _ -> provider.query(projection) },
             dispatchers = TestDispatchers,
+            metadataReader = metadataReader,
         )
 
     private class CursorProvider(
@@ -111,7 +134,14 @@ class MediaStoreDiscoveryDataSourceTest {
         }
     }
 
-    private fun row(projection: Array<out String>, id: Long, name: String?): Array<Any?> =
+    private fun row(
+        projection: Array<out String>,
+        id: Long,
+        name: String?,
+        duration: Long? = 5_000L,
+        width: Int? = 1_920,
+        height: Int? = 1_080,
+    ): Array<Any?> =
         projection.map { column ->
             when (column) {
                 "_id" -> id
@@ -119,9 +149,9 @@ class MediaStoreDiscoveryDataSourceTest {
                 "mime_type" -> "video/mp4"
                 "_size" -> 1_024L
                 "date_modified" -> 100L
-                "duration" -> 5_000L
-                "width" -> 1_920
-                "height" -> 1_080
+                "duration" -> duration
+                "width" -> width
+                "height" -> height
                 "relative_path" -> "Movies/Camera/"
                 else -> null
             }

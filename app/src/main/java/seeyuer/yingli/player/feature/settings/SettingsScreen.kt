@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -35,12 +36,30 @@ import seeyuer.yingli.player.core.designsystem.component.YingLiSwitch
 import seeyuer.yingli.player.core.designsystem.component.BannerKind
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
+import seeyuer.yingli.player.domain.playback.PlaybackSpeed
 import seeyuer.yingli.player.domain.playback.PlayerPreferences
 import seeyuer.yingli.player.domain.settings.BackupConflictStrategy
 import seeyuer.yingli.player.domain.settings.BackupSelection
+import seeyuer.yingli.player.core.model.media.MediaSource
+import seeyuer.yingli.player.core.model.media.MediaSourceId
+import seeyuer.yingli.player.core.model.media.MediaSourceMode
 
 data class SettingsToolActions(
+    // 画面手势设置（规格 FR-PLAYER-004 / #208：每项手势可分别关闭）。放在这个已经逐层透传到
+    // 设置页的动作集合里，而不是再新增一个参数穿透四层只做转发的函数，避免八个回调各漏一处。
+    val onGestureSeekEnabled: (Boolean) -> Unit = {},
+    val onGestureVolumeEnabled: (Boolean) -> Unit = {},
+    val onGestureBrightnessEnabled: (Boolean) -> Unit = {},
+    val onGestureZoomEnabled: (Boolean) -> Unit = {},
+    val onGestureLeftSideIsVolume: (Boolean) -> Unit = {},
+    val onGestureDoubleTapSeekMillis: (Int) -> Unit = {},
+    val onGestureSwipeDownToExitEnabled: (Boolean) -> Unit = {},
+    val onGestureLongPressSpeed: (PlaybackSpeed) -> Unit = {},
     val state: SettingsToolsState = SettingsToolsState(),
+    val mediaSources: List<MediaSource> = emptyList(),
+    val allFilesAccess: Boolean = false,
+    val onSourceIncludeHiddenChanged: (MediaSourceId, Boolean) -> Unit = { _, _ -> },
+    val onSourceIncludeNomediaChanged: (MediaSourceId, Boolean) -> Unit = { _, _ -> },
     val onLibraryLayoutChanged: (LibraryLayoutPreference) -> Unit = {},
     val onThumbnailScaleChanged: (Float) -> Unit = {},
     val onTrashRetentionDaysChanged: (Int) -> Unit = {},
@@ -71,6 +90,14 @@ fun SettingsScreen(
     playerPreferences: PlayerPreferences = PlayerPreferences(),
     onMiniPlayerChanged: (Boolean) -> Unit = {},
     onAutoPipChanged: (Boolean) -> Unit = {},
+    onGestureSeekEnabledChanged: (Boolean) -> Unit = {},
+    onGestureVolumeEnabledChanged: (Boolean) -> Unit = {},
+    onGestureBrightnessEnabledChanged: (Boolean) -> Unit = {},
+    onGestureZoomEnabledChanged: (Boolean) -> Unit = {},
+    onGestureLeftSideIsVolumeChanged: (Boolean) -> Unit = {},
+    onGestureDoubleTapSeekMillisChanged: (Int) -> Unit = {},
+    onGestureSwipeDownToExitEnabledChanged: (Boolean) -> Unit = {},
+    onGestureLongPressSpeedChanged: (PlaybackSpeed) -> Unit = {},
     tools: SettingsToolActions = SettingsToolActions(),
     security: SecuritySettingsActions = SecuritySettingsActions(),
 ) {
@@ -80,6 +107,7 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
+            .testTag(SettingsTestTags.CONTENT)
             .padding(YingLiTheme.components.pagePadding),
         verticalArrangement = Arrangement.spacedBy(YingLiTheme.components.itemSpacing),
     ) {
@@ -136,6 +164,23 @@ fun SettingsScreen(
             label = stringResource(R.string.settings_thumbnail_scale, settings.thumbnailScale),
             valueRange = AppearanceSettings.MIN_THUMBNAIL_SCALE..AppearanceSettings.MAX_THUMBNAIL_SCALE,
         )
+        if (tools.mediaSources.isNotEmpty()) {
+            Text(stringResource(R.string.settings_media_sources), style = MaterialTheme.typography.titleMedium)
+        }
+        tools.mediaSources.forEach { source ->
+            Text(source.displayName, style = MaterialTheme.typography.titleMedium)
+            YingLiSwitch(
+                label = stringResource(R.string.settings_scan_hidden_media),
+                checked = source.includeHidden,
+                onCheckedChange = { tools.onSourceIncludeHiddenChanged(source.id, it) },
+            )
+            YingLiSwitch(
+                label = stringResource(R.string.settings_scan_nomedia_folders),
+                checked = source.includeNomedia,
+                enabled = source.mode == MediaSourceMode.SAF_TREE || tools.allFilesAccess,
+                onCheckedChange = { tools.onSourceIncludeNomediaChanged(source.id, it) },
+            )
+        }
         Text(stringResource(R.string.settings_trash_retention), style = MaterialTheme.typography.labelLarge)
         val retentionOptions = listOf(7, 30, 90)
         YingLiSegmentedControl(
@@ -154,6 +199,58 @@ fun SettingsScreen(
             label = stringResource(R.string.settings_auto_pip),
             checked = playerPreferences.autoPictureInPicture,
             onCheckedChange = onAutoPipChanged,
+        )
+        Text(stringResource(R.string.settings_player_gesture), style = MaterialTheme.typography.titleMedium)
+        YingLiSwitch(
+            label = stringResource(R.string.settings_player_gesture_seek),
+            checked = playerPreferences.gestureSeekEnabled,
+            onCheckedChange = onGestureSeekEnabledChanged,
+        )
+        Text(stringResource(R.string.settings_player_gesture_seek_step), style = MaterialTheme.typography.labelLarge)
+        val seekMillisOptions = PlayerPreferences.DOUBLE_TAP_SEEK_MILLIS_OPTIONS
+        YingLiSegmentedControl(
+            options = seekMillisOptions.map {
+                stringResource(R.string.settings_player_gesture_seek_seconds, it / MILLIS_PER_SECOND)
+            },
+            selectedIndex = seekMillisOptions.indexOf(playerPreferences.gestureDoubleTapSeekMillis).coerceAtLeast(0),
+            onSelected = { onGestureDoubleTapSeekMillisChanged(seekMillisOptions[it]) },
+        )
+        YingLiSwitch(
+            label = stringResource(R.string.settings_player_gesture_volume),
+            checked = playerPreferences.gestureVolumeEnabled,
+            onCheckedChange = onGestureVolumeEnabledChanged,
+        )
+        YingLiSwitch(
+            label = stringResource(R.string.settings_player_gesture_brightness),
+            checked = playerPreferences.gestureBrightnessEnabled,
+            onCheckedChange = onGestureBrightnessEnabledChanged,
+        )
+        YingLiSwitch(
+            label = stringResource(R.string.settings_player_gesture_left_side_volume),
+            checked = playerPreferences.gestureLeftSideIsVolume,
+            onCheckedChange = onGestureLeftSideIsVolumeChanged,
+        )
+        YingLiSwitch(
+            label = stringResource(R.string.settings_player_gesture_zoom),
+            checked = playerPreferences.gestureZoomEnabled,
+            onCheckedChange = onGestureZoomEnabledChanged,
+        )
+        Text(
+            stringResource(R.string.settings_player_gesture_long_press_speed),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        val longPressSpeeds = PlayerPreferences.LONG_PRESS_SPEEDS
+        YingLiSegmentedControl(
+            options = longPressSpeeds.map {
+                stringResource(R.string.settings_player_gesture_speed_value, it.value.speedLabel())
+            },
+            selectedIndex = longPressSpeeds.indexOf(playerPreferences.longPressSpeed).coerceAtLeast(0),
+            onSelected = { onGestureLongPressSpeedChanged(longPressSpeeds[it]) },
+        )
+        YingLiSwitch(
+            label = stringResource(R.string.settings_player_gesture_swipe_down_to_exit),
+            checked = playerPreferences.gestureSwipeDownToExitEnabled,
+            onCheckedChange = onGestureSwipeDownToExitEnabledChanged,
         )
 
         Text(stringResource(R.string.settings_data), style = MaterialTheme.typography.titleLarge)
@@ -280,6 +377,15 @@ fun SettingsScreen(
         )
     }
 }
+
+internal object SettingsTestTags {
+    const val CONTENT = "settings.content"
+}
+
+private const val MILLIS_PER_SECOND = 1_000
+
+/** 倍速标签去掉无意义的小数尾：1.5f → "1.5"，2f → "2"。 */
+private fun Float.speedLabel(): String = if (this % 1f == 0f) toInt().toString() else toString()
 
 @Composable
 private fun statusMessage(status: SettingsOperationStatus): Pair<String, BannerKind>? = when (status) {

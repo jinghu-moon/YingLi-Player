@@ -4,11 +4,15 @@ import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import java.util.ArrayDeque
+import java.io.File
+import android.webkit.MimeTypeMap
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlin.coroutines.coroutineContext
@@ -20,17 +24,23 @@ import seeyuer.yingli.player.domain.catalog.MediaDiscoveryEvent
 class MediaStoreDiscoveryDataSource(
     private val query: MediaStoreQuery,
     private val dispatchers: AppDispatchers,
+    private val metadataReader: MediaMetadataReader = MediaMetadataReader.None,
+    private val nomediaScanner: NomediaDiscoveryDataSource? = null,
 ) : MediaDiscoveryDataSource {
     constructor(resolver: ContentResolver, dispatchers: AppDispatchers) : this(
-        MediaStoreQuery { projection, sortOrder ->
-            resolver.query(COLLECTION, projection, null, null, sortOrder)
+        MediaStoreQuery { collection, projection, sortOrder ->
+            resolver.query(collection, projection, null, null, sortOrder)
         },
         dispatchers,
     )
 
     constructor(context: Context, dispatchers: AppDispatchers) : this(
-        context.applicationContext.contentResolver,
+        MediaStoreQuery { collection, projection, sortOrder ->
+            context.applicationContext.contentResolver.query(collection, projection, null, null, sortOrder)
+        },
         dispatchers,
+        AndroidMediaMetadataReader(context),
+        NomediaDiscoveryDataSource(AndroidMediaMetadataReader(context), dispatchers),
     )
 
     override val mode = MediaSourceMode.MEDIA_STORE
@@ -38,7 +48,8 @@ class MediaStoreDiscoveryDataSource(
     override fun discover(source: MediaSource): Flow<MediaDiscoveryEvent> = flow {
         val seen = mutableSetOf<String>()
         try {
-            query.query(PROJECTION, "${MediaStore.Video.Media.DATE_MODIFIED} DESC")?.use { cursor ->
+            val collection = if (source.includeHidden) FILE_COLLECTION else VIDEO_COLLECTION
+            query.query(collection, PROJECTION, "${MediaStore.Video.Media.DATE_MODIFIED} DESC")?.use { cursor ->
                 val id = cursor.getColumnIndex(MediaStore.Video.Media._ID)
                 val name = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME)
                 val mime = cursor.getColumnIndex(MediaStore.Video.Media.MIME_TYPE)
@@ -56,17 +67,30 @@ class MediaStoreDiscoveryDataSource(
                     coroutineContext.ensureActive()
                     try {
                         val mediaId = cursor.getLong(id)
-                        val uri = ContentUris.withAppendedId(COLLECTION, mediaId).toString()
+                        val uri = ContentUris.withAppendedId(collection, mediaId).toString()
                         val mimeType = cursor.getString(mime)
                         val fileName = cursor.getString(name)
                         if (uri in seen || !mimeType.startsWith("video/") || fileName.isBlank()) continue
                         seen += uri
+                        val mediaUri = MediaUri(uri)
+                        val mediaStoreDuration = cursor.longOrNull(duration)
+                        val mediaStoreWidth = cursor.intOrNull(width)
+                        val mediaStoreHeight = cursor.intOrNull(height)
+                        val fallbackMetadata = if (
+                            mediaStoreDuration == null || mediaStoreWidth == null || mediaStoreHeight == null
+                        ) {
+                            runCatching { metadataReader.read(mediaUri) }.getOrDefault(VideoMetadata())
+                        } else {
+                            VideoMetadata()
+                        }
                         emit(MediaDiscoveryEvent.Candidate(MediaCandidate(
                             source.id,
                             MediaIdentityEvidence(
-                                MediaUri(uri), source.volumeId, mediaId.toString(), fileName,
+                                mediaUri, source.volumeId, mediaId.toString(), fileName,
                                 cursor.getLong(size).coerceAtLeast(0), cursor.getLong(modified).coerceAtLeast(0) * 1000,
-                                cursor.longOrNull(duration), cursor.intOrNull(width), cursor.intOrNull(height),
+                                mediaStoreDuration ?: fallbackMetadata.durationMillis,
+                                mediaStoreWidth ?: fallbackMetadata.width,
+                                mediaStoreHeight ?: fallbackMetadata.height,
                                 relativePath = cursor.stringOrNull(relativePath)?.normalizeRelativePath(),
                             ),
                             mimeType,
@@ -75,6 +99,9 @@ class MediaStoreDiscoveryDataSource(
                         emit(MediaDiscoveryEvent.Failure(ScanFailure(source.id, ScanFailureKind.MALFORMED_ENTRY, true)))
                     }
                 }
+            }
+            if (source.includeNomedia) {
+                nomediaScanner?.discover(source)?.collect { event -> emit(event) }
             }
         } catch (_: SecurityException) {
             emit(MediaDiscoveryEvent.Failure(ScanFailure(source.id, ScanFailureKind.PERMISSION, true)))
@@ -86,7 +113,8 @@ class MediaStoreDiscoveryDataSource(
     private fun android.database.Cursor.stringOrNull(index: Int): String? = if (index < 0 || isNull(index)) null else getString(index)
 
     private companion object {
-        val COLLECTION: Uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        val VIDEO_COLLECTION: Uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        val FILE_COLLECTION: Uri = MediaStore.Files.getContentUri("external")
         val PROJECTION = arrayOf(
             MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.MIME_TYPE,
             MediaStore.Video.Media.SIZE, MediaStore.Video.Media.DATE_MODIFIED, MediaStore.Video.Media.DURATION,
@@ -95,8 +123,71 @@ class MediaStoreDiscoveryDataSource(
     }
 }
 
+/** Discovers videos below directories containing a .nomedia marker. */
+class NomediaDiscoveryDataSource(
+    private val metadataReader: MediaMetadataReader,
+    private val dispatchers: AppDispatchers,
+) {
+    fun discover(source: MediaSource): Flow<MediaDiscoveryEvent> = flow {
+        val root = Environment.getExternalStorageDirectory()
+        val pending = ArrayDeque<Pair<File, Boolean>>()
+        pending.add(root to false)
+        try {
+            while (pending.isNotEmpty()) {
+                coroutineContext.ensureActive()
+                val (directory, insideNomedia) = pending.removeFirst()
+                val children = directory.listFiles() ?: continue
+                val marked = children.any { it.isFile && it.name == NOMEDIA_FILE }
+                if (marked && !source.includeNomedia) continue
+                val childInsideNomedia = insideNomedia || marked
+                children.forEach { child ->
+                    if (child.name == NOMEDIA_FILE) return@forEach
+                    if (child.isDirectory) {
+                        if (child.name == ANDROID_DIRECTORY) return@forEach
+                        if (!source.includeHidden && child.name.startsWith('.')) return@forEach
+                        pending.add(child to childInsideNomedia)
+                    } else if (childInsideNomedia && isVideo(child) &&
+                        (source.includeHidden || !child.name.startsWith('.'))
+                    ) {
+                        val uri = Uri.fromFile(child).toString()
+                        val metadata = runCatching { metadataReader.read(MediaUri(uri)) }
+                            .getOrDefault(VideoMetadata())
+                        val relativePath = child.parentFile?.relativeTo(root)?.path
+                            ?.replace(File.separatorChar, '/')
+                            ?.ifBlank { null }
+                        emit(MediaDiscoveryEvent.Candidate(MediaCandidate(
+                            source.id,
+                            MediaIdentityEvidence(
+                                MediaUri(uri), source.volumeId, child.absolutePath,
+                                child.name, child.length().coerceAtLeast(0), child.lastModified().coerceAtLeast(0),
+                                metadata.durationMillis, metadata.width, metadata.height,
+                                relativePath = relativePath,
+                            ),
+                            mimeType(child) ?: "video/*",
+                        )))
+                    }
+                }
+            }
+        } catch (_: SecurityException) {
+            emit(MediaDiscoveryEvent.Failure(ScanFailure(source.id, ScanFailureKind.PERMISSION, true)))
+        }
+    }.flowOn(dispatchers.io)
+
+    private fun isVideo(file: File): Boolean = mimeType(file)?.startsWith("video/") == true
+
+    private fun mimeType(file: File): String? = file.extension
+        .takeIf(String::isNotBlank)
+        ?.lowercase()
+        ?.let(MimeTypeMap.getSingleton()::getMimeTypeFromExtension)
+
+    private companion object {
+        const val NOMEDIA_FILE = ".nomedia"
+        const val ANDROID_DIRECTORY = "Android"
+    }
+}
+
 fun interface MediaStoreQuery {
-    fun query(projection: Array<String>, sortOrder: String): android.database.Cursor?
+    fun query(collection: Uri, projection: Array<String>, sortOrder: String): android.database.Cursor?
 }
 
 class SafTreeDiscoveryDataSource(
@@ -136,6 +227,9 @@ class SafTreeDiscoveryDataSource(
                 emit(MediaDiscoveryEvent.Failure(ScanFailure(source.id, ScanFailureKind.IO, true)))
                 continue
             }
+            if (children.any { !it.isDirectory && it.name == NOMEDIA_FILE } && !source.includeNomedia) {
+                continue
+            }
             children.forEach { child ->
                 val name = child.name.orEmpty()
                 if (!source.includeHidden && name.startsWith('.')) return@forEach
@@ -161,7 +255,10 @@ class SafTreeDiscoveryDataSource(
         }
     }.flowOn(dispatchers.io)
 
-    private companion object { const val MAX_DEPTH = 64 }
+    private companion object {
+        const val MAX_DEPTH = 64
+        const val NOMEDIA_FILE = ".nomedia"
+    }
 }
 
 private fun String.normalizeRelativePath(): String = trim().trim('/').replace('\\', '/')

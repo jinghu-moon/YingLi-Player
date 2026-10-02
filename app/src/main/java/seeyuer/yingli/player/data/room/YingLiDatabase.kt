@@ -34,7 +34,7 @@ import androidx.sqlite.execSQL
         DuplicateGroupMemberEntity::class,
         VaultItemEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class YingLiDatabase : RoomDatabase() {
@@ -97,6 +97,12 @@ abstract class YingLiDatabase : RoomDatabase() {
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `media_locations` ADD COLUMN `relativePath` TEXT")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `media_sources` ADD COLUMN `includeNomedia` INTEGER NOT NULL DEFAULT 0")
             }
         }
 

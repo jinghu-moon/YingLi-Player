@@ -17,8 +17,10 @@ import java.util.concurrent.Executor
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,22 +44,28 @@ import seeyuer.yingli.player.domain.playback.PlaybackCommandResult
 import seeyuer.yingli.player.domain.playback.PlaybackConnectionState
 import seeyuer.yingli.player.domain.playback.PlaybackFailureSignal
 import seeyuer.yingli.player.domain.playback.PlaybackRequest
+import seeyuer.yingli.player.domain.playback.ResolvedPlaybackSource
 import seeyuer.yingli.player.domain.playback.PlaybackSourceContext
 import seeyuer.yingli.player.domain.playback.PlaybackSourceRepository
 import seeyuer.yingli.player.domain.playback.PlaybackState
 import seeyuer.yingli.player.domain.playback.PlaybackStateReducer
 import seeyuer.yingli.player.domain.playback.PlaybackTransition
+import seeyuer.yingli.player.domain.playback.SurfaceLease
+import seeyuer.yingli.player.domain.playback.SurfaceOwner
+import seeyuer.yingli.player.domain.playback.PlaybackMediaInfo
+import seeyuer.yingli.player.domain.playback.PlaybackMediaInfoProvider
 import seeyuer.yingli.player.domain.security.SecurePlaybackController
 import seeyuer.yingli.player.domain.security.VaultItemId
 
 class Media3PlaybackController(
     context: Context,
-    serviceComponent: ComponentName,
+    private val serviceComponent: ComponentName,
     private val sourceRepository: PlaybackSourceRepository,
     private val dispatchers: AppDispatchers,
     private val logger: AppLogger,
-) : AdvancedPlaybackController, SecurePlaybackController, AutoCloseable {
-    private val vaultTitle = context.applicationContext.getString(seeyuer.yingli.player.R.string.vault_title)
+) : AdvancedPlaybackController, SecurePlaybackController, PlaybackMediaInfoProvider, AutoCloseable {
+    private val applicationContext = context.applicationContext
+    private val vaultTitle = applicationContext.getString(seeyuer.yingli.player.R.string.vault_title)
     private val scope = CoroutineScope(SupervisorJob() + dispatchers.main)
     private val mutableState = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
     override val state: StateFlow<PlaybackState> = mutableState.asStateFlow()
@@ -71,9 +79,16 @@ class Media3PlaybackController(
     override val speed: StateFlow<PlaybackSpeed> = mutableSpeed.asStateFlow()
     private val mutableScaleMode = MutableStateFlow(VideoScaleMode.FIT)
     override val scaleMode: StateFlow<VideoScaleMode> = mutableScaleMode.asStateFlow()
+    private val mutableMediaInfo = MutableStateFlow<PlaybackMediaInfo?>(null)
+    override val mediaInfo: StateFlow<PlaybackMediaInfo?> = mutableMediaInfo.asStateFlow()
     private var controller: MediaController? = null
     private var playerViewReference = WeakReference<PlayerView>(null)
+    private val playerViewLeaseGuard = SurfaceLeaseGuard()
     private var secureSessionActive = false
+    private var connectionGeneration = 0L
+    private var releaseControllerFuture: (() -> Unit)? = null
+    private var reconnectJob: Job? = null
+    private var closed = false
 
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
@@ -105,21 +120,37 @@ class Media3PlaybackController(
                 controller.removeListener(playerListener)
                 this@Media3PlaybackController.controller = null
                 mutableConnectionState.value = PlaybackConnectionState.DISCONNECTED
+                scheduleReconnect()
             }
         }
     }
 
-    private val controllerFuture = MediaController.Builder(
-        context.applicationContext,
-        SessionToken(context.applicationContext, serviceComponent),
-    ).setListener(controllerListener).buildAsync()
-
     init {
-        controllerFuture.addListener(
+        connect()
+    }
+
+    private fun connect() {
+        if (closed || controller != null) return
+        reconnectJob?.cancel()
+        reconnectJob = null
+        connectionGeneration += 1L
+        val generation = connectionGeneration
+        mutableConnectionState.value = PlaybackConnectionState.CONNECTING
+        releaseControllerFuture?.invoke()
+        val future = MediaController.Builder(
+            applicationContext,
+            SessionToken(applicationContext, serviceComponent),
+        ).setListener(controllerListener).buildAsync()
+        releaseControllerFuture = { MediaController.releaseFuture(future) }
+        future.addListener(
             {
                 scope.launch {
                     try {
-                        val connected = controllerFuture.get()
+                        val connected = future.get()
+                        if (closed || generation != connectionGeneration) {
+                            MediaController.releaseFuture(future)
+                            return@launch
+                        }
                         controller = connected
                         connected.addListener(playerListener)
                         mutableConnectionState.value = PlaybackConnectionState.CONNECTED
@@ -128,17 +159,27 @@ class Media3PlaybackController(
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
+                        if (closed || generation != connectionGeneration) return@launch
                         mutableConnectionState.value = PlaybackConnectionState.FAILED
                         mutableState.value = PlaybackState.Failed(
                             mutableState.value.request,
                             mutableState.value.timeline,
                             DefaultPlaybackErrorMapper.map(PlaybackFailureSignal.OTHER),
                         )
+                        scheduleReconnect()
                     }
                 }
             },
             Executor(Runnable::run),
         )
+    }
+
+    private fun scheduleReconnect() {
+        if (closed || reconnectJob?.isActive == true) return
+        reconnectJob = scope.launch {
+            delay(RECONNECT_DELAY_MILLIS)
+            connect()
+        }
     }
 
     override fun prepare(request: PlaybackRequest): PlaybackCommandResult {
@@ -185,6 +226,38 @@ class Media3PlaybackController(
                 activeController.play()
             }
         }
+        return PlaybackCommandResult.Accepted
+    }
+
+    override fun prepare(source: ResolvedPlaybackSource): PlaybackCommandResult {
+        val activeController = controller ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
+        val request = source.request
+        val current = mutableState.value
+        if (current.request == request && current !is PlaybackState.Failed && current !is PlaybackState.Ended) {
+            return PlaybackCommandResult.AlreadyApplied
+        }
+        secureSessionActive = false
+        mutableMediaInfo.value = PlaybackMediaInfo(
+            title = source.title,
+            durationMillis = source.durationMillis,
+            width = source.width,
+            height = source.height,
+            fileSizeBytes = source.fileSizeBytes,
+        )
+        mutableState.value = PlaybackStateReducer.reduce(current, PlaybackTransition.Prepare(request))
+        val extras = Bundle().apply {
+            putString(PlaybackMediaMetadata.LOCATION_ID, request.locationId.value)
+            putBoolean(PlaybackMediaMetadata.INCOGNITO, request.incognito)
+            putString(PlaybackMediaMetadata.SOURCE_CONTEXT, request.sourceContext.name)
+        }
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(request.mediaId.value)
+            .setUri(Uri.parse(source.uri))
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(source.title).setExtras(extras).build())
+            .build()
+        activeController.setMediaItem(mediaItem, request.startPositionMillis)
+        activeController.prepare()
+        activeController.play()
         return PlaybackCommandResult.Accepted
     }
 
@@ -304,10 +377,25 @@ class Media3PlaybackController(
 
     fun connectedPlayer(): Player? = controller
 
-    fun attachPlayerView(view: PlayerView?) {
+    fun attachPlayerView(view: PlayerView?): SurfaceLease? {
+        if (view == null) return null
+        val lease = playerViewLeaseGuard.acquire(
+            SurfaceOwner.REGULAR_PLAYER,
+            "player-view-${System.identityHashCode(view)}",
+        )
         playerViewReference = WeakReference(view)
-        if (view != null) setVideoOutputEnabled(true)
+        setVideoOutputEnabled(true)
+        return lease
     }
+
+    fun detachPlayerView(view: PlayerView, lease: SurfaceLease): Result<Unit> =
+        if (playerViewReference.get() === view && playerViewLeaseGuard.release(lease)) {
+            playerViewReference = WeakReference(null)
+            view.player = null
+            Result.success(Unit)
+        } else {
+            Result.failure(IllegalStateException("STALE_SURFACE_LEASE"))
+        }
 
     fun attachedPlayerView(): PlayerView? = playerViewReference.get()
 
@@ -318,9 +406,13 @@ class Media3PlaybackController(
     }
 
     override fun close() {
+        closed = true
+        reconnectJob?.cancel()
         controller?.removeListener(playerListener)
         controller = null
-        MediaController.releaseFuture(controllerFuture)
+        playerViewLeaseGuard.clear()
+        releaseControllerFuture?.invoke()
+        releaseControllerFuture = null
         scope.cancel()
     }
 
@@ -363,12 +455,28 @@ class Media3PlaybackController(
         mutableSubtitleTracks.value = player.trackChoices(androidx.media3.common.C.TRACK_TYPE_TEXT, "Subtitle")
         mutableSpeed.value = runCatching { PlaybackSpeed.of(player.playbackParameters.speed) }
             .getOrDefault(PlaybackSpeed.Normal)
+        updateMediaInfo(player)
+    }
+
+    private fun updateMediaInfo(player: Player) {
+        val current = mutableMediaInfo.value ?: return
+        val video = player.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO }?.getTrackFormat(0)
+        val audio = player.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO }?.getTrackFormat(0)
+        mutableMediaInfo.value = current.copy(
+            width = video?.width?.takeIf { it > 0 } ?: current.width,
+            height = video?.height?.takeIf { it > 0 } ?: current.height,
+            videoCodec = video?.codecs ?: video?.sampleMimeType ?: current.videoCodec,
+            audioCodec = audio?.codecs ?: audio?.sampleMimeType ?: current.audioCodec,
+            frameRate = video?.frameRate?.takeIf { it > 0 } ?: current.frameRate,
+            durationMillis = player.duration.takeUnless { it < 0 || it == C.TIME_UNSET } ?: current.durationMillis,
+        )
     }
 
     private fun requestFrom(mediaItem: MediaItem?, positionMillis: Long): PlaybackRequest? =
         mediaItem?.toPlaybackRequest(positionMillis)
 
     private companion object {
+        const val RECONNECT_DELAY_MILLIS = 250L
         const val VAULT_SCHEME = "vault"
     }
 }

@@ -103,6 +103,38 @@ class SafTreeDiscoveryDataSourceTest {
     }
 
     @Test
+    fun nomediaDirectoryIsSkippedByDefault() = runTest {
+        val marker = MutableNode("content://documents/tree/root/document/.nomedia", ".nomedia")
+        val video = MutableNode("content://documents/tree/root/document/video", "movie.mp4", "video/mp4")
+        val folder = MutableNode("content://documents/tree/root/document/private", "Private", isDirectory = true).apply {
+            children = { listOf(marker, video) }
+        }
+        val root = MutableNode("content://documents/tree/root", "root", isDirectory = true).apply {
+            children = { listOf(folder) }
+        }
+
+        val events = dataSource(root).discover(SOURCE).toList()
+
+        assertTrue(events.filterIsInstance<MediaDiscoveryEvent.Candidate>().isEmpty())
+    }
+
+    @Test
+    fun nomediaDirectoryIsScannedWhenEnabled() = runTest {
+        val marker = MutableNode("content://documents/tree/root/document/.nomedia", ".nomedia")
+        val video = MutableNode("content://documents/tree/root/document/video", "movie.mp4", "video/mp4")
+        val folder = MutableNode("content://documents/tree/root/document/private", "Private", isDirectory = true).apply {
+            children = { listOf(marker, video) }
+        }
+        val root = MutableNode("content://documents/tree/root", "root", isDirectory = true).apply {
+            children = { listOf(folder) }
+        }
+
+        val events = dataSource(root).discover(SOURCE.copy(includeNomedia = true)).toList()
+
+        assertEquals(1, events.filterIsInstance<MediaDiscoveryEvent.Candidate>().size)
+    }
+
+    @Test
     fun inaccessibleTreeProducesRecoverablePermissionFailure() = runTest {
         val root = MutableNode("content://documents/tree/root", "root", isDirectory = true, canRead = false)
 

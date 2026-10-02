@@ -1,8 +1,6 @@
 package seeyuer.yingli.player.domain.catalog
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import seeyuer.yingli.player.core.model.media.MediaIdentityEvidence
 import seeyuer.yingli.player.core.model.media.MediaItemId
@@ -28,17 +26,16 @@ class MediaIdentityResolverTest {
     }
 
     @Test
-    fun `same content at another uri links a new location to the logical item`() {
+    fun `different uri never merges from metadata`() {
         val location = location("location_1", "content://media/video/1")
 
         val result = DefaultMediaIdentityResolver.resolve(
             evidence(uri = "content://tree/root/video/2", documentId = "2"),
             listOf(location),
             mapOf(location.id to MediaItemId("item_1")),
-        ) as IdentityResolution.Match
+        )
 
-        assertEquals(MediaItemId("item_1"), result.itemId)
-        assertNull(result.locationId)
+        assertEquals(IdentityResolution.NewIdentity, result)
     }
 
     @Test
@@ -60,7 +57,7 @@ class MediaIdentityResolverTest {
     }
 
     @Test
-    fun `equally strong evidence for different items requires review`() {
+    fun `ambiguous stable identity does not merge`() {
         val first = location("location_1", "content://media/video/1")
         val second = location("location_2", "content://media/video/2")
 
@@ -70,12 +67,11 @@ class MediaIdentityResolverTest {
             mapOf(first.id to MediaItemId("item_1"), second.id to MediaItemId("item_2")),
         )
 
-        assertTrue(result is IdentityResolution.NeedsReview)
-        assertEquals(setOf(MediaItemId("item_1"), MediaItemId("item_2")), (result as IdentityResolution.NeedsReview).candidates)
+        assertEquals(IdentityResolution.NewIdentity, result)
     }
 
     @Test
-    fun `content hash can relink a renamed item without reusing its old location`() {
+    fun `content hash does not merge a different uri`() {
         val existing = location(
             id = "location_1",
             uri = "content://media/video/1",
@@ -91,10 +87,9 @@ class MediaIdentityResolverTest {
             ),
             listOf(existing),
             mapOf(existing.id to MediaItemId("item_1")),
-        ) as IdentityResolution.Match
+        )
 
-        assertEquals(MediaItemId("item_1"), result.itemId)
-        assertNull(result.locationId)
+        assertEquals(IdentityResolution.NewIdentity, result)
     }
 
     private fun evidence(

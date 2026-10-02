@@ -16,7 +16,9 @@ class ActivityPictureInPictureGateway(
         val parameters = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(DEFAULT_ASPECT_WIDTH, DEFAULT_ASPECT_HEIGHT))
             .build()
-        return activity.enterPictureInPictureMode(parameters)
+        return runCatching {
+            activity.enterPictureInPictureMode(parameters)
+        }.getOrDefault(false)
     }
 
     private companion object {

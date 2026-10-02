@@ -171,6 +171,14 @@ class RoomLibraryRepository(
 
     override suspend fun findByIds(ids: Set<MediaItemId>): List<LibraryMedia> {
         if (ids.isEmpty()) return emptyList()
+        // SQLite limits the number of bound variables per statement. A full
+        // library queue can contain thousands of IDs, so query bounded chunks.
+        return ids.chunked(FIND_BY_IDS_BATCH_SIZE)
+            .map { batch -> findByIdsBatch(batch) }
+            .flatten()
+    }
+
+    private suspend fun findByIdsBatch(ids: List<MediaItemId>): List<LibraryMedia> {
         val placeholders = ids.joinToString(",") { "?" }
         val sql = """
             SELECT media_items.id, media_items.title, media_items.playbackPositionMillis, media_items.completed,
@@ -293,6 +301,11 @@ class RoomLibraryRepository(
         if (query.browseMode == seeyuer.yingli.player.domain.library.LibraryBrowseMode.FOLDER && keyword.isEmpty()) {
             if (query.currentPath.isBlank()) {
                 where += "1 = 0"
+            } else if (query.includeDescendants) {
+                where += "(COALESCE(TRIM(media_locations.relativePath, '/'), '') = ? OR substr(TRIM(media_locations.relativePath, '/'), 1, length(?) + 1) = ? || '/')"
+                args += query.currentPath
+                args += query.currentPath
+                args += query.currentPath
             } else {
                 where += "COALESCE(TRIM(media_locations.relativePath, '/'), '') = ?"
                 args += query.currentPath
@@ -415,6 +428,7 @@ class RoomLibraryRepository(
             "collections",
             "collection_items",
         )
+        const val FIND_BY_IDS_BATCH_SIZE = 500
     }
 
     private fun LibraryMediaRow.toModel(tags: Set<String>) = LibraryMedia(

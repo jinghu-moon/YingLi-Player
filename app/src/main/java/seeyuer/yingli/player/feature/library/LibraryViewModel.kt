@@ -76,10 +76,14 @@ class LibraryViewModel(
     private val mutationRepository: LibraryMutationRepository,
     private val trashRepository: TrashRepository,
 ) : ViewModel() {
+    private data class LibraryNavigationState(
+        val mode: LibraryBrowseMode = LibraryBrowseMode.FOLDER,
+        val path: List<LibraryPathSegment> = emptyList(),
+    )
+
     private val keyword = MutableStateFlow("")
     private val group = MutableStateFlow(LibraryGroup.ALL)
-    private val browseMode = MutableStateFlow(LibraryBrowseMode.FOLDER)
-    private val currentPath = MutableStateFlow<List<LibraryPathSegment>>(emptyList())
+    private val navigation = MutableStateFlow(LibraryNavigationState())
     private val sort = MutableStateFlow(SortSpec())
     private val filter = MutableStateFlow(FilterExpression())
     private val selectedItems = MutableStateFlow<Set<MediaItemId>>(emptySet())
@@ -108,8 +112,11 @@ class LibraryViewModel(
         QueryInput(text, selectedGroup, selectedSort, selectedFilter)
     }.distinctUntilChanged()
 
-    private val queryInput = combine(baseQueryInput, browseMode, currentPath) { input, mode, path ->
-        input.copy(browseMode = mode, currentPath = path.lastOrNull()?.path.orEmpty())
+    private val queryInput = combine(baseQueryInput, navigation) { input, navigationState ->
+        input.copy(
+            browseMode = navigationState.mode,
+            currentPath = navigationState.path.lastOrNull()?.path.orEmpty(),
+        )
     }.distinctUntilChanged().onEach { selectedItems.value = emptySet() }
 
     val pagingData: Flow<PagingData<LibraryMedia>> = queryInput
@@ -134,8 +141,8 @@ class LibraryViewModel(
         .catch { emit(0) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), 0)
 
-    private val folderTreeVideoCount = currentPath
-        .map { it.lastOrNull()?.path.orEmpty() }
+    private val folderTreeVideoCount = navigation
+        .map { it.path.lastOrNull()?.path.orEmpty() }
         .distinctUntilChanged()
         .flatMapLatest { path ->
             if (path.isBlank()) kotlinx.coroutines.flow.flowOf(0)
@@ -196,7 +203,7 @@ class LibraryViewModel(
             keyword = input.keyword,
             group = input.group,
             browseMode = input.browseMode,
-            currentPath = currentPath.value,
+            currentPath = navigation.value.path,
             sort = input.sort,
             filter = input.filter,
             preference = preference,
@@ -222,24 +229,31 @@ class LibraryViewModel(
     }
 
     fun setBrowseMode(value: LibraryBrowseMode) {
-        browseMode.value = value
-        if (value == LibraryBrowseMode.ALL_VIDEOS) currentPath.value = emptyList()
+        navigation.update { current ->
+            current.copy(
+                mode = value,
+                path = if (value == LibraryBrowseMode.ALL_VIDEOS) emptyList() else current.path,
+            )
+        }
     }
 
     fun enterFolder(segment: LibraryPathSegment) {
-        browseMode.value = LibraryBrowseMode.FOLDER
-        currentPath.update { it + segment }
+        navigation.update { current ->
+            current.copy(mode = LibraryBrowseMode.FOLDER, path = current.path + segment)
+        }
         clearSelection()
     }
 
     fun navigateToPath(index: Int) {
-        currentPath.update { path -> if (index < 0) emptyList() else path.take(index + 1) }
+        navigation.update { current ->
+            current.copy(path = if (index < 0) emptyList() else current.path.take(index + 1))
+        }
         clearSelection()
     }
 
     fun navigateUp(): Boolean {
-        if (currentPath.value.isEmpty()) return false
-        currentPath.update { it.dropLast(1) }
+        if (navigation.value.path.isEmpty()) return false
+        navigation.update { current -> current.copy(path = current.path.dropLast(1)) }
         clearSelection()
         return true
     }
@@ -285,8 +299,12 @@ class LibraryViewModel(
         folderColumns: Int = LibraryDisplayPreference.DEFAULT_FOLDER_COLUMNS,
         videoColumns: Int = LibraryDisplayPreference.DEFAULT_VIDEO_COLUMNS,
     ) {
-        browseMode.value = mode
-        if (mode == LibraryBrowseMode.ALL_VIDEOS) currentPath.value = emptyList()
+        navigation.update { current ->
+            current.copy(
+                mode = mode,
+                path = if (mode == LibraryBrowseMode.ALL_VIDEOS) emptyList() else current.path,
+            )
+        }
         sort.value = sortSpec
         displayFields.value = fields
         filterPanelOpen.value = false

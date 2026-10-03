@@ -184,6 +184,9 @@ class ShortsViewModelTest {
         override val events: Flow<PlaybackSessionEvent> = emptyFlow()
         val commands = mutableListOf<PlaybackSessionCommand>()
 
+        /** Shorts 的替身不推进位置：实时位置与它自己发布的 timeline 保持一致（就是 0）。 */
+        override fun currentPositionMillis(): Long = snapshot.value.timeline.positionMillis
+
         override fun dispatch(command: PlaybackSessionCommand): PlaybackCommandHandle {
             commands += command
             when (command) {

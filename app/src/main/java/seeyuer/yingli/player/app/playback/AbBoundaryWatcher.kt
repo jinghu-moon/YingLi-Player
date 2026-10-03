@@ -53,11 +53,47 @@ internal class AbBoundaryWatcher(
         player.addListener(this)
     }
 
+    /**
+     * 只换配置（**不移动位置**）。
+     *
+     * 这里是**唯一**由"读位置"推出"是否已越过 B"的地方，语义是：
+     * **配置生效那一刻，播放器位置是否已经在 B 或 B 之后**。
+     * 所以它必须在"区间刚被设全且位置还停在 B 上"的那种调用之前被 [activate] 取代 ——
+     * 否则这一轮会被判成已越过、定时器永不武装（用户按正常流程设完 B 就得 0 次回跳）。
+     *
+     * 这条路用于：区间只设了一端、清除、切媒体，以及不涉及跳转的重新武装。
+     */
     fun configure(loop: EngineAbLoop?) {
         handler.removeCallbacks(timer)
         configured = loop
-        session.configure(loop, position())
+        val position = position()
+        session.configure(
+            loop = loop,
+            positionMillis = position,
+            // 位置真的在 B 之后才配置：这一轮没有可行的自然抵达点（见 AbBoundarySession.configure）。
+            alreadyPastBoundary = loop != null && position >= loop.pointBMillis,
+        )
+        // 仍然无条件排一次定时消息（与改动前一致）：已越过 B 时它到点后只会重采一次位置、
+        // 不做任何判定，代价可以忽略；而 `configure` 只负责"换配置"，不额外承担
+        // "要不要武装"的判断 —— 那个判断归状态机。把两件事分开，才不会在
+        // "已经越过 B 之后又发生一次位置回退"这类路径上漏掉重新武装。
         if (loop != null) scheduleTimer()
+    }
+
+    /**
+     * 激活（`PlaybackEngine.activateAbLoop`）：**位置已经被精确跳到 A，本方法只负责武装**。
+     *
+     * 为什么 `alreadyPastBoundary` 在这里必须是 `false`，而不是"再读一次位置"：激活的定义就是
+     * "位置被放到 A"，而 `EngineAbLoop` 的不变量保证 `A < B`，所以激活之后位置**必然**在 B 之前。
+     * 读位置作为依据会在两种情况下给出错误答案：位置尚未异步反映跳转结果时读到跳转前的值 ——
+     * 而用户恰恰就是把 B 设在当前位置上，那正是"设完 B 就永不武装"的成因。
+     * 因此这里按调用方刚做的事直接给答案，不做推断。
+     */
+    fun activate(loop: EngineAbLoop) {
+        handler.removeCallbacks(timer)
+        configured = loop
+        session.configure(loop = loop, positionMillis = position(), alreadyPastBoundary = false)
+        scheduleTimer()
     }
 
     override fun onPositionDiscontinuity(
@@ -89,7 +125,8 @@ internal class AbBoundaryWatcher(
         handler.removeCallbacks(timer)
         player.removeListener(this)
         configured = null
-        session.configure(null, position())
+        // 关闭没有"是否已越过"的问题：loop == null 时该标记不参与任何判定。
+        session.configure(null, position(), alreadyPastBoundary = false)
     }
 
     /**

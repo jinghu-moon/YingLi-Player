@@ -64,6 +64,15 @@ class PlaybackSessionClientBridge(
     override val snapshot: StateFlow<PlaybackSessionSnapshot> = mutableSnapshot.asStateFlow()
     override val events = mutableEvents
 
+    /**
+     * 客户端的实时位置 = `MediaController` 的实时位置（见 [PlaybackSessionClient.currentPositionMillis]）。
+     *
+     * 为什么不读自己的快照：快照的 timeline 只在 `controller.state` 变化时刷新，
+     * 稳定播放期间它是**上一次状态跳变时**的位置（真机实测静置播放 60s 后仍是 0）。
+     * 本层只做转发，不插值、不缓存。
+     */
+    override fun currentPositionMillis(): Long = controller.currentPositionMillis()
+
     init {
         scope.launch { controller.state.collect { publish(it) } }
         scope.launch { controller.connectionState.collect { mutableSnapshot.value = mutableSnapshot.value.copy(connectionState = it) } }
@@ -126,7 +135,7 @@ class PlaybackSessionClientBridge(
                 PlaybackSessionCommand.Pause -> controller.pause()
                 is PlaybackSessionCommand.Seek -> controller.seekTo(command.positionMillis)
                 is PlaybackSessionCommand.SeekBy -> (controller as? AdvancedPlaybackController)?.seekBy(command.offsetMillis)
-                    ?: controller.seekTo(snapshot.value.timeline.positionMillis + command.offsetMillis)
+                    ?: controller.seekTo(controller.currentPositionMillis() + command.offsetMillis)
                 PlaybackSessionCommand.Stop -> controller.stop()
                 PlaybackSessionCommand.Retry -> controller.retry()
                 PlaybackSessionCommand.Next -> next()
@@ -139,8 +148,18 @@ class PlaybackSessionClientBridge(
                 is PlaybackSessionCommand.SetSpeed -> (controller as? AdvancedPlaybackController)?.setSpeed(command.speed)
                 is PlaybackSessionCommand.SelectTrack -> selectTrack(command.selection)
                 is PlaybackSessionCommand.SetScale -> (controller as? AdvancedPlaybackController)?.setScaleMode(command.mode)
-                is PlaybackSessionCommand.SetAbPoint -> abLoopControl?.requestSetAbPoint(command.point)
-                    ?: feedback(PlaybackCommandRejection.CAPABILITY_UNAVAILABLE.name)
+                is PlaybackSessionCommand.SetAbPoint -> {
+                    val control = abLoopControl
+                    if (control == null) {
+                        feedback(PlaybackCommandRejection.CAPABILITY_UNAVAILABLE.name)
+                    } else {
+                        // 设点是跨会话边界的命令：被拒这件事**只有回执回来才知道**，
+                        // 因此这里必须等结果并把它转成统一瞬时反馈（旧实现 fire-and-forget，
+                        // 用户设点被拒时界面什么都不显示）。
+                        val outcome = control.requestSetAbPoint(command.point)
+                        if (outcome is AbLoopCommandOutcome.Rejected) feedback(outcome.rejection.name)
+                    }
+                }
                 PlaybackSessionCommand.ClearAb -> abLoopControl?.requestClearAbLoop()
                     ?: feedback(PlaybackCommandRejection.CAPABILITY_UNAVAILABLE.name)
                 is PlaybackSessionCommand.BindSurface,
@@ -213,7 +232,10 @@ class PlaybackSessionClientBridge(
         val current = queue ?: return feedback(PlaybackCommandRejection.NO_CANDIDATE.name)
         // "先回本集开头 / 直接切上一项"的判定已上移到 PlayerViewModel.previous()（受设置控制），
         // 这里只负责按队列导航切项；否则会把用户选择的"永远直接切上一项"重新改回 5 秒惯例。
-        val decision = queueNavigator.previous(current.toSnapshot(), snapshot.value.timeline.positionMillis)
+        //
+        // 尽管如此，这里的基准仍必须是**实时位置**：`QueueNavigator.previous` 的返回值取决于它，
+        // 用快照位置（稳定播放期间是陈旧值）会让这条媒体会话路径的判定与用户看到的位置不一致。
+        val decision = queueNavigator.previous(current.toSnapshot(), controller.currentPositionMillis())
         val move = decision as? NavigationDecision.MoveTo ?: return feedback(PlaybackCommandRejection.NO_CANDIDATE.name)
         val id = move.mediaId
         queue = current.copy(currentIndex = move.index, shuffleHistory = move.shuffleHistory)

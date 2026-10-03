@@ -177,6 +177,23 @@ class ServicePlaybackEngine(
         abBoundaryWatcher.configure(loop)
     }
 
+    /**
+     * 激活 AB 区间：**先精确跳回 A，再武装边界检测**。
+     *
+     * 顺序不可交换，原因见 [PlaybackEngine.activateAbLoop]：边界检测器在武装那一刻要读播放器
+     * 位置来判断"这一轮是否已经越过 B"，而跳回 A 必须在它之前落地，读到 A（< B）才会武装。
+     * 这一跳走的是引擎自己的播放器，因此精度就是当前生效的精度 —— AB 生效期间
+     * [applySeekPrecision] 已把它锁到 `SeekParameters.EXACT`（与循环回跳同一条入口）。
+     *
+     * `mutableAbLoop` 与边界检测必须一起换：只换其中一个会让"精度链"与"检测链"对
+     * "当前生效配置"给出两种答案。
+     */
+    override fun activateAbLoop(loop: EngineAbLoop) {
+        mutableAbLoop.value = loop
+        player.seekTo(loop.pointAMillis)
+        abBoundaryWatcher.activate(loop)
+    }
+
     override suspend fun prepare(source: PlaybackSourceHandle, startPositionMillis: Long) {
         val uri = sourceRegistry.resolve(source.accessHandleId.value)
             ?: error("SOURCE_HANDLE_EXPIRED")
@@ -229,6 +246,15 @@ class ServicePlaybackEngine(
         mutableState.value = EngineState.Idle
     }
     override fun seekTo(positionMillis: Long) = player.seekTo(positionMillis)
+
+    /**
+     * 直读播放器的当前位置（见 [PlaybackEngine.currentPositionMillis]）。
+     *
+     * 这里不做任何缓存或插值：引擎 `state` 的 timeline 只在状态跳变时发布，稳定播放期间会
+     * 停在旧位置（真机实测 60s 后仍是 0），而设点、截图时间戳、上一项判定都要用真值。
+     */
+    override fun currentPositionMillis(): Long = player.currentPosition.coerceAtLeast(0)
+
     override fun setSpeed(speed: PlaybackSpeed): PlaybackCommandResult {
         player.setPlaybackSpeed(speed.value)
         return PlaybackCommandResult.Accepted

@@ -25,6 +25,7 @@ import seeyuer.yingli.player.domain.playback.AbLoopEvent
 import seeyuer.yingli.player.domain.playback.AbLoopReducer
 import seeyuer.yingli.player.domain.playback.AbLoopSession
 import seeyuer.yingli.player.domain.playback.AbLoopSessionControl
+import seeyuer.yingli.player.domain.playback.AbLoopState
 import seeyuer.yingli.player.domain.playback.AbPoint
 import seeyuer.yingli.player.domain.playback.MutableAbLoopSessionStore
 import seeyuer.yingli.player.domain.playback.BackendId
@@ -137,6 +138,12 @@ class PlaybackSessionRuntime(
     override val snapshot: StateFlow<PlaybackSessionSnapshot> = mutableSnapshot.asStateFlow()
     override val events: SharedFlow<PlaybackSessionEvent> = mutableEvents.asSharedFlow()
 
+    /**
+     * 会话侧的实时位置 = 引擎的实时位置（见 [PlaybackSessionClient.currentPositionMillis]）。
+     * 会话只转发，不做插值也不缓存：位置只有播放器一个权威来源。
+     */
+    override fun currentPositionMillis(): Long = engine.currentPositionMillis()
+
     init {
         scope.launch {
             engine.state.collect { state ->
@@ -239,8 +246,10 @@ class PlaybackSessionRuntime(
             }
             // 循环期间允许拖到区间外（D8-A，阶段 0 裁决保留）：AB 不钳制任何用户 seek。
             is PlaybackSessionCommand.Seek -> engine.seekTo(command.positionMillis.coerceAtLeast(0))
+            // 相对跳转的**基准**必须是此刻的位置：用快照位置做基准，连续两次相对跳转会都从
+            // 同一个旧位置起算（表现为"跳两次只动一次"），跳转距离还会随陈旧程度漂移。
             is PlaybackSessionCommand.SeekBy -> engine.seekTo(
-                (snapshot.value.timeline.positionMillis + command.offsetMillis).coerceAtLeast(0),
+                (engine.currentPositionMillis() + command.offsetMillis).coerceAtLeast(0),
             )
             PlaybackSessionCommand.Stop -> {
                 openGeneration++
@@ -407,7 +416,10 @@ class PlaybackSessionRuntime(
         val decision = if (next) {
             seeyuer.yingli.player.domain.playback.QueueNavigator().next(currentQueue, ended = false)
         } else {
-            seeyuer.yingli.player.domain.playback.QueueNavigator().previous(currentQueue, snapshot.value.timeline.positionMillis)
+            // "上一项"要先判"当前是否播过 5 秒"，因此基准必须是**此刻**的位置：
+            // 快照位置在稳定播放期间是陈旧值（可能远小于真实位置），会把本该"回到本集开头"
+            // 的判定翻成"切到上一项"。
+            seeyuer.yingli.player.domain.playback.QueueNavigator().previous(currentQueue, engine.currentPositionMillis())
         }
         when (decision) {
             is NavigationDecision.MoveTo -> {
@@ -437,7 +449,9 @@ class PlaybackSessionRuntime(
     private suspend fun captureFrame() {
         val control = snapshotControl ?: run { feedback(PlaybackCommandRejection.CAPABILITY_UNAVAILABLE.name); return }
         val mediaId = snapshot.value.mediaId ?: run { feedback(PlaybackCommandRejection.INVALID_STATE.name); return }
-        control.captureFrame(FrameCaptureRequest(mediaId, snapshot.value.timeline.positionMillis)).fold(
+        // 截图位置就是**此刻**的播放位置：它决定截到哪一帧，也是文件名时间戳的来源。
+        // 用快照位置会让截图落在"上一次状态跳变时的位置"上（稳定播放期间可能差几十秒）。
+        control.captureFrame(FrameCaptureRequest(mediaId, engine.currentPositionMillis())).fold(
             onSuccess = { mutableEvents.emit(PlaybackSessionEvent.ScreenshotReady(it)) },
             onFailure = { feedback("SCREENSHOT_FAILED") },
         )
@@ -497,7 +511,10 @@ class PlaybackSessionRuntime(
             snapshot.value.abLoop,
             AbLoopEvent.SetPoint(
                 point = point,
-                positionMillis = snapshot.value.timeline.positionMillis,
+                // 位置必须是**此刻**的播放器位置。快照 timeline 只在引擎状态跳变时刷新，
+                // 稳定播放期间会停在旧值上（真机实测：静置播放 60s 后仍是 0，于是"设 A"
+                // 把 A 设在了 0ms）。这条判定就是缺陷 1 的原始现场。
+                positionMillis = engine.currentPositionMillis(),
                 frameRate = frameRate,
             ),
         )
@@ -509,6 +526,12 @@ class PlaybackSessionRuntime(
             AbLoopSession(state = update.state, loopCount = 0),
             generation,
         )
+        // 区间刚刚被设全（A、B 都在）：激活 = 立即精确跳回 A 并武装边界检测。
+        // 这一步归引擎执行（`activateAbLoop`），既不在这里自己 `seekTo`，也不靠引擎"读位置猜"。
+        val activation = engineAbLoop(update.state, generation)
+        if (activation != null) {
+            withContext(dispatchers.main) { engine.activateAbLoop(activation) }
+        }
         return AbLoopCommandOutcome.Applied
     }
 
@@ -544,13 +567,18 @@ class PlaybackSessionRuntime(
             abLoop = abLoopSession.state,
             loopCount = abLoopSession.loopCount,
         )
-        engine.configureAbLoop(
-            abLoopSession.state.let { loopState ->
-                val start = loopState.pointA
-                val end = loopState.pointB
-                if (start == null || end == null) null else EngineAbLoop(generation, start, end)
-            },
-        )
+        engine.configureAbLoop(engineAbLoop(abLoopSession.state, generation))
+    }
+
+    /**
+     * 把会话状态翻译成引擎配置。两端只有这一处转换：区间不完整（还没设全）时是 `null`（关闭循环），
+     * 完整时带上 generation。**业务规则不在这里**（校验、互换、吸附都在域层与 [applyAbPoint] 里），
+     * 这里只做"会话状态 → 引擎配置"的形状转换。
+     */
+    private fun engineAbLoop(state: AbLoopState, generation: Long): EngineAbLoop? {
+        val start = state.pointA ?: return null
+        val end = state.pointB ?: return null
+        return EngineAbLoop(generation, start, end)
     }
 
     /**

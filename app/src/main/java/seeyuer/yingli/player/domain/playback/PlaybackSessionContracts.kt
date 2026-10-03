@@ -310,8 +310,17 @@ enum class FrameStepDirection { PREVIOUS, NEXT }
  * 反过来说，用户发起的跳转（`USER` / `DRAG_END` / `FRAME_STEP`）永远不会冒充循环回跳 ——
  * 这正是"循环计数只认引擎自然边界事件"的前提：如果把回跳表达成用户 seek，
  * 或者让用户 seek 看起来像回跳，计数就变成了按位置猜测。
+ *
+ * **`AB_ACTIVATION` 描述"会话把 AB 区间激活时那一次回到 A"**（两者都是引擎侧发起的跳转）：
+ * 它与 `AB_LOOP` 的区别是**归属与时机不同**，因此不能共用取值 ——
+ * - `AB_LOOP` 是引擎在**自然抵达 B** 之后对自己的播放器做的循环回跳（周期性的、由边界事件触发）；
+ * - `AB_ACTIVATION` 是会话在**区间刚被设全**时发起的唯一一次跳转（一次性的、由设点命令触发），
+ *   它由 [PlaybackEngine.activateAbLoop] 执行。
+ * 写死在两个取值上，是为了让日志与后续行为（例如"用户 seek 作废旧边界消息"）能区分
+ * "这一跳是循环在跑"与"这一跳是用户刚把区间设全"，而不是把两件事都读成同一个原因。
+ * 两者都**不是**用户跳转：用户跳转一律带 `USER` / `DRAG_END` / `FRAME_STEP`。
  */
-enum class SeekOrigin { USER, DRAG_END, FRAME_STEP, AB_LOOP }
+enum class SeekOrigin { USER, DRAG_END, FRAME_STEP, AB_LOOP, AB_ACTIVATION }
 enum class TrackType { AUDIO, SUBTITLE }
 enum class PauseReason { USER, AUDIO_FOCUS, BACKGROUND, ENDED }
 enum class BufferingReason { INITIAL, REBUFFER, SOURCE_READ }
@@ -539,11 +548,38 @@ interface PlaybackEngine {
      */
     fun configureAbLoop(loop: EngineAbLoop?)
 
+    /**
+     * 发起一次 AB 激活：**先精确跳回 A，再武装边界检测**。
+     *
+     * 为什么必须是一个原子入口，而不是"调用方自己 `seekTo(A)` 再 `configureAbLoop(loop)`"：
+     * 边界检测器是在**配置生效那一刻**读播放器位置来决定"这一轮是否已经越过 B"的
+     * （见 `AbBoundarySession.configure`）。若由调用方先配置再跳转，配置读到的还是"设在 B 上"
+     * 的那个位置，于是这一轮被判定成已越过 B、定时器永不武装 —— 用户按正常流程设完 B
+     * 之后循环根本不启动。把"跳回 A"放进引擎、并保证它排在武装之前，这个竞态从根上消失。
+     *
+     * 跳转一律用**当前生效的跳转精度**（AB 生效期间引擎强制 `EXACT`，见 `configureAbLoop`），
+     * 不在这里另开一条精度通道。
+     */
+    fun activateAbLoop(loop: EngineAbLoop)
+
     suspend fun prepare(source: PlaybackSourceHandle, startPositionMillis: Long)
     fun play()
     fun pause()
     fun stop()
     fun seekTo(positionMillis: Long)
+
+    /**
+     * 读取**此刻**的播放位置（毫秒），供"以当前位置为依据"的决策使用。
+     *
+     * 为什么这是一个独立能力而不是读 `state.timeline`：引擎状态只在
+     * `onPlaybackStateChanged` / `onIsPlayingChanged` 时发布，稳定播放期间 timeline 的
+     * `positionMillis` 会长时间停在上一次状态变化的位置上。拿它当"当前位置"用，就会把
+     * 设点、截图时间戳、上一项判定全部做在陈旧值上（真机实测：静置播放 60s 后该值仍为 0）。
+     *
+     * 实现必须直读播放器自己的当前位置，**不得**返回任何缓存/插值/快照值。
+     * 线程约束：实现访问的是播放器，调用方必须在该播放器的应用线程（服务主线程）上调用。
+     */
+    fun currentPositionMillis(): Long
     fun bindSurface(request: SurfaceBindRequest): Result<SurfaceLease>
     fun unbindSurface(lease: SurfaceLease): Result<Unit>
     fun release()
@@ -568,6 +604,18 @@ interface PlaybackSessionClient {
     val snapshot: StateFlow<PlaybackSessionSnapshot>
     val events: Flow<PlaybackSessionEvent>
     fun dispatch(command: PlaybackSessionCommand): PlaybackCommandHandle
+
+    /**
+     * 读取**此刻**的播放位置（毫秒），供 UI 侧"以当前位置为依据"的判定使用。
+     *
+     * 与 [PlaybackEngine.currentPositionMillis] 是同一条规矩的两端：快照的
+     * `timeline.positionMillis` 只在状态跳变时刷新，稳定播放期间是陈旧值，
+     * 因此"按上一项要不要先回本集开头""相对跳转的基准"这类判定必须问这里。
+     *
+     * 客户端拿到的实时位置来自 `MediaController.currentPosition`（服务侧引擎的同一份事实，
+     * 只经过一次会话边界），不是本地插值。
+     */
+    fun currentPositionMillis(): Long
 
     /**
      * 触发"当前媒体真实总帧数"的后台校准（结果回流到 [snapshot] 的 `frameCalibration`）。

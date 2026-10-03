@@ -15,9 +15,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import java.io.FileNotFoundException
 import java.lang.ref.WeakReference
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.CancellationException
@@ -27,7 +31,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +45,7 @@ import seeyuer.yingli.player.core.common.AppLogger
 import seeyuer.yingli.player.core.common.LogValue
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
+import seeyuer.yingli.player.domain.playback.AbLoopCommandOutcome
 import seeyuer.yingli.player.domain.playback.DefaultPlaybackErrorMapper
 import seeyuer.yingli.player.domain.playback.AbLoopPlaybackControl
 import seeyuer.yingli.player.domain.playback.AbLoopSession
@@ -368,6 +376,16 @@ class Media3PlaybackController(
         active.seekTo(positionMillis.coerceAtLeast(0))
     }
 
+    /**
+     * 直读 `MediaController` 的当前位置（见 [PlaybackController.currentPositionMillis]）。
+     *
+     * 这里已经是本进程能拿到的最实时的一份事实：请求经 `MediaSession` 直接问到服务侧的
+     * 播放器栈，中间没有再经过一层快照或轮询。未连接 / 尚未有媒体时 `currentPosition` 为 0，
+     * 与"没有位置"一致。
+     */
+    override fun currentPositionMillis(): Long = controller?.currentPosition?.coerceAtLeast(0) ?: 0L
+
+
     override fun seekBy(offsetMillis: Long): PlaybackCommandResult {
         val active = controller ?: return PlaybackCommandResult.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
         if (PlaybackAction.SEEK !in mutableState.value.availableActions) {
@@ -445,15 +463,57 @@ class Media3PlaybackController(
      *
      * 位置不需要随命令带上：会话取**它自己 timeline** 的位置（`player.currentPosition` 的镜像），
      * 客户端传位置会在"UI 看到的位置"与"播放器真实位置"之间引入第二个真相。
+     *
+     * 命令的**执行结果**（接受 / 拒绝码）由会话放在 `SessionResult` 里回来（见
+     * [toAbLoopCommandOutcome]），这里如实返回给调用方：设点被拒却不告诉 UI，
+     * 就是"静默失败"这一缺口的直接来源。
      */
-    override fun requestSetAbPoint(point: AbPoint) {
-        val active = controller ?: return
+    override suspend fun requestSetAbPoint(point: AbPoint): AbLoopCommandOutcome {
+        val active = controller ?: return AbLoopCommandOutcome.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
         val args = Bundle().apply { putString(AbLoopSessionCommands.ARG_POINT, point.name) }
-        active.sendCustomCommand(
-            SessionCommand(AbLoopSessionCommands.SET_POINT, Bundle.EMPTY),
-            args,
-        )
+        // `MediaController` 的每个方法都必须在**应用线程**（主线程）上调用。
+        // 调用方通常在主线程（bridge 的命令协程），这里显式对齐一次，不让这条约束依赖调用点。
+        val future = withContext(dispatchers.main) {
+            try {
+                active.sendCustomCommand(
+                    SessionCommand(AbLoopSessionCommands.SET_POINT, Bundle.EMPTY),
+                    args,
+                )
+            } catch (_: UnsupportedOperationException) {
+                // 会话没有声明这条自定义命令（连接时未注册）：不是"设点成功"，只能如实拒绝。
+                null
+            }
+        } ?: return AbLoopCommandOutcome.Rejected(PlaybackCommandRejection.CAPABILITY_UNAVAILABLE)
+        return withTimeoutOrNull(RESULT_TIMEOUT_MILLIS) { future.awaitAbLoopOutcome() }
+            // 会话在超时内没有回执（服务被销毁 / 回执丢失）：宁可给一次通用提示，也不要静默。
+            ?: AbLoopCommandOutcome.Rejected(PlaybackCommandRejection.INVALID_STATE)
     }
+
+    /**
+     * 等待自定义命令的 `SessionResult`。
+     *
+     * 三种失败都要变成可见的拒绝：命令结果异常（`ExecutionException`）、控制器在命令飞行中
+     * 断开导致 future 被取消（`CancellationException`）、线程中断。把它们分别映射到具体原因，
+     * 未知的退回 `INVALID_STATE`（"当前状态下无法执行"），不允许出现"什么都不发生"。
+     */
+    private suspend fun ListenableFuture<SessionResult>.awaitAbLoopOutcome(): AbLoopCommandOutcome =
+        suspendCancellableCoroutine { continuation ->
+            addListener(
+                {
+                    val outcome = try {
+                        get().toAbLoopCommandOutcome()
+                    } catch (_: ExecutionException) {
+                        AbLoopCommandOutcome.Rejected(PlaybackCommandRejection.INVALID_STATE)
+                    } catch (_: CancellationException) {
+                        AbLoopCommandOutcome.Rejected(PlaybackCommandRejection.NOT_CONNECTED)
+                    } catch (_: InterruptedException) {
+                        AbLoopCommandOutcome.Rejected(PlaybackCommandRejection.INVALID_STATE)
+                    }
+                    if (continuation.isActive) continuation.resume(outcome)
+                },
+                MoreExecutors.directExecutor(),
+            )
+        }
 
     override fun requestClearAbLoop() {
         val active = controller ?: return
@@ -636,6 +696,13 @@ class Media3PlaybackController(
 
     private companion object {
         const val RECONNECT_DELAY_MILLIS = 250L
+
+        /**
+         * 等待自定义命令回执的上限。回执本身是即时的（会话侧判定不阻塞），这个上限只用于
+         * "服务被销毁 / 回执丢失"这类不会再有结果的情况：超时后给出一次通用拒绝提示，
+         * 而不是让调用方的协程永远挂着。
+         */
+        const val RESULT_TIMEOUT_MILLIS = 5_000L
         const val VAULT_SCHEME = "vault"
     }
 }

@@ -19,17 +19,27 @@ internal class AbBoundarySession {
     private var lastPlaybackSpeed = 1f
 
     /**
-     * 换配置。`positionMillis` 是**配置生效那一刻**播放器的真实位置。
+     * 换配置，并**显式**告知"这一轮配置是否已经越过 B"。
      *
-     * 为什么要传当前位置而不是从 0 开始：配置可能发生在任意位置之后 —— 用户把进度拖到 B 之后
-     * 再打开/调整 AB 就是这种情况。此刻"位置已经在 B 或之后"说明这一轮配置**没有**可行的
-     * 自然抵达点，必须直接标成已越过：否则第一次采样会把它当成"自然跨过 B"补报一次，
-     * 用户只是拖了下进度条却凭空多出一次循环。
+     * `alreadyPastBoundary` 的定义（唯一权威，调用方与测试都按这一条）：
+     * **本次配置生效的那一刻，播放器位置是否已经在 B 或 B 之后。**
      *
-     * 反过来说，落点在 B 之前的配置要**重新武装**：这是"改 A/B 后立即生效"的落点
-     *（`AbBoundaryReached` 只能由自然播放产生，不会因为重新配置就丢一次真实的循环）。
+     * 为什么由调用方传进来、而不是在这里自己判断：这个布尔值的语义取决于**调用方刚刚做了什么**。
+     * [AbBoundaryWatcher.configure] 是"只换配置"（此时位置真值就是唯一依据），而
+     * [AbBoundaryWatcher.activate] 是"刚刚把位置跳到 A 再武装"（此时位置**必然**在 B 之前，
+     * 与跳转前的位置无关）。把两种情形都压成"读一次位置"正是上一版永不武装的成因：
+     * 用户就是把 B 设在当前位置上，配置生效时播放已越过 B，于是这一轮被判成已越过、
+     * 定时器不再武装，循环再也不启动。现在由调用方按自己刚做的事给出答案，不再有隐含推断。
+     *
+     * 语义上的动机保持不变：位置真的在 B 之后才配置（用户先拖到区间之后、再打开/调整 AB），
+     * 这一轮没有可行的自然抵达点，必须直接算作已越过 —— 否则第一次采样会把它当成
+     * "自然跨过 B"补报一次，用户只是拖了下进度条却凭空多出一次循环。
      */
-    fun configure(loop: EngineAbLoop?, positionMillis: Long) {
+    fun configure(
+        loop: EngineAbLoop?,
+        positionMillis: Long,
+        alreadyPastBoundary: Boolean,
+    ) {
         this.loop = loop
         sampled = true
         lastSampleMillis = positionMillis
@@ -39,9 +49,10 @@ internal class AbBoundarySession {
             timerArmed = false
             return
         }
-        boundaryVisited = positionMillis >= loop.pointBMillis
+        boundaryVisited = alreadyPastBoundary
         timerArmed = !boundaryVisited
     }
+
 
     /** 位置采样。返回需要做的一次动作（立即判定跨过 B / 重新武装定时消息）。 */
     fun onPositionSample(positionMillis: Long, playbackSpeed: Float): SampleAction {

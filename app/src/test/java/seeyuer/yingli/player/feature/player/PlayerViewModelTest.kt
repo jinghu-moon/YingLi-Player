@@ -1118,6 +1118,41 @@ class PlayerViewModelTest {
     }
 
     /**
+     * AB 设点被拒的回执必须走到用户可见提示。
+     *
+     * 端到端链条：会话判定拒绝 → 命令回执（`SessionResult`）→ 控制器 → bridge 的
+     * `OneShotFeedback` → ViewModel 的瞬时消息。这里锁定最后一跳（拒绝码 → 文案），
+     * 前几跳分别由 bridge 单测与真机 instrumented 用例覆盖。
+     */
+    @Test
+    fun `rejected ab set point surfaces the ab rejection message`() = runTest {
+        val controller = FakePlaybackController()
+        controller.setAbPointOutcome =
+            seeyuer.yingli.player.domain.playback.AbLoopCommandOutcome.Rejected(
+                seeyuer.yingli.player.domain.playback.PlaybackCommandRejection.AB_UNAVAILABLE,
+            )
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(2_000, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        val events = mutableListOf<PlayerUiEvent>()
+        val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+
+        advanceUntilIdle()
+        viewModel.setAbPoint(AbPoint.A)
+        runCurrent()
+
+        assertEquals(
+            listOf(PlayerUiEvent.TransientMessage(R.string.player_reject_ab_unavailable)),
+            events,
+        )
+        stateCollector.cancel()
+        eventCollector.cancel()
+    }
+
+    /**
      * AB 阶段 1：ViewModel **不再持有**任何 AB 状态或判定规则。
      *
      * 旧实现里 `setAbPoint` 在本地跑 `AbLoopLimiter`、`seekTo` 被 `clamp` 钳到 `[A,B]`。
@@ -1190,8 +1225,43 @@ class PlayerViewModelTest {
         stateCollector.cancel()
     }
 
-    // ---- 截图模式第 2 步：帧精确跳转 + 逐帧步进 + 帧号校准 ----
+    /**
+     * "上一项"的 5 秒判定用**实时位置**，不是会话快照里可能陈旧的显示位置。
+     *
+     * 现场：快照停在 1 秒（稳定播放期间引擎不重发状态，实测静置播放 60s 后仍是 0），
+     * 实时位置已经 59 秒。用显示位置判定会落到"切上一项"，用实时位置才是"回到本集开头"。
+     */
+    @Test
+    fun `previous restarts the current media based on the live position not the stale snapshot`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        // 快照最后一次跳变在 1 秒处。
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(1_000, 95_458)))
+        // 播放推进了 59 秒，但没有发布新的播放状态。
+        controller.setPosition(59_894)
+        val queueRepository = FakePlaybackQueueRepository()
+        queueRepository.setQueue(
+            PlaybackQueue(listOf(MediaItemId("media_1"), MediaItemId("media_2")), 1, continuousPlayback = true),
+        )
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers, queueRepository),
+            dispatchers,
+            playbackQueueRepository = queueRepository,
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
 
+        viewModel.previous()
+
+        // 回到本集开头：位置被 seek 到 0，队列仍停在本项。
+        assertEquals(0L, controller.lastSeekPosition)
+        assertEquals(1, queueRepository.queue.first()?.currentIndex)
+        stateCollector.cancel()
+    }
+
+    // ---- 截图模式第 2 步：帧精确跳转 + 逐帧步进 + 帧号校准 ----
     @Test
     fun `screenshot tool switches to frame accurate seeking and restores the duration rule on exit`() = runTest {
         // 长视频（>120s）的默认策略是关键帧跳转：进入截图工具后才允许改成精确跳转。
@@ -1521,6 +1591,19 @@ class PlayerViewModelTest {
         var vaultPrepared: seeyuer.yingli.player.domain.security.VaultItemId? = null
 
         /**
+         * 实时位置的独立来源：由 [setPosition] 显式驱动，**不**跟着 [state] 的 timeline 走。
+         * 测试要能构造"快照停在旧位置、实时位置已经走远"的现场，而把两者绑在一起就构造不出来。
+         */
+        private var livePositionMillis = 0L
+
+        override fun currentPositionMillis(): Long = livePositionMillis
+
+        /** 播放推进到某个位置（只改实时位置；快照 timeline 由 [setState] 单独控制）。 */
+        fun setPosition(positionMillis: Long) {
+            livePositionMillis = positionMillis
+        }
+
+        /**
          * 会话侧 AB 状态的假实现：只记录命令并让状态流变化（模拟会话 runtime 的权威状态回流）。
          * 这里**不做**任何 AB 业务规则判定 —— 规则属于会话 runtime，属于 [PlaybackSessionRuntimeTest]。
          */
@@ -1529,8 +1612,15 @@ class PlayerViewModelTest {
         val requestedAbPoints = mutableListOf<AbPoint>()
         var clearAbRequests = 0
 
-        override fun requestSetAbPoint(point: AbPoint) {
+        /** 会话对设点的判定结果：默认接受，测试按需改成拒绝。 */
+        var setAbPointOutcome: seeyuer.yingli.player.domain.playback.AbLoopCommandOutcome =
+            seeyuer.yingli.player.domain.playback.AbLoopCommandOutcome.Applied
+
+        override suspend fun requestSetAbPoint(
+            point: AbPoint,
+        ): seeyuer.yingli.player.domain.playback.AbLoopCommandOutcome {
             requestedAbPoints += point
+            return setAbPointOutcome
         }
 
         override fun requestClearAbLoop() {
@@ -1545,6 +1635,9 @@ class PlayerViewModelTest {
 
         fun setState(value: PlaybackState) {
             mutableState.value = value
+            // 状态跳变时实时位置随之对齐（真实播放器在 seek/换源后就是这样）；
+            // 播放**推进**不会发布状态，那一路要用 [setPosition] 单独驱动 —— 这正是快照会陈旧的原因。
+            livePositionMillis = value.timeline.positionMillis
         }
 
         fun setMediaInfo(value: seeyuer.yingli.player.domain.playback.PlaybackMediaInfo) {
@@ -1564,6 +1657,7 @@ class PlayerViewModelTest {
         }
         override fun seekTo(positionMillis: Long): PlaybackCommandResult {
             lastSeekPosition = positionMillis
+            livePositionMillis = positionMillis
             return PlaybackCommandResult.Accepted
         }
         override fun stop() = PlaybackCommandResult.Accepted
@@ -1692,6 +1786,7 @@ class PlayerViewModelTest {
         override fun stop() = PlaybackCommandResult.Accepted
         override fun retry() = PlaybackCommandResult.Accepted
         override fun seekBy(offsetMillis: Long) = PlaybackCommandResult.Accepted
+        override fun currentPositionMillis(): Long = mutableState.value.timeline.positionMillis
         override fun setSpeed(speed: PlaybackSpeed): PlaybackCommandResult { this.speed.value = speed; return PlaybackCommandResult.Accepted }
         override fun selectAudioTrack(id: String) = PlaybackCommandResult.Accepted
         override fun selectSubtitleTrack(id: String?): PlaybackCommandResult = PlaybackCommandResult.Accepted

@@ -19,7 +19,7 @@ class AbBoundarySessionTest {
     @Test
     fun `natural playback reaching B reports the boundary for the configured generation`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
 
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(3_900, playbackSpeed = 1f))
         val action = session.onPositionSample(4_000, playbackSpeed = 1f)
@@ -34,7 +34,7 @@ class AbBoundarySessionTest {
     @Test
     fun `the boundary is reported only once until the position rewinds`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
         session.onPositionSample(4_100, playbackSpeed = 1f)
 
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(4_500, playbackSpeed = 1f))
@@ -48,7 +48,7 @@ class AbBoundarySessionTest {
     @Test
     fun `a user seek past B does not report a natural boundary`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
 
         val forward = session.onDiscontinuity(positionMillis = 6_000, playbackSpeed = 1f)
         assertEquals(AbBoundarySession.SampleAction.NONE, forward)
@@ -63,7 +63,7 @@ class AbBoundarySessionTest {
     @Test
     fun `a user seek landing exactly on B is treated as already visited`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
 
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onDiscontinuity(positionMillis = 4_000, playbackSpeed = 1f))
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(4_000, playbackSpeed = 1f))
@@ -73,7 +73,7 @@ class AbBoundarySessionTest {
     @Test
     fun `a rewind re-arms the boundary detection`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
         session.onPositionSample(4_000, playbackSpeed = 1f)
 
         val rewind = session.onPositionSample(3_500, playbackSpeed = 1f)
@@ -93,7 +93,7 @@ class AbBoundarySessionTest {
     @Test
     fun `a seek past B followed by natural playback never reports`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
         session.onDiscontinuity(positionMillis = 6_000, playbackSpeed = 1f)
 
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(6_100, playbackSpeed = 1f))
@@ -108,8 +108,8 @@ class AbBoundarySessionTest {
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(9_000, playbackSpeed = 1f))
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onDiscontinuity(9_000, playbackSpeed = 1f))
 
-        session.configure(loop, POSITION_BELOW_B)
-        session.configure(null, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
+        session.configure(null, POSITION_BELOW_B, alreadyPastBoundary = false)
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(9_000, playbackSpeed = 1f))
     }
 
@@ -117,7 +117,7 @@ class AbBoundarySessionTest {
     @Test
     fun `changing the playback speed re-arms the boundary timer`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
         session.onPositionSample(3_000, playbackSpeed = 1f)
 
         val action = session.onPlaybackSpeedChanged(0.5f)
@@ -130,7 +130,7 @@ class AbBoundarySessionTest {
     @Test
     fun `delay to boundary converts remaining playback time by speed`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
 
         assertEquals(996L, session.delayToBoundaryMillis(positionMillis = 3_000, playbackSpeed = 1f))
         assertEquals(1_996L, session.delayToBoundaryMillis(positionMillis = 3_000, playbackSpeed = 0.5f))
@@ -143,7 +143,7 @@ class AbBoundarySessionTest {
     @Test
     fun `the timer callback only reports after confirming the position`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
 
         // 定时器到点但位置还没到 B（缓冲/卡顿让真实位置落后于估算）：不得报告，继续等。
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onTimerFired(3_800, playbackSpeed = 1f))
@@ -155,8 +155,8 @@ class AbBoundarySessionTest {
     @Test
     fun `reconfiguring replaces the boundary target`() {
         val session = AbBoundarySession()
-        session.configure(loop, POSITION_BELOW_B)
-        session.configure(EngineAbLoop(generation = 9, pointAMillis = 5_000, pointBMillis = 7_000), POSITION_BELOW_B)
+        session.configure(loop, POSITION_BELOW_B, alreadyPastBoundary = false)
+        session.configure(EngineAbLoop(generation = 9, pointAMillis = 5_000, pointBMillis = 7_000), POSITION_BELOW_B, alreadyPastBoundary = false)
 
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(4_500, playbackSpeed = 1f))
         val signal = (session.onPositionSample(7_000, playbackSpeed = 1f) as AbBoundarySession.SampleAction.REPORT_NOW).signal
@@ -166,13 +166,14 @@ class AbBoundarySessionTest {
 
     /**
      * 配置生效时位置**已经在 B 之后**（用户先拖到区间之后，再打开/调整 AB）：
-     * 这一轮配置没有可行的自然抵达点，必须直接算作已越过 —— 否则第一次采样会凭空补报一次循环。
+     * 调用方必须显式声明 `alreadyPastBoundary = true`，这一轮没有可行的自然抵达点，
+     * 否则第一次采样会凭空补报一次循环。
      */
     @Test
-    fun `configuring with the position already past B never reports`() {
+    fun `configuring while already past B never reports`() {
         val session = AbBoundarySession()
 
-        session.configure(loop, positionMillis = 6_000)
+        session.configure(loop, positionMillis = 6_000, alreadyPastBoundary = true)
 
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(6_100, playbackSpeed = 1f))
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(9_000, playbackSpeed = 1f))
@@ -181,12 +182,31 @@ class AbBoundarySessionTest {
 
     /** 位置正好在 B 上配置：同样算已越过（与"用户 seek 落在 B"一致）。 */
     @Test
-    fun `configuring with the position exactly on B never reports`() {
+    fun `configuring exactly on B never reports`() {
         val session = AbBoundarySession()
 
-        session.configure(loop, positionMillis = B_MILLIS)
+        session.configure(loop, positionMillis = B_MILLIS, alreadyPastBoundary = true)
 
         assertEquals(AbBoundarySession.SampleAction.NONE, session.onPositionSample(B_MILLIS, playbackSpeed = 1f))
+        assertFalse(session.isTimerArmed)
+    }
+
+    /**
+     * 激活路径（`AbBoundaryWatcher.activate`）：位置已经被精确跳到 A，因此 `alreadyPastBoundary`
+     * **必须是 false**，与读数无关。
+     *
+     * 这条用例正是缺陷 2 的回归防线：用户就是把 B 设在当前位置上，若配置那一刻按"读到的位置 >= B"
+     * 判定，这一轮就会被标成已越过、定时器永不武装 —— 按正常流程设完 B 之后循环根本不启动。
+     */
+    @Test
+    fun `activation arms the detection even though the pre-seek position was on B`() {
+        val session = AbBoundarySession()
+
+        // 激活的定义是"位置已经被跳到 A"，而 A < B，所以调用方按这一事实直接给 false。
+        session.configure(loop, positionMillis = 1_200, alreadyPastBoundary = false)
+
+        assertTrue(session.isTimerArmed)
+        assertTrue(session.onPositionSample(B_MILLIS, playbackSpeed = 1f) is AbBoundarySession.SampleAction.REPORT_NOW)
     }
 
     /** 配置时位置在 B 之前：重新武装，等播放自然推进到 B（"设点后立即生效"）。 */
@@ -194,7 +214,7 @@ class AbBoundarySessionTest {
     fun `configuring below B re-arms the detection`() {
         val session = AbBoundarySession()
 
-        session.configure(loop, positionMillis = 1_200)
+        session.configure(loop, positionMillis = 1_200, alreadyPastBoundary = false)
 
         assertTrue(session.isTimerArmed)
         assertTrue(session.onPositionSample(B_MILLIS, playbackSpeed = 1f) is AbBoundarySession.SampleAction.REPORT_NOW)

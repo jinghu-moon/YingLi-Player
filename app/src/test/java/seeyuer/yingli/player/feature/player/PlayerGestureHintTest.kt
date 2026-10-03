@@ -104,6 +104,9 @@ class PlayerGestureHintTest {
         )
         override val events: Flow<PlaybackSessionEvent> = emptyFlow()
 
+        /** 这个替身不驱动播放：实时位置如实报 0（没有媒体就没有位置）。 */
+        override fun currentPositionMillis(): Long = 0L
+
         override fun dispatch(command: PlaybackSessionCommand): PlaybackCommandHandle =
             PlaybackCommandHandle(PlaybackCommandId(0))
     }

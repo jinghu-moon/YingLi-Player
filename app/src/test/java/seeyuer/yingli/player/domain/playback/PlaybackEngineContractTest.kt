@@ -72,6 +72,45 @@ class PlaybackEngineContractTest {
         collector.cancel()
     }
 
+    /**
+     * "读取此刻位置"必须是独立能力：它**不能**等价于 `state.timeline.positionMillis`
+     * （后者只在状态跳变时刷新，稳定播放期间会停在旧值上）。契约测试把两者钉成两个不同的值：
+     * timeline 停在 0、实时位置在 5 秒，任何把二者混起来的实现都会在这里露出来。
+     */
+    @Test
+    fun `current position is a live reading and not the published timeline position`() = runTest {
+        val engine = ContractFakeEngine()
+        engine.prepare(
+            PlaybackSourceHandle(
+                MediaItemId("media"),
+                MediaLocationId("location"),
+                SourceAccessHandleId("opaque"),
+                "Video",
+                10_000,
+            ),
+            0,
+        )
+        engine.setLivePosition(5_000)
+
+        assertEquals(0L, (engine.state.value as EngineState.Ready).timeline.positionMillis)
+        assertEquals(5_000L, engine.currentPositionMillis())
+    }
+
+    /**
+     * 激活是"跳回 A + 武装边界"的一次原子入口：它必须落成一次 seek 加一次新配置，
+     * 而不是让调用方自己拼"先配置再跳转"（那个顺序会让边界永不武装，见 `AbBoundaryWatcher`）。
+     */
+    @Test
+    fun `activating the loop seeks to point A and configures the detector`() = runTest {
+        val engine = ContractFakeEngine()
+        val loop = EngineAbLoop(generation = 11, pointAMillis = 2_000, pointBMillis = 4_000)
+
+        engine.activateAbLoop(loop)
+
+        assertEquals(loop, engine.abLoop)
+        assertEquals(listOf("seek:2000", "abLoop:11"), engine.commands)
+    }
+
     private class ContractFakeEngine : PlaybackEngine {
         override val state = MutableStateFlow<EngineState>(EngineState.Idle)
         override val capabilities = MutableStateFlow(PlaybackCapabilities(BackendId.MEDIA3))
@@ -79,21 +118,41 @@ class PlaybackEngineContractTest {
         val commands = mutableListOf<String>()
         private var lease: SurfaceLease? = null
         var abLoop: EngineAbLoop? = null
+        private var livePositionMillis = 0L
 
         override fun configureAbLoop(loop: EngineAbLoop?) {
             abLoop = loop
             commands += "abLoop:${loop?.generation ?: -1}"
         }
 
+        override fun activateAbLoop(loop: EngineAbLoop) {
+            // 与真实引擎同序：先跳回 A，再武装检测。
+            commands += "seek:${loop.pointAMillis}"
+            livePositionMillis = loop.pointAMillis
+            abLoop = loop
+            commands += "abLoop:${loop.generation}"
+        }
+
+        override fun currentPositionMillis(): Long = livePositionMillis
+
+        /** 模拟"播放推进"：只改实时位置，**不**重新发布 timeline（这正是陈旧快照的现场）。 */
+        fun setLivePosition(positionMillis: Long) {
+            livePositionMillis = positionMillis
+        }
+
         override suspend fun prepare(source: PlaybackSourceHandle, startPositionMillis: Long) {
             commands += "prepare:${source.accessHandleId.value}:$startPositionMillis"
+            livePositionMillis = startPositionMillis
             state.value = EngineState.Ready(PlaybackTimeline(startPositionMillis, source.durationMillis))
         }
 
         override fun play() { commands += "play" }
         override fun pause() { commands += "pause" }
         override fun stop() { commands += "stop"; state.value = EngineState.Idle }
-        override fun seekTo(positionMillis: Long) { commands += "seek:$positionMillis" }
+        override fun seekTo(positionMillis: Long) {
+            commands += "seek:$positionMillis"
+            livePositionMillis = positionMillis
+        }
 
         override fun bindSurface(request: SurfaceBindRequest): Result<SurfaceLease> {
             val current = lease

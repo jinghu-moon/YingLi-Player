@@ -486,9 +486,13 @@ class PlayerViewModel(
         return dispatchResult(PlaybackSessionCommand.Play)
     }
     fun retry(): PlaybackCommandResult = dispatchResult(PlaybackSessionCommand.Retry)
-    fun seekBackward(): PlaybackCommandResult = seekTo(state.value.displayedPositionMillis - doubleTapSeekMillis())
+    /**
+     * 双击快进/快退。基准取**实时位置**：显示位置是会话快照里可能陈旧的值，
+     * 用它当基准会让连续快退都从同一个旧位置起算（表现为"按两次只退一次"）。
+     */
+    fun seekBackward(): PlaybackCommandResult = seekTo(sessionClient.currentPositionMillis() - doubleTapSeekMillis())
 
-    fun seekForward(): PlaybackCommandResult = seekTo(state.value.displayedPositionMillis + doubleTapSeekMillis())
+    fun seekForward(): PlaybackCommandResult = seekTo(sessionClient.currentPositionMillis() + doubleTapSeekMillis())
 
     /** 双击快进/快退的步长来自设置（5/10/15/30 秒），不再是硬编码常量。 */
     private fun doubleTapSeekMillis(): Long =
@@ -501,9 +505,13 @@ class PlayerViewModel(
     fun previous(): PlaybackCommandResult {
         // 两种口径由设置决定：默认"先回本集开头"（超过 5 秒时），也可设为"永远直接切上一项"。
         // 规则本身在域层纯函数里，客户端与媒体会话共用同一判定。
+        //
+        // 位置取**实时值**而不是 `state.displayedPositionMillis`：后者来自会话快照的 timeline，
+        // 只在播放状态跳变时刷新，稳定播放期间会停在旧位置 —— 播到 30 秒时它可能还是几秒前甚至
+        // 是 0，于是"播过 5 秒"这条判定会被做反。UI 继续用显示位置做**展示**，但判定必须用实时值。
         return if (
             seeyuer.yingli.player.domain.playback.shouldRestartCurrentItemOnPrevious(
-                positionMillis = state.value.displayedPositionMillis,
+                positionMillis = sessionClient.currentPositionMillis(),
                 previousRestartsCurrentItem = state.value.preferences.previousRestartsCurrentItem,
             )
         ) {
@@ -768,7 +776,7 @@ class PlayerViewModel(
         screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.CaptureStarted)
         val captureMediaId = state.value.playback.request?.mediaId
         viewModelScope.launch {
-            val result = gateway.capture(state.value.title, state.value.displayedPositionMillis, state.value.rotation)
+            val result = gateway.capture(state.value.title, sessionClient.currentPositionMillis(), state.value.rotation)
             if (captureMediaId != state.value.playback.request?.mediaId || screenshot.value != ScreenshotUiState.Capturing) {
                 return@launch
             }
@@ -806,7 +814,9 @@ class PlayerViewModel(
         pauseForFrameStepping()
         val frameRate = effectiveFrameRate(current.mediaInfo?.frameRate, current.measuredFrameRate)
         val baseMillis = resolveFrameStepAnchor(
-            positionMillis = current.displayedPositionMillis,
+            // 基准取实时位置：显示位置来自会话快照，只在状态跳变时刷新，拿它步进会在
+            // 连续两次"下一帧"时算出同一个目标（表现为"点两下只前进一帧"）。
+            positionMillis = sessionClient.currentPositionMillis(),
             anchorMillis = frameStepAnchorMillis,
             frameDurationMillis = frameDurationMillisOf(frameRate),
         )
@@ -1028,7 +1038,8 @@ class PlayerViewModel(
 
     /** 水平拖动调整进度：拖动只更新 HUD 预览，松手才提交（与进度条一致）。 */
     fun beginSeekGesture() {
-        seekAnchorMillis = state.value.displayedPositionMillis
+        // 起点取实时位置：拖动距离叠加在一个陈旧位置上提交，落点会整体偏移。
+        seekAnchorMillis = sessionClient.currentPositionMillis()
     }
 
     fun applySeekGesture(dxFraction: Float) {

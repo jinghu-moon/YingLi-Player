@@ -13,9 +13,11 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import androidx.annotation.OptIn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -41,13 +43,16 @@ import seeyuer.yingli.player.domain.playback.PlaybackSourceResolver
 import seeyuer.yingli.player.domain.playback.SourceAccessHandleId
 import seeyuer.yingli.player.domain.playback.ElapsedTimeSource
 import seeyuer.yingli.player.domain.playback.PlaybackSourceHandle
+import seeyuer.yingli.player.domain.playback.AbLoopCommandOutcome
 import seeyuer.yingli.player.domain.playback.AbLoopSession
 import seeyuer.yingli.player.domain.playback.AbLoopSessionCommands
 import seeyuer.yingli.player.domain.playback.AbPoint
+import seeyuer.yingli.player.domain.playback.PlaybackCommandRejection
 import seeyuer.yingli.player.domain.security.VaultItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.data.security.VaultAwareDataSource
 import seeyuer.yingli.player.engine.media3.PlaybackMediaMetadata
+import seeyuer.yingli.player.engine.media3.toSessionResult
 
 class YingLiPlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
@@ -213,14 +218,48 @@ class YingLiPlaybackService : MediaSessionService() {
                 AbLoopSessionCommands.SET_POINT -> {
                     val point = args.getString(AbLoopSessionCommands.ARG_POINT)
                         ?.let { name -> runCatching { AbPoint.valueOf(name) }.getOrNull() }
-                    if (point != null) serviceScope.launch { sessionRuntime.setPoint(point) }
+                        ?: return Futures.immediateFuture(
+                            AbLoopCommandOutcome.Rejected(PlaybackCommandRejection.INVALID_STATE).toSessionResult(),
+                        )
+                    return abLoopCommandResult { sessionRuntime.setPoint(point) }
                 }
-                AbLoopSessionCommands.CLEAR -> serviceScope.launch { sessionRuntime.clear() }
+                AbLoopSessionCommands.CLEAR -> return abLoopCommandResult {
+                    sessionRuntime.clear()
+                    AbLoopCommandOutcome.Applied
+                }
                 else -> return Futures.immediateFuture(
-                    SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED),
+                    // 结果码用 `SessionError` 的常量而不是同为 -6 的 `SessionResult.RESULT_ERROR_NOT_SUPPORTED`：
+                    // `SessionResult` 的构造参数标着 `@SessionResult.Code`，它的可选值集合里只有
+                    // `SessionError.*` 那一组（`RESULT_SUCCESS` 除外），用错常量过不了静态检查。
+                    SessionResult(SessionError(SessionError.ERROR_NOT_SUPPORTED, "unsupported A-B command")),
                 )
             }
-            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+
+        /**
+         * 把一次**异步**的 AB 判定变成命令回执。
+         *
+         * 为什么不是"发完就返回成功"：设点是否被接受由会话按当时的 timeline 判定
+         *（时长未知 / 不可 seek / B 不在 A 之后都会被拒），判定结果必须回到调用方，
+         * 否则 UI 只能静默 —— 这正是"设点被拒无提示"这一缺口的根因。
+         * 判定本身不阻塞：`onCustomCommand` 返回的是"结果稍后到达"这个承诺。
+         */
+        private fun abLoopCommandResult(
+            command: suspend () -> AbLoopCommandOutcome,
+        ): ListenableFuture<SessionResult> {
+            val result = SettableFuture.create<SessionResult>()
+            serviceScope.launch {
+                val outcome = try {
+                    command()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // 判定抛异常也必须回执：客户端拿不到回执就只能静默。
+                    AbLoopCommandOutcome.Rejected(PlaybackCommandRejection.INVALID_STATE)
+                }
+                result.set(outcome.toSessionResult())
+            }
+            return result
         }
     }
 

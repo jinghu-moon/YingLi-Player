@@ -68,7 +68,6 @@ import seeyuer.yingli.player.domain.playback.PlaybackSpeed
 import seeyuer.yingli.player.domain.playback.PlaybackQueue
 import seeyuer.yingli.player.domain.playback.PlaybackQueueRepository
 import seeyuer.yingli.player.domain.playback.PlaybackQueueSource
-import seeyuer.yingli.player.domain.playback.AbLoopLimiter
 import seeyuer.yingli.player.domain.playback.AbLoopState
 import seeyuer.yingli.player.domain.playback.AbPoint
 import seeyuer.yingli.player.domain.playback.PlayerOverlayEvent
@@ -216,9 +215,8 @@ class PlayerViewModel(
     private val sourceUnavailable = MutableStateFlow(false)
     private val overlay = MutableStateFlow(PlayerOverlayState())
     private val panel = MutableStateFlow(PlayerPanel.NONE)
-    private val abLoop = MutableStateFlow(AbLoopState())
+    /** 工具浮层开关（AB 胶囊的"打开/关闭"）：关闭 ≠ 取消循环（D3），所以它和区间是两件事。 */
     private val abToolOpen = MutableStateFlow(false)
-    private val abLimiter = AbLoopLimiter()
     private val screenshot = MutableStateFlow<ScreenshotUiState>(ScreenshotUiState.Idle)
 
     /**
@@ -273,9 +271,17 @@ class PlayerViewModel(
         if (ownsSessionClient) (sessionClient as? AutoCloseable)?.close()
         super.onCleared()
     }
-    private val projectedPlayback: Flow<Pair<PlaybackState, Long>> = sessionClient.snapshot.flatMapLatest { snapshot ->
+    /**
+     * 播放位置投影。
+     *
+     * **为什么这里不再有 ticker**：位置只来自会话 timeline（引擎真实位置），AB 的回跳由引擎
+     * 自己完成并上报事件。旧实现每 250ms 推算一次位置、越过 B 就在这里下发 `Seek(A)` ——
+     * 那是"UI 按位置猜测"，暂停/缓冲/后台时 ticker 一停循环就失效，而且它无法区分自然抵达
+     * 与用户 seek，循环计数只能靠猜。这条路径已整条删除（见 `AbBoundaryWatcher`）。
+     */
+    private val projectedPlayback: Flow<Pair<PlaybackState, Long>> = sessionClient.snapshot.map { snapshot ->
         val state = snapshot.toPlaybackState()
-        if (state is PlaybackState.Playing) projectedPlayingState(state) else flowOf(state to state.timeline.positionMillis)
+        state to state.timeline.positionMillis
     }
 
     private val baseState = combine(
@@ -317,6 +323,13 @@ class PlayerViewModel(
     private val overlayAndPanel = combine(overlay, panel) { currentOverlay, currentPanel ->
         currentOverlay to currentPanel
     }
+    /**
+     * AB 区间与计数**只从会话快照读**：ViewModel 不再持有 `abLoop`/`abLimiter`，
+     * 也不再自己判定区间合法性（旧实现三份状态之一就在这里）。
+     */
+    private val abLoop = sessionClient.snapshot
+        .map { it.abLoop }
+        .distinctUntilChanged()
     private val overlayPanelAbAndQueue = combine(overlayAndPanel, abLoop, abToolOpen, queue) { overlayPanel, currentAb, toolOpen, currentQueue ->
         Quadruple(overlayPanel.first, overlayPanel.second, currentAb, toolOpen, currentQueue)
     }
@@ -525,18 +538,21 @@ class PlayerViewModel(
         scheduleOverlayHide()
     }
 
+    /**
+     * 设 A / 设 B。规则（互换、相等边界、帧吸附、启用策略）全在会话 runtime：
+     * 这里只把命令送出去，结果由会话回流到 [PlayerUiState.abLoop]。
+     *
+     * 返回值只表示"命令构造是否成功"（参数可解析）。被会话拒绝时由 runtime 产生拒绝码，
+     * 经 `PlaybackSessionEvent.OneShotFeedback` 走统一瞬时反馈 —— 拒绝原因不在客户端判定。
+     */
     fun setAbPoint(point: AbPoint): Boolean {
-        val timeline = state.value.playback.timeline
-        val duration = timeline.durationMillis ?: return false
-        val update = abLimiter.setPoint(abLoop.value, point, state.value.displayedPositionMillis, duration, null)
-        val next = update.getOrNull() ?: return false
-        abLoop.value = next
+        sessionClient.dispatch(PlaybackSessionCommand.SetAbPoint(point))
         registerInteraction()
         return true
     }
 
     fun clearAb() {
-        abLoop.value = abLimiter.clear()
+        sessionClient.dispatch(PlaybackSessionCommand.ClearAb)
     }
 
     fun setSpeed(value: PlaybackSpeed): PlaybackCommandResult {
@@ -1213,10 +1229,11 @@ class PlayerViewModel(
         )
     }
 
-    private fun clampSeek(positionMillis: Long): Long {
-        val duration = state.value.playback.timeline.durationMillis ?: Long.MAX_VALUE
-        return abLimiter.clamp(abLoop.value, positionMillis, duration)
-    }
+    /**
+     * 用户 seek 不再被 AB 区间钳制：D8-A（阶段 0 裁决保留）允许循环期间拖到区间外，
+     * 旧实现在这里做的 `abLimiter.clamp` 已删除。位置上下界由会话/引擎自己保证。
+     */
+    private fun clampSeek(positionMillis: Long): Long = positionMillis.coerceAtLeast(0)
 
     private fun dispatchResult(command: PlaybackSessionCommand): PlaybackCommandResult {
         sessionClient.dispatch(command)
@@ -1282,25 +1299,6 @@ class PlayerViewModel(
         }
     }
 
-    private fun projectedPlayingState(state: PlaybackState.Playing): Flow<Pair<PlaybackState, Long>> = flow {
-        var position = state.timeline.positionMillis
-        emit(state to position)
-        while (true) {
-            delay(PROGRESS_TICK_MILLIS)
-            position = (position + PROGRESS_TICK_MILLIS).coerceAtMost(
-                state.timeline.durationMillis ?: Long.MAX_VALUE,
-            )
-            abLimiter.loopPosition(
-                abLoop.value,
-                position,
-            )?.let { loopStart ->
-                sessionClient.dispatch(PlaybackSessionCommand.Seek(loopStart, seeyuer.yingli.player.domain.playback.SeekOrigin.AB_LOOP))
-                position = loopStart
-            }
-            emit(state to position)
-        }
-    }
-
     /**
      * 规格 §14.4：命令被拒绝时也要走统一瞬时反馈通道，而不是静默失败。
      * 拒绝码由会话层在 dispatch 时同步产生（见 [PlaybackSessionEvent.OneShotFeedback]），
@@ -1360,7 +1358,6 @@ class PlayerViewModel(
 
     companion object {
         private const val STOP_TIMEOUT = 5_000L
-        private const val PROGRESS_TICK_MILLIS = 250L
         /**
          * 竖向手势灵敏度：`2f` = "半屏滑到底"即覆盖整个取值范围。
          * 取 1f 时从屏幕中部划到顶部只能到 50%，用户会以为"不跟手"，故按反馈放大。

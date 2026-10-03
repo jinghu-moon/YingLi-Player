@@ -169,59 +169,112 @@ data class AbLoopState(
     val active: Boolean get() = pointA != null && pointB != null
 }
 
-class AbLoopLimiter(private val fallbackFrameRate: Float = 30f) {
+/** 没有可用帧率时的保护间隔：取 30fps 的一帧（33.3ms 向上取整）。 */
+const val AB_LOOP_FALLBACK_FRAME_RATE = 30f
+
+/**
+ * 名义帧率吸附：`frameIndex = round(ms * fps / 1000)` → `snappedMs = round(frameIndex * 1000 / fps)`。
+ *
+ * 为什么不能写成 `round(ms / frameDuration) * frameDuration`：非整数帧率（29.97、23.976）下
+ * 帧时长本身就是个无限小数，先算时长再乘回去会把取整误差放大到整整一帧；按**帧索引**往返
+ * 才能保证"落在第 N 帧的时间点上"。
+ *
+ * 这是**名义帧率吸附**（D13）：VFR 素材不承诺命中真实帧边界，只保证吸附值对得上声明的 fps。
+ * 帧率缺失（null / 非正数）时原样返回：拿不到帧率还去猜一个间隔，只会把用户设的点挪走。
+ */
+fun snapAbMillisToFrame(positionMillis: Long, frameRate: Float?): Long {
+    val fps = frameRate?.takeIf { it > 0f } ?: return positionMillis
+    val frameIndex = Math.round(positionMillis.toDouble() * fps / 1_000.0)
+    return Math.round(frameIndex.toDouble() * 1_000.0 / fps)
+}
+
+/** 吸附后是否至少有"一帧"的名义间隔；拿不到帧率时退化为"至少 1ms"（[AbLoopState] 的不变量）。 */
+private fun hasFrameSeparation(startMillis: Long, endMillis: Long, frameRate: Float?): Boolean {
+    val fps = frameRate?.takeIf { it > 0f }
+    if (fps == null) return endMillis > startMillis
+    return (endMillis - startMillis) * fps >= 1_000f
+}
+
+/**
+ * A-B 循环的域规则（纯函数，JVM 可测）。
+ *
+ * **A/B 互换**（D7）：在 A 之前按 A 只是普通操作；按在 B 之后说明用户是在倒着划区间，
+ * 此刻把新旧两点互换才符合"先设的那端当 B"的直觉。**位置 == B 时拒绝**：互换会立刻
+ * 产生 `A == B`，违反 [AbLoopState] 的 `pointA < pointB` 不变量，宁可不改状态也不制造非法区间。
+ *
+ * **不在这里做任何"把用户 seek 钳回区间内"的事**：D8-A 明确允许循环期间拖到区间外
+ *（阶段 0 裁决保留），钳制属于被删掉的旧语义。
+ */
+class AbLoopLimiter(private val fallbackFrameRate: Float = AB_LOOP_FALLBACK_FRAME_RATE) {
     init { require(fallbackFrameRate > 0) }
 
     fun setPoint(
         state: AbLoopState,
         point: AbPoint,
         positionMillis: Long,
-        durationMillis: Long,
         frameRate: Float?,
-    ): Result<AbLoopState> {
-        require(durationMillis >= 0)
-        val position = positionMillis.coerceIn(0, durationMillis)
-        val frameStep = frameStepMillis(frameRate)
+    ): AbLoopSetPointResult {
+        val position = snapAbMillisToFrame(positionMillis.coerceAtLeast(0), frameRate).coerceAtLeast(0)
         return when (point) {
-            AbPoint.A -> Result.success(
-                AbLoopState(position, state.pointB?.takeIf { it >= position + frameStep }),
-            )
-            AbPoint.B -> {
-                val start = state.pointA ?: return Result.failure(IllegalStateException("A_NOT_SET"))
-                if (position < start + frameStep) {
-                    Result.failure(IllegalArgumentException("B_MUST_FOLLOW_A"))
-                } else {
-                    Result.success(AbLoopState(start, position))
-                }
+            AbPoint.A -> setPointA(state, position, frameRate)
+            AbPoint.B -> setPointB(state, position, frameRate)
+        }
+    }
+
+    private fun setPointA(state: AbLoopState, position: Long, frameRate: Float?): AbLoopSetPointResult {
+        val end = state.pointB
+        // 位置落在 B 之后（同一帧也算"之后"）：互换 —— 新点成为 B，旧的 B 成为 A。
+        if (end != null && position >= end) {
+            return if (hasFrameSeparation(end, position, frameRate)) {
+                AbLoopSetPointResult.Applied(AbLoopState(pointA = end, pointB = position))
+            } else {
+                AbLoopSetPointResult.Rejected(PlaybackCommandRejection.INVALID_AB_RANGE)
             }
         }
+        // 位置在 B 之前：A 换人，旧的 B 不再有"至少一帧"的余量时一并丢弃，避免留下非法区间。
+        return AbLoopSetPointResult.Applied(
+            AbLoopState(pointA = position, pointB = end?.takeIf { hasFrameSeparation(position, it, frameRate) }),
+        )
+    }
+
+    private fun setPointB(state: AbLoopState, position: Long, frameRate: Float?): AbLoopSetPointResult {
+        val start = state.pointA
+            ?: return AbLoopSetPointResult.Rejected(PlaybackCommandRejection.INVALID_AB_RANGE)
+        if (!hasFrameSeparation(start, position, frameRate)) {
+            return AbLoopSetPointResult.Rejected(PlaybackCommandRejection.INVALID_AB_RANGE)
+        }
+        return AbLoopSetPointResult.Applied(AbLoopState(pointA = start, pointB = position))
     }
 
     fun clear(): AbLoopState = AbLoopState()
 
-    fun clamp(state: AbLoopState, positionMillis: Long, durationMillis: Long): Long {
-        val position = positionMillis.coerceIn(0, durationMillis.coerceAtLeast(0))
-        if (!state.active) return position
-        val start = requireNotNull(state.pointA)
-        val end = requireNotNull(state.pointB)
-        return position.coerceIn(start, end)
-    }
+    /** 名义一帧的毫秒数（向上取整）；帧率缺失时用 [fallbackFrameRate]。 */
+    fun frameDurationMillis(frameRate: Float?): Long =
+        ceil((1_000f / (frameRate?.takeIf { it > 0f } ?: fallbackFrameRate)).coerceAtLeast(1f)).toLong()
+}
 
-    fun seekBy(state: AbLoopState, positionMillis: Long, offsetMillis: Long, durationMillis: Long): Long =
-        clamp(state, positionMillis + offsetMillis, durationMillis)
+sealed interface AbLoopSetPointResult {
+    data class Applied(val state: AbLoopState) : AbLoopSetPointResult
+    data class Rejected(val rejection: PlaybackCommandRejection) : AbLoopSetPointResult
+}
 
-    fun loopPosition(state: AbLoopState, positionMillis: Long): Long? =
-        if (state.active && positionMillis >= requireNotNull(state.pointB)) requireNotNull(state.pointA) else null
+/**
+ * AB 循环是否可用。**判定时机是播放器准备完成之后**：`PlaybackTimeline` 来自引擎 timeline
+ *（`durationMillis` = `player.duration`、`isSeekable` = `isCurrentMediaItemSeekable`），
+ * **不是**来源类型或最初 metadata —— 保险库媒体的 handle 时长可能是未知值，准备完成后才有真值。
+ */
+enum class AbLoopAvailability { ENABLED, UNKNOWN_DURATION, NOT_SEEKABLE }
 
-    fun frameStepMillis(frameRate: Float?): Long =
-        ceil((1_000f / (frameRate?.takeIf { it > 0 } ?: fallbackFrameRate)).coerceAtLeast(1f)).toLong()
+fun abLoopAvailability(durationMillis: Long?, isSeekable: Boolean): AbLoopAvailability = when {
+    durationMillis == null || durationMillis <= 0L -> AbLoopAvailability.UNKNOWN_DURATION
+    !isSeekable -> AbLoopAvailability.NOT_SEEKABLE
+    else -> AbLoopAvailability.ENABLED
 }
 
 sealed interface AbLoopEvent {
     data class SetPoint(
         val point: AbPoint,
         val positionMillis: Long,
-        val durationMillis: Long,
         val frameRate: Float?,
     ) : AbLoopEvent
     data object Clear : AbLoopEvent
@@ -232,16 +285,12 @@ data class AbLoopUpdate(val state: AbLoopState, val rejection: PlaybackCommandRe
 
 class AbLoopReducer(private val limiter: AbLoopLimiter = AbLoopLimiter()) {
     fun reduce(state: AbLoopState, event: AbLoopEvent): AbLoopUpdate = when (event) {
-        is AbLoopEvent.SetPoint -> limiter.setPoint(
-            state,
-            event.point,
-            event.positionMillis,
-            event.durationMillis,
-            event.frameRate,
-        ).fold(
-            onSuccess = { AbLoopUpdate(it) },
-            onFailure = { AbLoopUpdate(state, PlaybackCommandRejection.INVALID_AB_RANGE) },
-        )
+        is AbLoopEvent.SetPoint -> when (
+            val result = limiter.setPoint(state, event.point, event.positionMillis, event.frameRate)
+        ) {
+            is AbLoopSetPointResult.Applied -> AbLoopUpdate(result.state)
+            is AbLoopSetPointResult.Rejected -> AbLoopUpdate(state, result.rejection)
+        }
         AbLoopEvent.Clear, AbLoopEvent.MediaChanged -> AbLoopUpdate(limiter.clear())
     }
 }
@@ -250,6 +299,18 @@ enum class BackendId { MEDIA3, MPV }
 enum class SurfaceOwner { REGULAR_PLAYER, SHORTS, PICTURE_IN_PICTURE }
 enum class RequestedOrientation { SENSOR, PORTRAIT, LANDSCAPE }
 enum class FrameStepDirection { PREVIOUS, NEXT }
+
+/**
+ * 跳转来源。
+ *
+ * **`AB_LOOP` 只描述"引擎内部的循环回跳"**：它不经过命令层，是引擎在
+ * [PlaybackEngineEvent.AbBoundaryReached] 之后对自己的播放器直接做的一次 seek
+ *（见 `AbBoundaryWatcher`），因此**没有任何客户端命令会带上它**。
+ *
+ * 反过来说，用户发起的跳转（`USER` / `DRAG_END` / `FRAME_STEP`）永远不会冒充循环回跳 ——
+ * 这正是"循环计数只认引擎自然边界事件"的前提：如果把回跳表达成用户 seek，
+ * 或者让用户 seek 看起来像回跳，计数就变成了按位置猜测。
+ */
 enum class SeekOrigin { USER, DRAG_END, FRAME_STEP, AB_LOOP }
 enum class TrackType { AUDIO, SUBTITLE }
 enum class PauseReason { USER, AUDIO_FOCUS, BACKGROUND, ENDED }
@@ -332,6 +393,14 @@ data class PlaybackSessionSnapshot(
      * 它描述的是"这一段媒体"，换成另一个文件就必须重新校准，绝不能让旧值跟着走。
      */
     val frameCalibration: FrameCalibrationResult? = null,
+    /**
+     * 当前 AB 区间的自然边界循环次数（D9）。
+     *
+     * **只由 runtime 在该 generation 的自然边界事件上递增**，随清除/切媒体归零；
+     * 客户端（bridge / ViewModel）不得自行累计：它一旦被第二处写入，就再也说不清
+     * "这个数字是不是按位置猜出来的"。
+     */
+    val loopCount: Long = 0,
 )
 
 data class PlaybackMediaInfo(
@@ -415,9 +484,61 @@ interface VideoSurfacePort {
     fun unbind(lease: SurfaceLease): Result<Unit>
 }
 
+/**
+ * A-B 循环的下发配置。`generation` 由会话 runtime 生成并持有（见 `PlaybackSessionRuntime`），
+ * 引擎只消费：区间换了 generation 就一定要换，引擎据此作废旧 generation 的边界检测。
+ *
+ * 坐标一律是**引擎 timeline 的绝对媒体毫秒**。方案 A 不裁剪媒体源（阶段 0 裁决），
+ * 因此不存在"窗口坐标 ↔ 媒体时间坐标"的映射问题；该坐标系事实仍记录在此以免后续重新引入裁剪。
+ */
+data class EngineAbLoop(
+    val generation: Long,
+    val pointAMillis: Long,
+    val pointBMillis: Long,
+) {
+    init {
+        require(generation >= 0)
+        require(pointAMillis >= 0)
+        require(pointBMillis > pointAMillis)
+    }
+}
+
+/** 引擎主动上报的事件。只放"只有引擎知道"的事实，不塞 UI 关注的东西。 */
+sealed interface PlaybackEngineEvent {
+    /**
+     * 播放**自然**抵达 B：位置在连续播放中从 B 之前推进到 B 或越过 B。
+     *
+     * 只有当前 generation 的该事件才允许被 runtime 计入循环次数：用户 seek 越过 B、
+     * 重缓冲造成的位置回退、以及旧 generation 的晚到事件都会由引擎或 runtime 作废
+     *（否则计数就退化成"按位置猜测"，正是本次重构要修掉的根因）。
+     */
+    data class AbBoundaryReached(val generation: Long, val positionMillis: Long) : PlaybackEngineEvent
+}
+
 interface PlaybackEngine {
     val state: StateFlow<EngineState>
     val capabilities: StateFlow<PlaybackCapabilities>
+
+    /**
+     * 引擎主动上报的事件流。
+     *
+     * 为什么引擎必须有这条通道：边界检测归引擎（"播到 B"这件事只有引擎自己知道），
+     * 删掉 UI 轮询之后若没有事件流，循环就再也没有任何通道能触发回跳。
+     */
+    val events: Flow<PlaybackEngineEvent>
+
+    /**
+     * 下发 A-B 循环配置；`null` 表示关闭循环。
+     *
+     * 调用后引擎必须满足：旧配置的边界检测一律作废（不得再上报旧 generation 的事件），
+     * 且在位置发生不连续（用户 seek / 拖动 / 逐帧 / 队列切换）时同样取消或重置旧边界检测 ——
+     * 只做"把边界检测取消掉"，不做任何 A/B 业务校验（校验全在 runtime）。
+     *
+     * **配置生效的那一刻，若播放位置已经在 B 或之后，这一轮不得产生自然边界事件**：
+     * 用户先拖到区间之后、再打开/调整 AB 就会走到这条路（见 `AbBoundarySession.configure`）。
+     */
+    fun configureAbLoop(loop: EngineAbLoop?)
+
     suspend fun prepare(source: PlaybackSourceHandle, startPositionMillis: Long)
     fun play()
     fun pause()

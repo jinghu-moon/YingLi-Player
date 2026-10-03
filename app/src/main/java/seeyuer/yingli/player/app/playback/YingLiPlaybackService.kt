@@ -2,6 +2,7 @@ package seeyuer.yingli.player.app.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Bundle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.AudioAttributes
@@ -11,6 +12,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import androidx.annotation.OptIn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +41,9 @@ import seeyuer.yingli.player.domain.playback.PlaybackSourceResolver
 import seeyuer.yingli.player.domain.playback.SourceAccessHandleId
 import seeyuer.yingli.player.domain.playback.ElapsedTimeSource
 import seeyuer.yingli.player.domain.playback.PlaybackSourceHandle
+import seeyuer.yingli.player.domain.playback.AbLoopSession
+import seeyuer.yingli.player.domain.playback.AbLoopSessionCommands
+import seeyuer.yingli.player.domain.playback.AbPoint
 import seeyuer.yingli.player.domain.security.VaultItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.data.security.VaultAwareDataSource
@@ -163,7 +171,73 @@ class YingLiPlaybackService : MediaSessionService() {
         )
         mediaSession = MediaSession.Builder(this, MediaSessionPlayerAdapter(player, sessionRuntime, sourceRegistry))
             .setSessionActivity(sessionActivity)
+            .setCallback(abLoopSessionCallback)
             .build()
+        // AB 状态与计数由会话 runtime 持有；这里只把它推给已连接的客户端（播放页投影用）。
+        serviceScope.launch {
+            sessionRuntime.abLoop.collect { publishAbLoopExtras(it) }
+        }
+    }
+
+    /**
+     * 会话侧命令入口。
+     *
+     * 为什么 AB 命令必须经过这里，而不是 UI 侧自己算：设点校验、A/B 互换、相等边界、帧吸附、
+     * 启用策略、计数条件都属于会话（与引擎同一个 session）；UI 侧再算一份就回到"三份状态"。
+     *
+     * `onConnect` 里补上两个自定义 session command：Media3 只允许控制器发送**在连接时声明过**的
+     * 自定义命令（`MediaControllerImplBase.getSessionInterfaceWithSessionCommandIfAble`：
+     * 未声明的命令在客户端就被拦下并记一条 warning），不声明的话命令永远到不了这里。
+     */
+    private val abLoopSessionCallback = @OptIn(UnstableApi::class) object : MediaSession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val availableSessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                .add(SessionCommand(AbLoopSessionCommands.SET_POINT, Bundle.EMPTY))
+                .add(SessionCommand(AbLoopSessionCommands.CLEAR, Bundle.EMPTY))
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(availableSessionCommands)
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            when (customCommand.customAction) {
+                AbLoopSessionCommands.SET_POINT -> {
+                    val point = args.getString(AbLoopSessionCommands.ARG_POINT)
+                        ?.let { name -> runCatching { AbPoint.valueOf(name) }.getOrNull() }
+                    if (point != null) serviceScope.launch { sessionRuntime.setPoint(point) }
+                }
+                AbLoopSessionCommands.CLEAR -> serviceScope.launch { sessionRuntime.clear() }
+                else -> return Futures.immediateFuture(
+                    SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED),
+                )
+            }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+    }
+
+    /**
+     * 把会话 AB 状态推给客户端。
+     *
+     * 用 session extras 而不是另开一条自定义广播：AB 是"会话 → 客户端"的单向小状态，
+     * extras 自带变更通知（`Player.EVENT_SESSION_EXTRAS_CHANGED`），
+     * 客户端（`Media3PlaybackController`）据此更新投影，不需要新增一条同步通道。
+     */
+    private fun publishAbLoopExtras(session: AbLoopSession) {
+        val extras = Bundle().apply {
+            session.state.pointA?.let { putString(AbLoopSessionCommands.EXTRA_POINT_A, it.toString()) }
+            session.state.pointB?.let { putString(AbLoopSessionCommands.EXTRA_POINT_B, it.toString()) }
+            putString(AbLoopSessionCommands.EXTRA_LOOP_COUNT, session.loopCount.toString())
+        }
+        mediaSession.setSessionExtras(extras)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = mediaSession

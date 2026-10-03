@@ -19,9 +19,16 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import seeyuer.yingli.player.core.common.AppDispatchers
 import seeyuer.yingli.player.core.model.media.MediaItemId
+import seeyuer.yingli.player.domain.playback.AbLoopAvailability
+import seeyuer.yingli.player.domain.playback.AbLoopCommandOutcome
 import seeyuer.yingli.player.domain.playback.AbLoopEvent
 import seeyuer.yingli.player.domain.playback.AbLoopReducer
+import seeyuer.yingli.player.domain.playback.AbLoopSession
+import seeyuer.yingli.player.domain.playback.AbLoopSessionControl
+import seeyuer.yingli.player.domain.playback.AbPoint
+import seeyuer.yingli.player.domain.playback.MutableAbLoopSessionStore
 import seeyuer.yingli.player.domain.playback.BackendId
+import seeyuer.yingli.player.domain.playback.EngineAbLoop
 import seeyuer.yingli.player.domain.playback.EngineState
 import seeyuer.yingli.player.domain.playback.ElapsedTimeSource
 import seeyuer.yingli.player.domain.playback.FrameCalibrationControl
@@ -33,6 +40,7 @@ import seeyuer.yingli.player.domain.playback.PlaybackCommandHandle
 import seeyuer.yingli.player.domain.playback.PlaybackCommandId
 import seeyuer.yingli.player.domain.playback.PlaybackCommandRejection
 import seeyuer.yingli.player.domain.playback.PlaybackEngine
+import seeyuer.yingli.player.domain.playback.PlaybackEngineEvent
 import seeyuer.yingli.player.domain.playback.PlaybackOrder
 import seeyuer.yingli.player.domain.playback.PlaybackOpenRequest
 import seeyuer.yingli.player.domain.playback.PlaybackPhase
@@ -53,6 +61,7 @@ import seeyuer.yingli.player.domain.playback.SpeedControl
 import seeyuer.yingli.player.domain.playback.TrackSelection
 import seeyuer.yingli.player.domain.playback.VideoTransformControl
 import seeyuer.yingli.player.domain.playback.VideoScaleMode
+import seeyuer.yingli.player.domain.playback.abLoopAvailability
 import seeyuer.yingli.player.domain.security.VaultItemId
 
 /**
@@ -80,10 +89,34 @@ class PlaybackSessionRuntime(
     private val sourceUriLookup: (String) -> String? = { null },
     private val vaultResolver: (suspend (VaultItemId, String) -> Result<seeyuer.yingli.player.domain.playback.PlaybackSourceHandle>)? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.main),
-) : PlaybackSessionClient, AutoCloseable {
+) : PlaybackSessionClient, AbLoopSessionControl, AutoCloseable {
     private val commandSequence = AtomicLong(0)
     private val commandMutex = Mutex()
     private val abReducer = AbLoopReducer()
+
+    /**
+     * AB 循环的会话侧权威状态。
+     *
+     * 它是**唯一**一份：审计路径是 runtime 写 → `YingLiPlaybackService` 推 session extras →
+     * `Media3PlaybackController` 解码 → bridge 投影 → UI。任何一层都不再做第二份判定。
+     */
+    private val abLoopStore = MutableAbLoopSessionStore()
+
+    /**
+     * 循环 generation：**AB 配置的版本号**。
+     *
+     * 什么时候递增（写死，见 `docs/20` §3.1）：A/B 变更、清除、切媒体（MediaChanged）。
+     * 只有"当前 generation 的自然边界事件"才允许递增循环次数，因此晚到的旧事件
+     *（旧配置的定时回调、被作废前的引擎事件）会被 generation 直接过滤掉。
+     *
+     * 用户 seek / 拖动 / 逐帧 **不**递增 generation：它们只是让引擎作废边界消息
+     *（`configureAbLoop` 的取消/重置语义 + 位置不连续处置），语义上并没有产生"新配置"，
+     * 给它一个新 generation 反而会让"过期事件"的定义变得含混。
+     */
+    private val abLoopGeneration = AtomicLong(0)
+
+    /** 当前 AB 会话状态（区间 + 计数）的唯一权威来源。 */
+    val abLoop: StateFlow<AbLoopSession> = abLoopStore.abLoop
     private val mutableSnapshot = MutableStateFlow(
         PlaybackSessionSnapshot(
             sessionId = sessionId,
@@ -109,6 +142,9 @@ class PlaybackSessionRuntime(
             engine.state.collect { state ->
                 commandMutex.withLock { applyEngineState(state) }
             }
+        }
+        scope.launch {
+            engine.events.collect(::onEngineEvent)
         }
         scope.launch {
             engine.capabilities.collect { capabilities ->
@@ -201,20 +237,24 @@ class PlaybackSessionRuntime(
                 playWhenReady = false
                 engine.pause()
             }
-            is PlaybackSessionCommand.Seek -> engine.seekTo(clampPosition(command.positionMillis))
-            is PlaybackSessionCommand.SeekBy -> engine.seekTo(clampPosition(snapshot.value.timeline.positionMillis + command.offsetMillis))
+            // 循环期间允许拖到区间外（D8-A，阶段 0 裁决保留）：AB 不钳制任何用户 seek。
+            is PlaybackSessionCommand.Seek -> engine.seekTo(command.positionMillis.coerceAtLeast(0))
+            is PlaybackSessionCommand.SeekBy -> engine.seekTo(
+                (snapshot.value.timeline.positionMillis + command.offsetMillis).coerceAtLeast(0),
+            )
             PlaybackSessionCommand.Stop -> {
                 openGeneration++
                 playWhenReady = false
                 // 会话结束：在跑的帧数校准既没有归属也没有意义，直接取消并清空结果。
                 frameCalibrationControl?.close()
                 engine.stop()
+                // 会话结束：AB 配置随之作废（引擎侧已在 stop 里停掉检测，这里同步清掉状态与计数）。
+                resetAbLoopForMediaChange()
                 mutableSnapshot.value = mutableSnapshot.value.copy(
                     mediaId = null,
                     title = null,
                     phase = PlaybackPhase.Idle,
                     timeline = PlaybackTimeline(),
-                    abLoop = abReducer.reduce(snapshot.value.abLoop, AbLoopEvent.Clear).state,
                     frameCalibration = null,
                 )
                 emitState()
@@ -246,23 +286,11 @@ class PlaybackSessionRuntime(
                     feedback(PlaybackCommandRejection.INVALID_STATE.name)
                 }
             }
-            is PlaybackSessionCommand.SetAbPoint -> {
-                val current = snapshot.value
-                val duration = current.timeline.durationMillis ?: 0L
-                val update = abReducer.reduce(
-                    current.abLoop,
-                    AbLoopEvent.SetPoint(command.point, current.timeline.positionMillis, duration, null),
-                )
-                if (update.rejection != null) feedback(update.rejection.name)
-                else {
-                    mutableSnapshot.value = current.copy(abLoop = update.state)
-                    emitState()
-                }
+            is PlaybackSessionCommand.SetAbPoint -> when (val outcome = applyAbPoint(command.point)) {
+                AbLoopCommandOutcome.Applied -> Unit
+                is AbLoopCommandOutcome.Rejected -> feedback(outcome.rejection.name)
             }
-            PlaybackSessionCommand.ClearAb -> {
-                mutableSnapshot.value = snapshot.value.copy(abLoop = abReducer.reduce(snapshot.value.abLoop, AbLoopEvent.Clear).state)
-                emitState()
-            }
+            PlaybackSessionCommand.ClearAb -> clearAbLoopState()
             is PlaybackSessionCommand.BindSurface -> bindSurface(command.request)
             is PlaybackSessionCommand.UnbindSurface -> engine.unbindSurface(command.lease)
             PlaybackSessionCommand.CaptureFrame -> captureFrame()
@@ -308,6 +336,9 @@ class PlaybackSessionRuntime(
                         fileSizeBytes = source.fileSizeBytes,
                     ),
                 )
+                // 保险库媒体同样是"换文件"：AB 清空（handle 的时长可能是未知值，准备完成后
+                // 由引擎 timeline 提供真值，那时再按真实能力判定可用性）。
+                resetAbLoopForMediaChange()
                 emitState()
                 withContext(dispatchers.main) { engine.prepare(source, 0L) }
                 withContext(dispatchers.main) { engine.play() }
@@ -327,9 +358,10 @@ class PlaybackSessionRuntime(
                 title = null,
                 phase = PlaybackPhase.Resolving(id),
                 timeline = PlaybackTimeline(request.startPositionMillis),
-                abLoop = abReducer.reduce(snapshot.value.abLoop, AbLoopEvent.MediaChanged).state,
                 frameCalibration = null,
             )
+            // 切媒体：AB 区间描述的是"这一段媒体"，换文件必须清空（计数一并归零 + 新 generation）。
+            resetAbLoopForMediaChange()
             emitState()
             activeRequest = request
             openGeneration
@@ -436,12 +468,112 @@ class PlaybackSessionRuntime(
         }
         mutableSnapshot.value = current.copy(phase = phase, timeline = timeline)
         emitState()
+        // 可用性判定必须发生在**播放器准备完成之后**，按真实 timeline 的 duration 与 seekability：
+        // 时长从"未知"变成已知（保险库媒体就是这样）时它才可能从禁用变成可用；
+        // 反过来媒体变得不可 seek 时，已有的 AB 区间必须撤掉，否则会留下一个永远循环不了的区间。
+        dropAbLoopIfUnavailable()
     }
 
-    private fun clampPosition(position: Long): Long {
-        val timeline = snapshot.value.timeline
-        val duration = timeline.durationMillis ?: Long.MAX_VALUE
-        return seeyuer.yingli.player.domain.playback.AbLoopLimiter().clamp(snapshot.value.abLoop, position, duration)
+    // ---- AB 循环：会话侧唯一权威 ----
+
+    /**
+     * 设点。规则全在域层纯函数里（[AbLoopReducer] / [AbLoopLimiter]）：
+     * A/B 互换、相等边界拒绝、帧索引吸附。
+     *
+     * 帧率取**实测优先**（`mediaInfo.frameRate` 是引擎从轨道读到的声明帧率）；拿不到就不吸附。
+     */
+    override suspend fun setPoint(point: AbPoint): AbLoopCommandOutcome =
+        applyAbPoint(point)
+
+    override suspend fun clear(): Unit = clearAbLoopState()
+
+    private suspend fun applyAbPoint(point: AbPoint): AbLoopCommandOutcome {
+        val availability = currentAbLoopAvailability()
+        if (availability != AbLoopAvailability.ENABLED) {
+            return AbLoopCommandOutcome.Rejected(PlaybackCommandRejection.AB_UNAVAILABLE)
+        }
+        val frameRate = snapshot.value.mediaInfo?.frameRate
+        val update = abReducer.reduce(
+            snapshot.value.abLoop,
+            AbLoopEvent.SetPoint(
+                point = point,
+                positionMillis = snapshot.value.timeline.positionMillis,
+                frameRate = frameRate,
+            ),
+        )
+        val rejection = update.rejection
+        if (rejection != null) return AbLoopCommandOutcome.Rejected(rejection)
+        val generation = abLoopGeneration.incrementAndGet()
+        publishAbLoop(
+            // 设点是新一轮配置：计数从这一轮重新开始（旧计数属于旧区间，继续累加没有意义）。
+            AbLoopSession(state = update.state, loopCount = 0),
+            generation,
+        )
+        return AbLoopCommandOutcome.Applied
+    }
+
+    private suspend fun clearAbLoopState() {
+        publishAbLoop(AbLoopSession.EMPTY, abLoopGeneration.incrementAndGet())
+    }
+
+    /** 切媒体/停止会话：清空区间、归零计数、并生成新 generation（旧配置的边界事件一律作废）。 */
+    private fun resetAbLoopForMediaChange() {
+        publishAbLoop(AbLoopSession.EMPTY, abLoopGeneration.incrementAndGet())
+    }
+
+    /**
+     * 媒体能力不再支持 AB 时撤掉区间（时长为未知值 / 不可 seek）。
+     * 计数一并归零：它描述的是"这个区间循环了几次"，区间没了计数就没有意义。
+     */
+    private fun dropAbLoopIfUnavailable() {
+        val current = abLoopStore.abLoop.value
+        if (!current.active) return
+        if (currentAbLoopAvailability() == AbLoopAvailability.ENABLED) return
+        publishAbLoop(AbLoopSession.EMPTY, abLoopGeneration.incrementAndGet())
+    }
+
+    private fun currentAbLoopAvailability(): AbLoopAvailability =
+        abLoopAvailability(snapshot.value.timeline.durationMillis, snapshot.value.timeline.isSeekable)
+
+    private fun publishAbLoop(abLoopSession: AbLoopSession, generation: Long) {
+        abLoopStore.publish(abLoopSession)
+        // 会话快照同步带上区间与计数：快照是"客户端看到的完整会话视图"，
+        // 而且它是设点校验读状态的地方（读 store 与读快照必须是同一份事实，否则第二次设点
+        // 会看不到第一次设的 A，直接把合法区间判成 INVALID_AB_RANGE）。
+        mutableSnapshot.value = mutableSnapshot.value.copy(
+            abLoop = abLoopSession.state,
+            loopCount = abLoopSession.loopCount,
+        )
+        engine.configureAbLoop(
+            abLoopSession.state.let { loopState ->
+                val start = loopState.pointA
+                val end = loopState.pointB
+                if (start == null || end == null) null else EngineAbLoop(generation, start, end)
+            },
+        )
+    }
+
+    /**
+     * 引擎上报的事件。
+     *
+     * **计数只认当前 generation 的自然边界事件**：过期事件（旧配置的定时回调、被作废前的
+     * 引擎事件）在这里被 generation 过滤掉；用户 seek 越界与重缓冲位置回退根本不会产生
+     * 该事件（引擎侧判定为"非自然"，见 `AbBoundaryWatcher`）。把这三条写在同一个地方，
+     * 是因为它们合起来才是"计数不是按位置猜出来的"这一结论的完整依据。
+     */
+    private fun onEngineEvent(event: PlaybackEngineEvent) {
+        when (event) {
+            is PlaybackEngineEvent.AbBoundaryReached -> {
+                // 引擎已经自己完成回跳（EXACT + 目标为当前配置的 A），runtime 只负责计数与投影。
+                val generation = abLoopGeneration.get()
+                if (event.generation != generation) return
+                val current = abLoopStore.abLoop.value
+                if (!current.active) return
+                val next = current.copy(loopCount = current.loopCount + 1)
+                abLoopStore.publish(next)
+                mutableSnapshot.value = mutableSnapshot.value.copy(loopCount = next.loopCount)
+            }
+        }
     }
 
     private fun feedback(code: String) {

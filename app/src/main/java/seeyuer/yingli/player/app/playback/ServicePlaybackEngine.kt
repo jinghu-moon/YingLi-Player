@@ -13,16 +13,21 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import seeyuer.yingli.player.domain.playback.BackendId
 import seeyuer.yingli.player.domain.playback.BufferingReason
+import seeyuer.yingli.player.domain.playback.EngineAbLoop
 import seeyuer.yingli.player.domain.playback.EngineState
 import seeyuer.yingli.player.domain.playback.PlaybackCapabilities
 import seeyuer.yingli.player.domain.playback.PlaybackEngine
+import seeyuer.yingli.player.domain.playback.PlaybackEngineEvent
 import seeyuer.yingli.player.domain.playback.PlaybackSourceHandle
 import seeyuer.yingli.player.domain.playback.PlaybackOpenRequest
 import seeyuer.yingli.player.domain.playback.PlaybackTimeline
@@ -68,7 +73,22 @@ class ServicePlaybackEngine(
         ),
     )
     private val mutableMediaInfo = MutableStateFlow<PlaybackMediaInfo?>(null)
+    private val mutableEvents = MutableSharedFlow<PlaybackEngineEvent>(extraBufferCapacity = 8)
     private var currentLease: SurfaceLease? = null
+
+    /**
+     * AB 循环的边界检测器。**归引擎**：它跑在服务主线程上，不依赖 UI 存活，
+     * 因此后台/锁屏/画中画下循环仍然生效（D4）。
+     */
+    private val abBoundaryWatcher = AbBoundaryWatcher(
+        player = player,
+        onBoundaryReached = { generation, position -> mutableEvents.tryEmit(PlaybackEngineEvent.AbBoundaryReached(generation, position)) },
+        // 回跳目标用信号里的 A（生成信号时的配置快照），避免"晚到信号拿新配置回跳"。
+        onSeekToPointA = { pointAMillis -> player.seekTo(pointAMillis) },
+    )
+
+    /** 当前生效的 AB 循环配置；`null` = 未激活。AB 激活期间跳转精度强制精确。 */
+    private val mutableAbLoop = MutableStateFlow<EngineAbLoop?>(null)
 
     /**
      * 当前媒体的声明时长。跳转精度按它选择，与旧实现取 `source.durationMillis` 完全一致：
@@ -116,20 +136,46 @@ class ServicePlaybackEngine(
     init {
         player.addListener(listener)
         // 精度切换只改 `SeekParameters`，不重新 prepare、不重设媒体：截图工具进出时播放不该被打断。
-        // 合并两路输入是因为"有效精度"由两者共同决定：
+        // 合并三路输入是因为"有效精度"由它们共同决定：
         // - 用户/UI 切换的帧精确开关；
         // - 引擎是否已经就绪：`prepare` 之后要先 `setMediaItem`，此刻下发会被后续 setMediaItem 丢掉，
-        //   必须等真正 READY 再对齐一次，否则截图模式下第一次步进会退回关键帧跳转。
+        //   必须等真正 READY 再对齐一次，否则截图模式下第一次步进会退回关键帧跳转；
+        // - AB 是否生效：生效期间必须精确（循环回跳要落在 A 上），退出后要回到时长默认档。
+        //   AB 单独作为一路输入，是因为"精度开关没变但 AB 开了/关了"同样需要重新下发。
         engineScope.launch {
-            combine(seekPrecisionControl.precision, mutableState) { precision, state ->
-                precision to isPlayerReadyForSeekConfiguration(state)
-            }.collect { (precision, isReady) -> if (isReady) applySeekPrecision(precision) }
+            combine(
+                seekPrecisionControl.precision,
+                mutableState,
+                mutableAbLoop,
+            ) { precision, state, loop ->
+                Triple(precision, isPlayerReadyForSeekConfiguration(state), loop != null)
+            }.collect { (precision, isReady, abActive) ->
+                if (isReady) applySeekPrecision(precision, abActive)
+            }
         }
     }
 
     override val state: StateFlow<EngineState> = mutableState.asStateFlow()
     override val capabilities: StateFlow<PlaybackCapabilities> = mutableCapabilities.asStateFlow()
     override val mediaInfo: StateFlow<PlaybackMediaInfo?> = mutableMediaInfo.asStateFlow()
+    override val events: Flow<PlaybackEngineEvent> = mutableEvents.asSharedFlow()
+
+    /**
+     * 下发 A-B 循环配置。
+     *
+     * 这里只做两件事：换掉边界检测的配置（旧 generation 的定时回调随之作废）、
+     * 把 AB 是否生效告诉精度那条链（它自己会重新计算并下发）。
+     * **不做任何 A/B 业务校验**：设点合法性、互换、相等边界、计数条件全在会话 runtime。
+     *
+     * 为什么必须让 AB 生效期间**一律精确**（`SeekParameters.EXACT`）：方案 A 的帧精确落点完全来自
+     * 这一次精确 seek（阶段 0 §T0.2：50/50 次落点误差 0 µs）。用默认的长视频关键帧跳转会让每次
+     * 回跳偏若干帧，偏差还会随循环次数累积；设 A/B 时也要落在用户看到的那一帧上。
+     * 精度仍然只有一个入口（[applySeekPrecision]），不为 AB 另起一套通道。
+     */
+    override fun configureAbLoop(loop: EngineAbLoop?) {
+        mutableAbLoop.value = loop
+        abBoundaryWatcher.configure(loop)
+    }
 
     override suspend fun prepare(source: PlaybackSourceHandle, startPositionMillis: Long) {
         val uri = sourceRegistry.resolve(source.accessHandleId.value)
@@ -142,6 +188,9 @@ class ServicePlaybackEngine(
             .setUri(Uri.parse(uri))
             .setMediaMetadata(MediaMetadata.Builder().setTitle(source.displayName).setExtras(extras).build())
             .build()
+        // 换媒体：旧媒体的 AB 边界检测必须先停（新媒体的时间轴与旧 B 毫无关系）。
+        mutableAbLoop.value = null
+        abBoundaryWatcher.configure(null)
         mutableState.value = EngineState.Preparing
         // 新文件重新开始：下一次 BUFFERING 属于"首次准备"，不是重缓冲。
         hasEverBeenReady = false
@@ -173,6 +222,10 @@ class ServicePlaybackEngine(
         // 媒体已经清掉：旧时长与已下发的参数都不再代表任何东西，下次 prepare 重新判定。
         currentDurationMillis = null
         appliedSeekPrecision = null
+        // AB 的边界检测挂在"某个媒体的时间轴"上：媒体没了，检测必须一起停，
+        // 否则定时回调会拿旧 B 去比对新媒体的位置。
+        mutableAbLoop.value = null
+        abBoundaryWatcher.configure(null)
         mutableState.value = EngineState.Idle
     }
     override fun seekTo(positionMillis: Long) = player.seekTo(positionMillis)
@@ -203,6 +256,8 @@ class ServicePlaybackEngine(
 
     override fun release() {
         player.removeListener(listener)
+        abBoundaryWatcher.close()
+        mutableAbLoop.value = null
         engineScope.cancel()
         currentLease = null
         sourceRegistry.clear()
@@ -215,12 +270,17 @@ class ServicePlaybackEngine(
      * 幂等：有效精度与上次下发相同就跳过——`setSeekParameters` 会让播放器内部重算，
      * 而引擎状态每次跳动都会驱动到这里，没必要反复下发同一个值。
      *
+     * **AB 生效期间一律精确**：循环回跳要落在 A 上（不是 A 之前的关键帧），
+     * 设 A/B 也要落在用户看到的那一帧上；两者都走同一个 [seekPrecisionFor] 入口，
+     * 不额外引入一套"AB 专用精度"。
+     *
      * `SeekParameters`（以及 `setSeekParameters`）在 Media3 里标着 `@UnstableApi`：
      * 精确跳转只有这一条入口，所以按官方方式就近 opt-in，不把整个引擎都变成"接受不稳定 API"。
      */
     @OptIn(UnstableApi::class)
-    private fun applySeekPrecision(precision: SeekPrecision) {
-        val effective = seekPrecisionFor(currentDurationMillis, precision == SeekPrecision.FRAME_ACCURATE)
+    private fun applySeekPrecision(precision: SeekPrecision, abLoopActive: Boolean) {
+        val frameAccurate = precision == SeekPrecision.FRAME_ACCURATE || abLoopActive
+        val effective = seekPrecisionFor(currentDurationMillis, frameAccurate)
         if (appliedSeekPrecision == effective) return
         appliedSeekPrecision = effective
         player.setSeekParameters(

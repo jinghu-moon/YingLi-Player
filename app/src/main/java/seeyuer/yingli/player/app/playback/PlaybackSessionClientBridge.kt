@@ -39,11 +39,27 @@ class PlaybackSessionClientBridge(
     private val mutableSnapshot = MutableStateFlow(PlaybackSessionSnapshot(sessionId, null, null, PlaybackPhase.Idle))
     private val mutableEvents = kotlinx.coroutines.flow.MutableSharedFlow<PlaybackSessionEvent>(extraBufferCapacity = 32)
     private var queue: PlaybackQueue? = null
-    private var abLoop = AbLoopState()
     private var currentTitle: String? = null
     /** 最近一次打开用的来源场景：帧数校准要按同一场景重新解析 URI。 */
     private var currentSourceContext = PlaybackSourceContext.HOME
     private val queueNavigator = QueueNavigator(shufflePicker)
+
+    /**
+     * 会话侧的 AB 通道（可空：单测/预览宿主没有会话时保持"不支持"）。
+     *
+     * **这里不持有任何 AB 状态**：区间与计数都由会话 runtime 认定，本层只把命令送出去、
+     * 把会话回流的投影并进快照。旧实现里的 `abLoop` 字段与本地 reducer 已删除 ——
+     * 它会在每次 publish 时把自己的那份写回快照，覆盖会话取值（三份状态互相覆盖的根源之一）。
+     */
+    private val abLoopControl: AbLoopPlaybackControl? = controller as? AbLoopPlaybackControl
+
+    /**
+     * 会话 AB 区间在本层的**只读副本**，唯一来源是 [AbLoopPlaybackControl.abLoop]。
+     * 它只是"投影用的缓存"：本层没有任何地方会修改/推导它，也没有本地 reducer。
+     * 之所以要缓存而不是每次读 flow：`publish()` 与 AB 状态变化是两个独立事件源，
+     * 快照需要同时反映两者的最新值。
+     */
+    private var projectedAbLoop = AbLoopState()
 
     override val snapshot: StateFlow<PlaybackSessionSnapshot> = mutableSnapshot.asStateFlow()
     override val events = mutableEvents
@@ -51,6 +67,9 @@ class PlaybackSessionClientBridge(
     init {
         scope.launch { controller.state.collect { publish(it) } }
         scope.launch { controller.connectionState.collect { mutableSnapshot.value = mutableSnapshot.value.copy(connectionState = it) } }
+        abLoopControl?.let { control ->
+            scope.launch { control.abLoop.collect { publishAbLoop(it) } }
+        }
         val advanced = controller as? AdvancedPlaybackController
         if (advanced != null) {
             scope.launch { advanced.audioTracks.collect { publishTracks(audio = it) } }
@@ -120,8 +139,10 @@ class PlaybackSessionClientBridge(
                 is PlaybackSessionCommand.SetSpeed -> (controller as? AdvancedPlaybackController)?.setSpeed(command.speed)
                 is PlaybackSessionCommand.SelectTrack -> selectTrack(command.selection)
                 is PlaybackSessionCommand.SetScale -> (controller as? AdvancedPlaybackController)?.setScaleMode(command.mode)
-                is PlaybackSessionCommand.SetAbPoint -> setAbPoint(command.point)
-                PlaybackSessionCommand.ClearAb -> { abLoop = AbLoopState(); publishAb() }
+                is PlaybackSessionCommand.SetAbPoint -> abLoopControl?.requestSetAbPoint(command.point)
+                    ?: feedback(PlaybackCommandRejection.CAPABILITY_UNAVAILABLE.name)
+                PlaybackSessionCommand.ClearAb -> abLoopControl?.requestClearAbLoop()
+                    ?: feedback(PlaybackCommandRejection.CAPABILITY_UNAVAILABLE.name)
                 is PlaybackSessionCommand.BindSurface,
                 is PlaybackSessionCommand.UnbindSurface,
                 PlaybackSessionCommand.CaptureFrame -> feedback(PlaybackCommandRejection.CAPABILITY_UNAVAILABLE.name)
@@ -213,16 +234,6 @@ class PlaybackSessionClientBridge(
         }
     }
 
-    private fun setAbPoint(point: AbPoint) {
-        val timeline = snapshot.value.timeline
-        val update = AbLoopReducer().reduce(
-            abLoop,
-            AbLoopEvent.SetPoint(point, timeline.positionMillis, timeline.durationMillis ?: 0, null),
-        )
-        if (update.rejection == null) { abLoop = update.state; publishAb() }
-        else feedback(update.rejection.name)
-    }
-
     private fun publish(state: PlaybackState) {
         val request = state.request
         val phase = state.toSessionPhase(
@@ -237,7 +248,21 @@ class PlaybackSessionClientBridge(
             title = currentTitle ?: request?.mediaId?.value,
             phase = phase,
             timeline = state.timeline,
-            abLoop = abLoop,
+            // 播放状态与 AB 状态是两个独立事件源：这里保留 AB 投影的最新值，避免被覆盖回旧值。
+            abLoop = projectedAbLoop,
+        )
+        mutableEvents.tryEmit(PlaybackSessionEvent.StateChanged(mutableSnapshot.value))
+    }
+
+    /**
+     * 会话 AB 状态的**投影**：只并入快照，不参与任何判定，也不回写会话。
+     * 区间与计数都来自会话，本层没有可写的地方 —— 这是"只有一份权威状态"的落点。
+     */
+    private fun publishAbLoop(session: AbLoopSession) {
+        projectedAbLoop = session.state
+        mutableSnapshot.value = mutableSnapshot.value.copy(
+            abLoop = session.state,
+            loopCount = session.loopCount,
         )
         mutableEvents.tryEmit(PlaybackSessionEvent.StateChanged(mutableSnapshot.value))
     }
@@ -257,7 +282,6 @@ class PlaybackSessionClientBridge(
             queue = current?.toSnapshot(),
         )
     }
-    private fun publishAb() { mutableSnapshot.value = mutableSnapshot.value.copy(abLoop = abLoop) }
     private fun feedback(code: String) { mutableEvents.tryEmit(PlaybackSessionEvent.OneShotFeedback(code)) }
 
     override fun close() { scope.cancel() }

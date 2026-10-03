@@ -1,8 +1,10 @@
 package seeyuer.yingli.player.domain.playback
 
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import seeyuer.yingli.player.core.model.media.MediaItemId
@@ -44,11 +46,44 @@ class PlaybackEngineContractTest {
         assertTrue(engine.unbindSurface(second).isSuccess)
     }
 
+    /**
+     * 引擎契约里"循环配置 + 事件流"这两条必须同时存在：
+     * 只有配置没有事件 → 删掉 UI 轮询后循环永远不会回跳；
+     * 只有事件没有配置 → 引擎不知道边界在哪。这里把两者一起钉住。
+     */
+    @Test
+    fun `engine accepts an ab loop configuration and reports boundary events with its generation`() = runTest {
+        val engine = ContractFakeEngine()
+        val received = mutableListOf<PlaybackEngineEvent>()
+        val collector = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined).launch {
+            engine.events.collect { received += it }
+        }
+
+        engine.configureAbLoop(EngineAbLoop(generation = 7, pointAMillis = 2_000, pointBMillis = 4_000))
+        assertEquals(EngineAbLoop(generation = 7, pointAMillis = 2_000, pointBMillis = 4_000), engine.abLoop)
+        engine.events.emit(PlaybackEngineEvent.AbBoundaryReached(generation = 7, positionMillis = 4_001))
+        engine.configureAbLoop(null)
+        assertNull(engine.abLoop)
+
+        assertEquals(
+            listOf(PlaybackEngineEvent.AbBoundaryReached(generation = 7, positionMillis = 4_001)),
+            received,
+        )
+        collector.cancel()
+    }
+
     private class ContractFakeEngine : PlaybackEngine {
         override val state = MutableStateFlow<EngineState>(EngineState.Idle)
         override val capabilities = MutableStateFlow(PlaybackCapabilities(BackendId.MEDIA3))
+        override val events = kotlinx.coroutines.flow.MutableSharedFlow<PlaybackEngineEvent>(extraBufferCapacity = 4)
         val commands = mutableListOf<String>()
         private var lease: SurfaceLease? = null
+        var abLoop: EngineAbLoop? = null
+
+        override fun configureAbLoop(loop: EngineAbLoop?) {
+            abLoop = loop
+            commands += "abLoop:${loop?.generation ?: -1}"
+        }
 
         override suspend fun prepare(source: PlaybackSourceHandle, startPositionMillis: Long) {
             commands += "prepare:${source.accessHandleId.value}:$startPositionMillis"

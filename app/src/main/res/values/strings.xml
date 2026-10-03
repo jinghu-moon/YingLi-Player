@@ -254,6 +254,7 @@
     <string name="player_reject_capability_unavailable">当前播放器不支持该功能。</string>
     <string name="player_reject_track_unavailable">该轨道不可用。</string>
     <string name="player_reject_invalid_ab_range">AB 区间无效。</string>
+    <string name="player_reject_ab_unavailable">当前视频无法设置 AB 区间（时长未知或不可拖动）。</string>
     <string name="player_reject_stale_command">该操作已过期。</string>
     <string name="player_reject_unknown">操作未完成，请重试。</string>
     <string name="player_gesture_hint_volume">左侧上下滑调节音量</string>

@@ -65,6 +65,7 @@ internal fun playbackRejectionMessageRes(code: String): Int = when (code) {
     PlaybackCommandRejection.CAPABILITY_UNAVAILABLE.name -> R.string.player_reject_capability_unavailable
     PlaybackCommandRejection.TRACK_UNAVAILABLE.name -> R.string.player_reject_track_unavailable
     PlaybackCommandRejection.INVALID_AB_RANGE.name -> R.string.player_reject_invalid_ab_range
+    PlaybackCommandRejection.AB_UNAVAILABLE.name -> R.string.player_reject_ab_unavailable
     PlaybackCommandRejection.STALE_COMMAND.name -> R.string.player_reject_stale_command
     else -> R.string.player_reject_unknown
 }

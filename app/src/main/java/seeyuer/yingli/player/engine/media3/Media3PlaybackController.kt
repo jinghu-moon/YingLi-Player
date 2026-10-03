@@ -14,6 +14,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import java.io.FileNotFoundException
 import java.lang.ref.WeakReference
@@ -38,6 +39,11 @@ import seeyuer.yingli.player.core.common.LogValue
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.domain.playback.DefaultPlaybackErrorMapper
+import seeyuer.yingli.player.domain.playback.AbLoopPlaybackControl
+import seeyuer.yingli.player.domain.playback.AbLoopSession
+import seeyuer.yingli.player.domain.playback.AbLoopSessionCommands
+import seeyuer.yingli.player.domain.playback.AbLoopState
+import seeyuer.yingli.player.domain.playback.AbPoint
 import seeyuer.yingli.player.domain.playback.AdvancedPlaybackController
 import seeyuer.yingli.player.domain.playback.PlaybackSpeed
 import seeyuer.yingli.player.domain.playback.TrackChoice
@@ -67,7 +73,7 @@ class Media3PlaybackController(
     private val sourceRepository: PlaybackSourceRepository,
     private val dispatchers: AppDispatchers,
     private val logger: AppLogger,
-) : AdvancedPlaybackController, SecurePlaybackController, PlaybackMediaInfoProvider, AutoCloseable {
+) : AdvancedPlaybackController, SecurePlaybackController, PlaybackMediaInfoProvider, AbLoopPlaybackControl, AutoCloseable {
     private val applicationContext = context.applicationContext
     private val vaultTitle = applicationContext.getString(seeyuer.yingli.player.R.string.vault_title)
     private val scope = CoroutineScope(SupervisorJob() + dispatchers.main)
@@ -85,6 +91,15 @@ class Media3PlaybackController(
     override val scaleMode: StateFlow<VideoScaleMode> = mutableScaleMode.asStateFlow()
     private val mutableMediaInfo = MutableStateFlow<PlaybackMediaInfo?>(null)
     override val mediaInfo: StateFlow<PlaybackMediaInfo?> = mutableMediaInfo.asStateFlow()
+
+    /**
+     * 会话侧回流的 AB 状态（区间 + 计数）。
+     *
+     * 它**不是**本层的状态：值来自服务的 session extras（由会话 runtime 发布），
+     * 本层只是把它变成可观察的流给 UI 投影。这样"谁说了算"只有一个答案：会话。
+     */
+    private val mutableAbLoop = MutableStateFlow(AbLoopSession.EMPTY)
+    override val abLoop: StateFlow<AbLoopSession> = mutableAbLoop.asStateFlow()
 
     private val mutableVideoSurfaceBounds = MutableStateFlow<Rect?>(null)
 
@@ -148,6 +163,16 @@ class Media3PlaybackController(
                 scheduleReconnect()
             }
         }
+
+        /**
+         * 会话 extras 变化 = 会话侧 AB 状态变化。
+         *
+         * 为什么用这条回调而不是轮询：AB 状态是会话拥有的（本层不持有），
+         * Media3 已经为 session extras 提供了变更通知，轮询只会多一份需要对齐的状态。
+         */
+        override fun onExtrasChanged(controller: MediaController, extras: Bundle) {
+            updateAbLoopFromExtras(extras)
+        }
     }
 
     init {
@@ -181,6 +206,9 @@ class Media3PlaybackController(
                         mutableConnectionState.value = PlaybackConnectionState.CONNECTED
                         applyVideoOutputSelection(connected)
                         updateFromPlayer(connected)
+                        // 连接时先取一次会话当前的 AB 状态：`onExtrasChanged` 只在**之后**的变化里回调，
+                        // 不补这一下，UI 会在连接后一直显示"没有区间"直到用户改一次 A/B。
+                        updateAbLoopFromExtras(connected.sessionExtras)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
@@ -407,6 +435,51 @@ class Media3PlaybackController(
     }
 
     fun connectedPlayer(): Player? = controller
+
+    // ---- AB 循环：客户端只发命令、只读回流状态 ----
+
+    /**
+     * 请求会话设点。走 **MediaSession 自定义命令**而不是本层自己算：
+     * 设点合法性、A/B 互换、相等边界、帧吸附、启用策略全在会话 runtime，
+     * 本层自己算就等于又造一份权威状态（旧实现正是在这里持有一份 `abLoop`）。
+     *
+     * 位置不需要随命令带上：会话取**它自己 timeline** 的位置（`player.currentPosition` 的镜像），
+     * 客户端传位置会在"UI 看到的位置"与"播放器真实位置"之间引入第二个真相。
+     */
+    override fun requestSetAbPoint(point: AbPoint) {
+        val active = controller ?: return
+        val args = Bundle().apply { putString(AbLoopSessionCommands.ARG_POINT, point.name) }
+        active.sendCustomCommand(
+            SessionCommand(AbLoopSessionCommands.SET_POINT, Bundle.EMPTY),
+            args,
+        )
+    }
+
+    override fun requestClearAbLoop() {
+        val active = controller ?: return
+        active.sendCustomCommand(SessionCommand(AbLoopSessionCommands.CLEAR, Bundle.EMPTY), Bundle.EMPTY)
+    }
+
+    /**
+     * 从 session extras 解码会话回流的 AB 状态。
+     *
+     * 为什么用 extras 而不是再开一条自定义事件通道：AB 状态是"会话 → 客户端"的单向小状态，
+     * Media3 已经提供了 session extras 的变更通知（`MediaController.Listener.onExtrasChanged`），
+     * 再建一条通道只会多一处需要保持同步的地方。解码失败一律退回"无 AB"：
+     * 宁可少显示一个区间，也不要显示一个来路不明的区间。
+     */
+    private fun updateAbLoopFromExtras(extras: Bundle) {
+        val pointA = extras.getString(AbLoopSessionCommands.EXTRA_POINT_A)?.toLongOrNull()
+        val pointB = extras.getString(AbLoopSessionCommands.EXTRA_POINT_B)?.toLongOrNull()
+        val count = extras.getString(AbLoopSessionCommands.EXTRA_LOOP_COUNT)?.toLongOrNull() ?: 0L
+        val state = if (pointA != null && pointB != null && pointA < pointB) {
+            AbLoopState(pointA = pointA, pointB = pointB)
+        } else {
+            AbLoopState()
+        }
+        val next = AbLoopSession(state = state, loopCount = count.coerceAtLeast(0))
+        if (mutableAbLoop.value != next) mutableAbLoop.value = next
+    }
 
     fun attachPlayerView(view: PlayerView?): SurfaceLease? {
         if (view == null) return null

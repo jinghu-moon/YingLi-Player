@@ -1117,11 +1117,18 @@ class PlayerViewModelTest {
         eventCollector.cancel()
     }
 
+    /**
+     * AB 阶段 1：ViewModel **不再持有**任何 AB 状态或判定规则。
+     *
+     * 旧实现里 `setAbPoint` 在本地跑 `AbLoopLimiter`、`seekTo` 被 `clamp` 钳到 `[A,B]`。
+     * 现在：命令只经会话送出（`requestSetAbPoint`），区间与计数只从会话快照读回来；
+     * 用户 seek 也不再被区间钳制（D8-A：循环期间允许拖到区间外）。
+     */
     @Test
-    fun `ab points constrain seek and reset on media open`() = runTest {
+    fun `ab commands go to the session and the interval is projected back without local clamping`() = runTest {
         val controller = FakePlaybackController()
         val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
-        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(2_000, 10_000)))
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(2_000, 10_000)))
         val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
@@ -1129,13 +1136,30 @@ class PlayerViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.setAbPoint(AbPoint.A))
-        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(6_000, 10_000)))
         advanceUntilIdle()
-        assertTrue(viewModel.setAbPoint(AbPoint.B))
+        // 命令下发给会话，而不是在 ViewModel 里就地改状态。
+        assertEquals(listOf(AbPoint.A), controller.requestedAbPoints)
+        assertFalse(viewModel.state.value.abLoop.active)
+
+        // 会话回流区间与计数：UI 只投影会话的快照。
+        controller.publishAbLoop(
+            seeyuer.yingli.player.domain.playback.AbLoopSession(
+                state = seeyuer.yingli.player.domain.playback.AbLoopState(2_000, 6_000),
+                loopCount = 12,
+            ),
+        )
+        advanceUntilIdle()
         assertEquals(2_000L, viewModel.state.value.abLoop.pointA)
         assertEquals(6_000L, viewModel.state.value.abLoop.pointB)
+
+        // 用户拖到区间外：位置原样下发，不再被钳制到 B。
         viewModel.seekTo(9_000)
-        assertEquals(6_000L, controller.lastSeekPosition)
+        advanceUntilIdle()
+        assertEquals(9_000L, controller.lastSeekPosition)
+
+        viewModel.clearAb()
+        advanceUntilIdle()
+        assertEquals(1, controller.clearAbRequests)
 
         stateCollector.cancel()
     }
@@ -1484,7 +1508,8 @@ class PlayerViewModelTest {
 
     private class FakePlaybackController : PlaybackController,
         seeyuer.yingli.player.domain.security.SecurePlaybackController,
-        seeyuer.yingli.player.domain.playback.PlaybackMediaInfoProvider {
+        seeyuer.yingli.player.domain.playback.PlaybackMediaInfoProvider,
+        seeyuer.yingli.player.domain.playback.AbLoopPlaybackControl {
         private val mutableState = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
         override val state: StateFlow<PlaybackState> = mutableState
         override val connectionState = MutableStateFlow(PlaybackConnectionState.CONNECTED)
@@ -1494,6 +1519,29 @@ class PlayerViewModelTest {
         var lastSeekPosition: Long? = null
         var pauseCount = 0
         var vaultPrepared: seeyuer.yingli.player.domain.security.VaultItemId? = null
+
+        /**
+         * 会话侧 AB 状态的假实现：只记录命令并让状态流变化（模拟会话 runtime 的权威状态回流）。
+         * 这里**不做**任何 AB 业务规则判定 —— 规则属于会话 runtime，属于 [PlaybackSessionRuntimeTest]。
+         */
+        private val mutableAbLoop = MutableStateFlow(seeyuer.yingli.player.domain.playback.AbLoopSession.EMPTY)
+        override val abLoop: StateFlow<seeyuer.yingli.player.domain.playback.AbLoopSession> = mutableAbLoop
+        val requestedAbPoints = mutableListOf<AbPoint>()
+        var clearAbRequests = 0
+
+        override fun requestSetAbPoint(point: AbPoint) {
+            requestedAbPoints += point
+        }
+
+        override fun requestClearAbLoop() {
+            clearAbRequests++
+            mutableAbLoop.value = seeyuer.yingli.player.domain.playback.AbLoopSession.EMPTY
+        }
+
+        /** 模拟会话回流：区间 + 计数。 */
+        fun publishAbLoop(session: seeyuer.yingli.player.domain.playback.AbLoopSession) {
+            mutableAbLoop.value = session
+        }
 
         fun setState(value: PlaybackState) {
             mutableState.value = value

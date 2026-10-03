@@ -10,6 +10,8 @@ enum class PlaybackCommandRejection {
     CAPABILITY_UNAVAILABLE,
     TRACK_UNAVAILABLE,
     INVALID_AB_RANGE,
+    /** AB 在当前媒体上不可用：时长为未知值或当前媒体项不可 seek，循环区间无法定义。 */
+    AB_UNAVAILABLE,
     STALE_COMMAND,
 }
 

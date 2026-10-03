@@ -347,6 +347,8 @@ private fun PlayerUiState.playerSubtitle(): String? {
     return listOfNotNull(
         if (info.width != null && info.height != null) "${info.width} × ${info.height}" else null,
         info.videoCodec?.uppercase(),
-        info.frameRate?.let { "${it.toInt()} fps" },
+        // 帧率的显示口径集中在 frameRateLabel（纯函数，有单测）：这里**不能**用 toInt() 截断，
+        // 否则 Media3 报出的 29.999x 会显示成 "29 fps"（见该函数注释）。
+        frameRateLabel(info.frameRate),
     ).takeIf(List<String>::isNotEmpty)?.joinToString(" · ")
 }

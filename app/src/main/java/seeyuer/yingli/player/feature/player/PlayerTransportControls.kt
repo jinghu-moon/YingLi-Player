@@ -34,6 +34,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -274,13 +275,14 @@ internal fun BottomPlaybackControls(
     val abEnd = state.abLoop.pointB
     var dragging by remember(state.playback.request?.mediaId) { mutableStateOf(false) }
     var previewPositionMillis by remember(state.playback.request?.mediaId) {
-        mutableStateOf(state.displayedPositionMillis)
+        // Long：用 mutableLongStateOf 避免每次拖动预览都装箱（lint 的 AutoboxingStateCreation）。
+        mutableLongStateOf(state.displayedPositionMillis)
     }
     // 拖动中的"待投放目标"：**只保留最后一次**，等播放器从上一次 seek 的重缓冲里恢复后再投放。
     // REX 的做法是取消在途 seek（PlaybackManager.seekJob.cancel()，本地文件不排队）只保留最新；
     // Media3 的 seekTo 在 seek 进行中会排队，所以固定时间节流会让快速拖动越拖越滞后。
     var pendingSeekMillis by remember(state.playback.request?.mediaId) { mutableStateOf<Long?>(null) }
-    var lastLiveSeekAt by remember(state.playback.request?.mediaId) { mutableStateOf(0L) }
+    var lastLiveSeekAt by remember(state.playback.request?.mediaId) { mutableLongStateOf(0L) }
     val seekBusy = (state.playback as? seeyuer.yingli.player.domain.playback.PlaybackState.Preparing)
         ?.isRebuffering == true
     LaunchedEffect(seekBusy, pendingSeekMillis) {

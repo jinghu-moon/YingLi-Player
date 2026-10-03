@@ -43,8 +43,14 @@ class LibraryScreenTest {
         composeRule.onNodeWithTag(LibraryTestTags.LIST).assertIsDisplayed()
         composeRule.onNodeWithText("movie.mp4").assertIsDisplayed()
         composeRule.onNodeWithText("/storage/emulated/0/DCIM/Camera").assertIsDisplayed()
-        composeRule.onNodeWithText("64 MB").assertIsDisplayed()
-        composeRule.onNodeWithText("1080P").assertIsDisplayed()
+        // 两条元数据断言的正确预期（2026-10-03 真机核对，文本树实测值）：
+        // 列表行的两个信息胶囊由 MediaListRow 渲染 —— `formatMediaListFileSize` 对 MB 及以上
+        // 一律保留一位小数（64 MiB → "64.0 MB"），分辨率用完整宽高（1920×1080 → "1920 × 1080"）。
+        // 本用例原来断言 "64 MB" / "1080P"：那是这两个数字从 LibraryScreen 内联实现
+        // （formatFileSize 省小数、resolutionLabel 取短边）搬到共享的 MediaListRow 之前的口径，
+        // 断言没有跟着更新，所以本批之前就一直在失败。断言强度不变：仍是精确文本匹配。
+        composeRule.onNodeWithText("64.0 MB").assertIsDisplayed()
+        composeRule.onNodeWithText("1920 × 1080").assertIsDisplayed()
     }
 
     private fun setLibrary(mode: LibraryViewMode) {

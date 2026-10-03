@@ -739,7 +739,9 @@ private fun VideoInfoDialog(state: PlayerUiState, onDismiss: () -> Unit) {
                 InfoLine("分辨率", if (info?.width != null && info.height != null) "${info.width} x ${info.height}" else "未知")
                 InfoLine("视频编码", info?.videoCodec ?: "未知")
                 InfoLine("音频编码", info?.audioCodec ?: "未知")
-                InfoLine("帧率", info?.frameRate?.let { "${it} fps" } ?: "未知")
+                // 帧率与顶栏副标题同源（frameRateLabel）：同一个媒体在两处必须显示同一个数字，
+                // 也避免这里直接打出 Float 的原始精度（29.999001 fps）。
+                InfoLine("帧率", frameRateLabel(info?.frameRate) ?: "未知")
                 InfoLine("文件大小", info?.fileSizeBytes?.let(::formatInfoBytes) ?: "未知")
             }
         },

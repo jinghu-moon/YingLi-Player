@@ -70,6 +70,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -1213,8 +1214,10 @@ private fun QuickSettingsPanel(
     var sort by remember(state.filterPanelOpen) { mutableStateOf(state.sort) }
     var fields by remember(state.filterPanelOpen) { mutableStateOf(state.displayFields) }
     var breadcrumbMode by remember(state.filterPanelOpen) { mutableStateOf(state.preference.breadcrumbMode) }
-    var folderColumns by remember(state.filterPanelOpen) { mutableStateOf(state.preference.folderColumns) }
-    var videoColumns by remember(state.filterPanelOpen) { mutableStateOf(state.preference.videoColumns) }
+    // 列数是 Int：用 mutableIntStateOf 而不是 mutableStateOf(Int)，避免每次读写都走装箱
+    // （lint 的 AutoboxingStateCreation）。读写点都在本 Composable 作用域内，by 委托照旧。
+    var folderColumns by remember(state.filterPanelOpen) { mutableIntStateOf(state.preference.folderColumns) }
+    var videoColumns by remember(state.filterPanelOpen) { mutableIntStateOf(state.preference.videoColumns) }
     Column(
         modifier = Modifier.fillMaxWidth().fillMaxHeight(0.7f),
     ) {

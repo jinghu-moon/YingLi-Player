@@ -44,6 +44,7 @@ import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.core.model.media.MediaItemId
+import seeyuer.yingli.player.feature.player.frameRateLabel
 
 object ShortsTestTags {
     const val SCREEN = "shorts.screen"
@@ -324,7 +325,9 @@ fun ShortsScreen(
                         Text("时长：${info?.durationMillis ?: candidate?.durationMillis ?: "未知"} ms")
                         Text("视频编码：${info?.videoCodec ?: "未知"}")
                         Text("音频编码：${info?.audioCodec ?: "未知"}")
-                        Text("帧率：${info?.frameRate ?: "未知"}")
+                        // 帧率统一走 frameRateLabel：这里原来直接打印 Float（既没有单位也没有小数口径），
+                        // 与播放页顶栏/信息对话框不一致；同一个媒体在三个界面必须显示同一个数字。
+                        Text("帧率：${frameRateLabel(info?.frameRate) ?: "未知"}")
                     }
                 },
                 confirmButton = { TextButton(onClick = { infoOpen = false }) { Text("关闭") } },

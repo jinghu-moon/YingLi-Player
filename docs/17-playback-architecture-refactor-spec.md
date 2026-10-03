@@ -415,11 +415,16 @@ data class PlaybackSessionSnapshot(
     val timeline: PlaybackTimeline,
     val queue: PlaybackQueueSnapshot?,
     val abLoop: AbLoopState,
+    val loopCount: Long = 0,
     val backend: BackendSnapshot,
     val output: VideoOutputState,
     val capabilities: PlaybackCapabilities,
 )
 ```
+
+> `loopCount` 与 `abLoop` **成对**：它们同属一段 AB 会话（领域里由 `AbLoopSession` 把两者绑在一起，见 §13.2）。
+> 快照上分成两个字段是投影格式，客户端（`PlayerViewModel`）读回来时会重新合成一个对象再下发 UI，
+> 避免界面出现"区间已更新、计数还没更新"的中间态。计数**只由 runtime 在当前 generation 的自然边界事件上递增**。
 
 `Buffering` 必须与 `Preparing` 区分。UI 的播放图标、进度可拖动性、错误按钮和“初次加载”文案均从 `phase` 和 `capabilities` 推导，不维护第二个 `isPlaying` 布尔值。
 
@@ -511,6 +516,11 @@ interface ShaderControl {
 ```
 
 `PlaybackEngine` 不暴露 Media3 `Player`、`MediaController`、`MediaItem`，不暴露 mpv property 名称或 JNI 指针。可选端口由 `PlaybackCapabilities` 判断后再向 UI 暴露。
+
+> **实现现状（阶段 1 扩契约后）**：`PlaybackEngine` 已新增 `events: Flow<PlaybackEngineEvent>`、`configureAbLoop(EngineAbLoop?)`、
+> `activateAbLoop(EngineAbLoop)` 与 `currentPositionMillis(): Long`（**无默认实现**，故意不给兜底）；
+> `bindSurface` / `unbindSurface` 的实际返回类型是 `Result<SurfaceLease>` / `Result<Unit>`。完整契约、`EngineAbLoop`、
+> `PlaybackEngineEvent` 与边界检测归属见 §13.2.1–§13.2.6；本节的窄接口与能力端口原则不变。
 
 ### 7.2 能力模型
 
@@ -607,7 +617,8 @@ PlaybackSessionRuntime
   ├── SessionCommandProcessor       串行命令队列
   ├── PlaybackStateReducer           状态归约
   ├── QueueNavigator                 顺序/上一项/下一项
-  ├── AbLoopLimiter                  A/B 边界和回跳
+  ├── AbLoopLimiter / AbLoopReducer  A/B 设点校验（一帧间隔、互换、相等边界、帧吸附）——**纯函数，不含 seek 钳制**
+  ├── AbLoopGeneration               AB 配置版本号（设点/清除/切媒体 → 新 generation，计数归零）
   ├── PlaybackEngineRouter           当前后端和首帧前回退
   ├── PlaybackSourceResolver         单次解析
   ├── ProgressCommitter              单写入顺序
@@ -615,6 +626,9 @@ PlaybackSessionRuntime
   ├── BackgroundPlaybackPolicy       页面/后台/音频策略
   └── SessionSnapshotStore           向 UI/MediaSession 投影
 ```
+
+**AB 的两条权（阶段 1 收敛结果，取代"三份状态"）**：runtime 持有 `AbLoopSession`（区间 `AbLoopState` + `loopCount`）/ `generation` 与全部业务规则（`AbLoopSessionStore` 的唯一写入者）；
+引擎持有"边界检测 + 回跳 + 上报"（`AbBoundarySession` + `AbBoundaryWatcher`，见 §13.2.2）。bridge 与 ViewModel 只投影，不再各持一份。
 
 ### 8.3 MediaSession
 
@@ -905,8 +919,8 @@ interface ScreenshotPreviewController {
 | 返回 | 页面事件 `onBack` | 先关闭 Dialog/Sheet/Drawer；无面板才退出 Route；锁定时先解锁 |
 | 播放/暂停 | `Play/Pause/Retry`，由 `PlaybackPhase` 推导图标 | `Ready/Paused -> Play`，`Playing -> Pause`，`Ended -> Replay`，Buffering 不伪造暂停 |
 | 上一项/下一项 | `Previous/Next` | 交给 `QueueNavigator`；UI 不自行处理顺序、随机或末尾 |
-| 快退/快进 10 秒 | `SeekBy(±10_000)` | 经 `AbLoopLimiter`；在完整时长和 `[A,B]` 内 Clamp |
-| 进度条 | `Seek(position, DRAG_END)` | 拖动只更新 preview；松手才提交；AB 时仅允许 `[A,B]` |
+| 快退/快进 10 秒 | `SeekBy(±10_000)` | 基准是**实时位置**（`PlaybackSessionClient.currentPositionMillis()`）；只在完整时长（下界 `0`）内夹取，**不按 `[A,B]` 钳制**（D8-A） |
+| 进度条 | `Seek(position, DRAG_END)` | 拖动只更新 preview；松手才提交；**有 A/B 时仍允许拖到区间之外**（D8-A）；A–B 只是标记与区间高亮 |
 | 播放顺序胶囊 | `SetOrder` | `SEQUENCE/SHUFFLE/QUEUE_REPEAT/SINGLE_REPEAT` 四态，DataStore 持久化 |
 | 倍速 | `SetSpeed` | 领域固定值校验；后端拒绝不更新 UI；按媒体保存偏好 |
 | 画面比例 | `SetScale` | Media3 映射 resize mode；不支持 ORIGINAL 时返回降级结果；底栏按钮一次点按循环三态并走统一瞬时反馈 |
@@ -914,7 +928,7 @@ interface ScreenshotPreviewController {
 | 字幕 | `SelectTrack(Subtitle)` | 包含关闭项；ASS 能力由后端报告；切换失败反馈稳定错误 |
 | 截图胶囊 | `FrameStepControl` + `SnapshotControl` | Ready/Paused/Playing 都可；不以“未播放”作为失败条件。激活期间跳转精度一律 `FRAME_ACCURATE`（见 §9.4），逐帧步进为 `±1000/实测帧率` 并夹在 `[0, duration]`（几何与锚点见 `16` §5.10） |
 | 截图预览 | `ScreenshotPreviewState`（当前实现：`ScreenshotUiState.Preview` + `ScreenshotPreviewSession`） | 420ms 飞入（起点 = 视频画面区域右下角、终点 = 屏幕左上角，见 `16` §5.10）、3 秒倒计时、点击暂停、删除按钮 200ms 弹入；删除走 `ScreenshotFileGateway` **真删文件**，删除过的会话不再提示保存路径 |
-| AB 循环 | `SetAbPoint/ClearAb` | A/B marker 是时间线投影；B 到达由 Runtime 回跳 A；拖动重新定义范围 |
+| AB 循环 | `SetAbPoint/ClearAb`（经 MediaSession 自定义命令 `AB_SET_POINT`/`AB_CLEAR`，拒绝码走 `SessionResult` + extras 回流） | A/B marker 是时间线投影；**播到 B 时由引擎自己精确回跳 A**（不依赖 UI 轮询、不经命令层，`SeekOrigin.AB_LOOP`）；区间与计数由 runtime 唯一持有并投影下去；设点位置取实时位置。契约见 §13.2 |
 | PiP | `WindowPlaybackGateway.enterPictureInPicture`（手动） + `PictureInPictureGateway.applyAutoEnter`（自动进入的参数镜像） | 系统确认后更新状态；Vault/无能力时禁用；MediaSession 不停止。自动进入的合法性只由域层 `shouldAutoEnterPictureInPicture` 判定，参数（宽高比 + source rect + autoEnter）只有 `ActivityPictureInPictureGateway` 一个构造点、由 `MainActivity` 的一个收集器在"策略输入变化 / 画面几何变化 / 回到前台 / 配置变化"时下发；系统在切后台瞬间执行，不再有 `onUserLeaveHint` 手动兜底（`16` §5.12 给出依据） |
 | 画面旋转 | 视图层 `VideoRotation` + 按媒体偏好 | 四态 0/90/180/270，视图层 `graphicsLayer` 变换并带过渡动画；不进播放管线，不请求系统方向 |
 | 旋转 | `requestOrientation` | Activity 请求系统方向，真实配置变化回流；失败不改变已确认状态 |
@@ -996,18 +1010,129 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 data class AbLoopState(
     val pointA: Long? = null,
     val pointB: Long? = null,
-    val active: Boolean = false,
-)
+) {
+    init {
+        require(pointA == null || pointA >= 0)
+        require(pointB == null || pointB >= 0)
+        require(pointA == null || pointB == null || pointA < pointB)
+    }
+
+    // 派生属性，不是可写字段：区间"生效"的定义就是两端都设了。
+    val active: Boolean get() = pointA != null && pointB != null
+}
+
+/** 会话状态 = 区间 + 计数（计数只由 runtime 在当前 generation 的自然边界事件上递增）。 */
+data class AbLoopSession(val state: AbLoopState = AbLoopState(), val loopCount: Long = 0)
 ```
 
-规则：
+规则（**阶段 1/2 已实现口径**，取代本节原有的"三个 seek 入口都经过 `AbLoopLimiter`"）：
 
-- A/B 标记、时间和拖动命中区由页面投影，真正的边界由 Runtime 保存。
-- A 不得晚于 B；最小间隔为一帧；无帧率按 30fps。
-- `Seek`、`SeekBy`、进度拖动、逐帧都经过 `AbLoopLimiter`。
-- 播放到 B 时 Engine/Runtime 立即 seek A，不依赖 Compose 轮询。
-- 切换媒体清除 AB；AB 不写全局 DataStore。
+- **唯一权威在 runtime**：`AbLoopState`、循环计数 `loopCount`、`loopGeneration` 与全部业务规则（设点校验、A/B 互换、相等边界拒绝、帧吸附、启用策略、计数递增条件）只存在于 `PlaybackSessionRuntime`；`PlaybackSessionClientBridge` 与 `PlayerViewModel` 只**投影/消费**会话快照（阶段 1 已删除 bridge 的本地 `abLoop`/`AbLoopReducer`/`publishAb()` 写回与 ViewModel 的 `abLoop`/`abLimiter`/`setAbPoint`/`clearAb`/`projectedPlayingState()` 轮询）。
+- **不钳制用户 seek（D8-A）**：`AbLoopLimiter` 的 `clamp` / `seekBy` / `loopPosition` 已删除，只剩 `setPoint` / `clear` / `frameDurationMillis`（纯校验 + 帧吸附）；用户 seek、拖动、逐帧都不被 AB 限制，A 之前正常播放，抵达 A 后进入循环，允许拖到区间之外（产品口径见 `16` §5.11）。
+- **A/B 互换与相等边界**（D7，已实现）：设 A 时若落点 `>= B` → 互换（新点当 B、旧 B 当 A）；`== B` 且吸附后不足一帧 → 拒绝 `INVALID_AB_RANGE`；设 B 时若吸附后与 A 不足一帧 → 拒绝。设点位置先按 `snapAbMillisToFrame` 吸附。
+- **设点位置必须是实时值**：`AbLoopEvent.SetPoint` 的 `positionMillis` 来自 `PlaybackEngine.currentPositionMillis()`，不是快照 timeline（快照位置只在引擎状态跳变时刷新，稳定播放期间是陈旧值；真机实测"静置播放 60s 后该值仍为 0"，会把 A 设到 0ms——这条根因的修复与契约见 §13.2.4）。
+- **A 不得晚于 B**；最小间隔为一帧；无帧率按 30fps（设点校验在域层纯函数）。
+- **启用策略按准备完成后的真实 timeline**：`durationMillis` 未知或 `isSeekable == false` → `AB_UNAVAILABLE`（独立文案），不是按来源类型一律禁用；媒体变得不可用时撤掉已有区间。
+- **切换媒体清除 AB 且计数归零**；AB 不写全局 DataStore。
 - 页面失去焦点、打开设置或锁定不自动清除 AB，除非用户点击清除或切换媒体。
+
+#### 13.2.1 引擎契约（阶段 1 第一步）
+
+```kotlin
+interface PlaybackEngine {
+    val state: StateFlow<EngineState>
+    val capabilities: StateFlow<PlaybackCapabilities>
+
+    /** 引擎主动上报的事件流。删掉 UI 轮询之后，这是"自然抵达 B"唯一的触发通道。 */
+    val events: Flow<PlaybackEngineEvent>
+
+    /** 下发循环配置；null = 关闭。只做"取消/重置旧边界检测"，不做任何 A/B 业务校验。 */
+    fun configureAbLoop(loop: EngineAbLoop?)
+
+    /** 激活：引擎内先精确跳回 A、再武装边界检测（顺序不可交换，见 §13.2.3）。 */
+    fun activateAbLoop(loop: EngineAbLoop)
+
+    /** 读此刻的播放位置；实现必须直读播放器，不得返回缓存/插值/快照值。 */
+    fun currentPositionMillis(): Long
+    // prepare / play / pause / stop / seekTo / bindSurface / unbindSurface / release 保持现状
+}
+
+/** generation 由 runtime 生成并持有，engine 只消费。A/B 与事件位置一律是引擎 timeline 的绝对媒体毫秒。 */
+data class EngineAbLoop(val generation: Long, val pointAMillis: Long, val pointBMillis: Long)
+
+sealed interface PlaybackEngineEvent {
+    /** 播放**自然**抵达 B：位置在连续播放中从 B 之前推进到 B 或越过 B。 */
+    data class AbBoundaryReached(val generation: Long, val positionMillis: Long) : PlaybackEngineEvent
+}
+```
+
+**方案 A 不裁剪媒体源**：`EngineAbLoop` 的坐标就是绝对媒体毫秒，不存在"窗口坐标 ↔ 媒体时间坐标"的映射层。
+方案 B（切源）与方案 C（拼接源）已被真机证据排除（B：区间外直接 `ENDED`、坐标系不一致、切源 104ms 帧空洞 + 3/3 重缓冲；C：`LoopingMediaSource(Integer.MAX_VALUE)` + 拼接会让主线程卡死在 `Timeline.equals` → ANR、回绕 5.8–6.5 帧空洞且素材尾部 ≈1.84s 不可达），`LoopingMediaSource(未裁剪源)` 只能循环整个媒体，**逻辑上不满足** A–B 区间语义。证据见 `19` 的阶段 0 两节；Media3 1.10.1 已把这三个 media source 标为 `@Deprecated`，后续演化**不得**重新引入。
+
+#### 13.2.2 边界检测机制：为什么不用 Media3 `PlayerMessage`
+
+边界检测在**引擎内部**（service 主线程），实现为"纯状态机 + 真机接线"两层：
+
+- `AbBoundarySession`：纯 Kotlin 状态机（不碰 Android/Media3，可 JVM 测），只回答"这次位置采样算不算自然抵达 B"；
+- `AbBoundaryWatcher`：把状态机接到真实播放器上——按当前播放位置与倍速算出到 B 的**真实等待时间** → `Handler.postDelayed` → 到点**再采一次位置确认**（绝不"到点即判定"，否则缓冲会让循环点提前），并接 `onPositionDiscontinuity` / `onPlaybackParametersChanged` / `onIsPlayingChanged`。
+
+不用 `PlayerMessage.setPosition(B)` 的三条**源码级**依据（Media3 1.10.1，`ExoPlayerImplInternal`）：
+
+1. `maybeTriggerPendingMessages` **只在播放推进分支**被调用（`doSomeWork` 里 `rendererPositionUs` 前进那一条），暂停/缓冲期间完全不被检查；
+2. 触发条件是"本次推进窗口跨过 B"（`resolvedTimeUs > oldPositionUs && <= newPositionUs`），而位置不连续会**先把** `playbackInfo.positionUs` 更新为落点——用户从 B 之前 seek 到 B 之后时窗口里"`B <= 落点`"不成立，消息**静默不投递**（语义上正好是我们要的"用户 seek 越界不算自然抵达"，但也说明它完全依附播放器内部调度时机）；
+3. 消息的 media item index 是创建时的默认下标，`setMediaItem` 之后旧消息的归属只能靠 `resolvePendingMessagePosition` 尽力修正。
+
+结论：判定依据只取**播放器自己报告的位置**，与播放器内部调度细节解耦；暂停/缓冲/换源/后台都不改变判定规则。**明令禁止**退回 ViewModel ticker / UI 按位置猜测。
+
+#### 13.2.3 generation 语义与"是否已越过 B"的显式传入
+
+- **何时新 generation（并归零计数）**：设点成功、清除、切媒体（`MediaChanged`）、媒体变得不可用 → `abLoopGeneration.incrementAndGet()`。
+- **何时不动 generation**：用户 seek / 拖动 / 逐帧 / 队列切换——它们只是让引擎**取消或重置**旧边界检测（`configureAbLoop` 的取消语义 + `AbBoundaryWatcher.onPositionDiscontinuity`），语义上没有产生"新配置"；给它们新 generation 反而会让"过期事件"的定义含混。
+- **只有当前 generation 的自然边界事件才计数**：runtime 在 `onEngineEvent` 里先比对 `event.generation != abLoopGeneration.get()` → 直接丢弃；`AbBoundaryWatcher` 也在上报前比对 `configured.generation`。晚到的旧定时回调因此污染不了计数。
+- **`boundaryVisited` / `alreadyPastBoundary` 由调用方显式传入**，不在状态机里"读一次位置猜"：`configure` 传"配置生效那一刻位置是否 ≥ B"（用户先拖到区间之后再打开/调整 AB，这一轮没有可行的自然抵达点，必须直接算作已越过），`activate` 直接传 `false`（激活的定义就是把位置放到 A，且 `EngineAbLoop` 保证 `A < B`）。把两种情形压成"读一次位置"正是"设完 B 就永不武装"的成因。
+- **`activateAbLoop` 必须是原子入口**（先精确 seek 到 A、再武装，顺序不可交换）：若由调用方"先 `configureAbLoop` 再 `seekTo(A)`"，配置读到的是"设在 B 上"的位置，这一轮被判成已越过、定时器永不武装。AB 生效期间引擎强制 `EXACT`；跳转精度仍走唯一入口 `applySeekPrecision`，不另开通道。
+
+#### 13.2.4 实时位置契约（"决策必须问 `currentPositionMillis()`"）
+
+三层各增加一个**没有默认实现**的 `currentPositionMillis()`：`PlaybackEngine` / `PlaybackController` / `PlaybackSessionClient`
+（故意不给兜底实现——有了兜底，缺陷会在某个实现上静默复活）。
+
+规则一句话：**凡以当前位置为依据的决策或时间戳，一律在用时拉取实时值，不得使用快照或插值。**
+`PlaybackSessionSnapshot.timeline.positionMillis` 只在状态跳变时刷新，稳定播放期间会长时间停在上一次状态变化的位置；
+`PlayerUiState.displayedPositionMillis` **仅用于展示**，不作任何判定输入。
+
+已改为决策时拉取的 11 处调用点（阶段 2 记录，按提交信息）：runtime 的 `applyAbPoint`（设 A/B）、`captureFrame`（截图位置与文件名时间戳）、`navigate(previous)` 的 5 秒判定；bridge 的 `previous` 与 `SeekBy` 基准；ViewModel 的 `previous`、`seekBackward/Forward`、`captureScreenshot`、`stepScreenshotFrame`、`beginSeekGesture`。
+不受影响并已登记的位置读取处：`duration`/`isSeekable`、`MediaSessionPlayerAdapter` 与 `persistProgress`（本来就实时）、`toPlaybackState.startPositionMillis`（非决策）。
+`ShortsViewModel.progressMillis` 属同类残留，本轮未改，**已登记待决**。
+
+#### 13.2.5 `SeekOrigin.AB_ACTIVATION` 与 `AB_LOOP`
+
+```kotlin
+enum class SeekOrigin { USER, DRAG_END, FRAME_STEP, AB_LOOP, AB_ACTIVATION }
+```
+
+两者都是**引擎侧发起的跳转**，区别在归属与时机，因此不能共用取值：
+
+| 取值 | 谁发起 | 时机 | 是否周期性 |
+| --- | --- | --- | --- |
+| `AB_LOOP` | 引擎（在 `AbBoundaryReached` 之后对自己的播放器直接 seek） | 自然抵达 B 之后的循环回跳 | 每个循环一次 |
+| `AB_ACTIVATION` | 会话（设点命令触发，经 `PlaybackEngine.activateAbLoop` 执行） | 区间**刚被设全**时唯一一次回到 A | 一次性 |
+
+**没有任何客户端命令会带上 `AB_LOOP` / `AB_ACTIVATION`**；用户发起的跳转一律是 `USER` / `DRAG_END` / `FRAME_STEP`。
+这正是"循环计数只认引擎自然边界事件"的前提：如果把回跳表达成用户 seek，或让用户 seek 看起来像回跳，计数就退化成按位置猜测。
+
+#### 13.2.6 设点拒绝的回流通道与 `SessionResult` 的坑
+
+- 通道：`MediaSession` 自定义命令（`AB_SET_POINT` / `AB_CLEAR`，**必须在 `onConnect` 声明**，否则会被 Media3 拦下）
+  → 引擎返回 `SessionResult` → 客户端解码回 `AbLoopCommandOutcome`；`AB_SET_POINT` 的**参数只有 point，不带位置**
+  （客户端传位置会在"UI 看到的位置"与"播放器真实位置"之间引入第二个真相）。
+- 粗分类用结果码（成功 / 失败），**精确拒绝原因放在 extras 里用枚举名传**（`ARG_REJECTION`，目前是 `AB_UNAVAILABLE` / `INVALID_AB_RANGE`）；
+  解码时 **extras 优先、结果码兜底**（连接已断 → `NOT_CONNECTED`，其余 → `INVALID_STATE`），绝不退化成静默。
+- **坑（已在代码注释与本文件记录）**：**不能用 `SessionResult(SessionError(...))` 那条重载**——它会把拒绝码所在的 extras **吞掉**，
+  客户端就只剩结果码可读（真机用例会因此收到 `INVALID_STATE` 而不是 `AB_UNAVAILABLE`）。所有拒绝共用一个 `RESULT_ERROR_UNKNOWN`
+  （`SessionResult` 只接受 Media3 定死的常量，装不下我们自己的原因，且原因已由 extras 逐字带回）。
+- 区间与计数是**会话状态**，走 session extras + `onExtrasChanged` 回读（每次覆盖），与上面的一次性命令回执是两条通道，不要混用。
+
 
 ---
 
@@ -1199,7 +1324,7 @@ enum class PlaybackErrorKind {
 工作：
 
 - 新增 `PlaybackSessionSnapshot`、`PlaybackSessionCommand/Event`、`PlaybackEngine`、能力端口和 `SurfaceLease`。
-- 实现 `QueueNavigator`、`AbLoopLimiter`、`HistoryEligibilityPolicy`、`BackgroundPlaybackPolicy`。
+- 实现 `QueueNavigator`、`AbLoopLimiter`（设点校验，不含 seek 钳制）、`HistoryEligibilityPolicy`、`BackgroundPlaybackPolicy`。
 - 扩展架构测试识别 `engine`、`data`、`feature`、`app` 依赖方向和 Media3 泄漏。
 - 写 Fake Engine 契约测试：所有 Engine 实现必须通过同一组行为测试。
 
@@ -1326,7 +1451,7 @@ enum class PlaybackErrorKind {
 
 - `PlaybackStateReducer`：Idle、Resolving、Preparing、Ready、Playing、Paused、Buffering、Ended、Failed 全路径。
 - `QueueNavigator`：四种顺序、随机不重复、上一项历史、队列为空/末尾。
-- `AbLoopLimiter`：A/B 缺失、A>=B、最小帧间隔、Seek/SeekBy/拖动/结束回跳。
+- `AbLoopLimiter`：A/B 缺失（只设 B 拒绝）、A>=B、最小帧间隔、**A/B 互换**、吸附后不足一帧拒绝。**不含"用户 seek 被钳回区间"这类用例**——那是已废止的旧语义（D8-A）；边界判定与回跳由引擎侧覆盖（`AbBoundarySession`：自然抵达、位置回退重新武装、位置不连续作废旧边界、暂停/缓冲不误报、过期 generation 作废）。
 - `PlaybackSpeed`、画面比例、轨道偏好 fingerprint 和坏值回退。
 - `HistoryEligibilityPolicy`：10%/30 秒、短视频、已完成、无痕。
 - `ProgressCommitter`：旧 sequence 丢弃、暂停/结束强制 flush、写入失败重试。

@@ -164,7 +164,7 @@ object PlayerDimensions {
 | 速度 | `BrandSpeedtest` | 点击在底栏行内展开档位条 |
 | 画面比例 | `AspectRatio`（适应）、`Crop`（裁剪）、`ArrowsHorizontal`（拉伸） | 三态动态，底栏一次点按循环 |
 | 截图 | `Aperture` | 捕获按钮可 filled；入口在「更多」托盘与设置面板「工具」分组，不再占底栏（口径修正：原表写 `Camera`，代码为 `TablerIcons.Outline.Aperture`） |
-| AB 循环 | `Refresh`（`YingLiIcon.REPLAY` -> Tabler `Refresh`；口径修正：原写 `Repeat`） | 激活态强调色；入口同样在「更多」托盘与设置面板「工具」分组 |
+| AB 循环 | `a-b-2`（`YingLiIcon.AB2`，Tabler `Ab2`；口径修正：先前的 `YingLiIcon.REPLAY` 是借用字形，**`REPLAY` 本身保留**给"刷新/重播"语义） | 循环生效时**实心**（激活态）；入口三处一致：底栏「更多」工具托盘、设置面板「工具」分组、顶栏溢出菜单（见 §5.11） |
 | 镜像翻转 | `flip-horizontal` / `flip-vertical` 设计资产逐路径移植（`YingLiCustomIcons`，`IconProvider.LOCAL_VECTOR`） | 托盘开关，开启时 filled；只做视图层变换（见 §5.16） |
 | 后台播放 | `Headphones` | 托盘开关，开启时 filled；默认开启，关闭后离开前台即暂停（见 §5.17） |
 | 画中画 | `PictureInPicture` | 不可用时禁用 |
@@ -249,7 +249,7 @@ object PlayerDimensions {
 
 - 中央辅助键和双击左右半区都调用 `seekBy(±10_000)`。
 - 双击不得同时触发单击；统一由 `PlayerGestureLayer` 分发事件。
-- Seek Clamp 到完整时长；AB 生效时 Clamp 到 `[A,B]`。
+- Seek Clamp 到完整时长（下界 `0`）；**AB 生效时不钳制到 `[A,B]`**（D8-A，见 §5.11）。
 - 中央显示 `-10s/+10s` 反馈，约 1 秒结束，并发送无障碍事件。
 
 ### 5.5 进度条
@@ -264,7 +264,7 @@ DragMove  -> 更新 previewPosition，不写进度仓储
 DragEnd   -> controller.seekTo(clampedPosition)，按用户最终意图恢复播放
 ```
 
-拖动期间记录 `wasPlaying`；若用户主动暂停，则松手不自动恢复。Seek 预览时间显示在滑块上方。有 A/B 时主进度只允许 `[A,B]`。
+拖动期间记录 `wasPlaying`；若用户主动暂停，则松手不自动恢复。Seek 预览时间显示在滑块上方。**有 A/B 时主进度仍以完整媒体时长为坐标系，允许拖到区间之外**（D8-A，见 §5.11）；进度条上的 A–B 只是标记与区间高亮，不是可拖动范围。
 
 ### 5.6 播放顺序
 
@@ -409,18 +409,59 @@ ScreenshotState
 
 ### 5.11 AB 循环
 
-胶囊包含 A、B、清除、关闭；A/B 下方显示时间。状态为：
+胶囊包含 A、B、清除、关闭；A/B 按钮上直接显示时间（`A 00:12` / `B 设置`）。状态为：
 
 ```text
 Off -> SetA -> SetB(active) -> DragA/DragB
 任意阶段 -> Clear -> Off
 ```
 
-- A/B 标记为 `2dp` 竖线和朝区间的三角，触控区至少 `48dp`。
-- A 不得晚于 B，最小间隔一帧；缺失帧率时按 30fps。
-- `seekTo`、`seekBy`、进度拖动、逐帧都经过 `AbLoopLimiter`。
-- 播放到 B 时在播放器/控制器层跳回 A，不依赖 UI 轮询。
-- 切换媒体默认清除 AB；AB 仅是当前会话状态，不写全局 DataStore。
+**产品口径（用户裁决，不得改写）：「帧精确、低延迟循环」。** 不写"无缝"；用户可见说明是
+「循环点可能出现一次短于一帧的解码抖动；这不是严格无缝循环」（原 `docs/20` §3.4）。阈值与已知未达标项见
+[`19-player-implementation-progress.md`](19-player-implementation-progress.md) 的「A-B 循环方案阶段 1 / 阶段 2」一节，
+本节不重复数字。
+
+**播放语义（D8-A，用户裁决保留）**——这是本节唯一权威口径，与旧规范里"AB 激活后所有 seek 限制在 `[A,B]`"相反：
+
+| 场景 | 行为 |
+| --- | --- |
+| A 之前 | **正常播放**，不做任何裁剪或跳转 |
+| 抵达 A | **进入循环**：播到 B 时由引擎精确回跳 A（不依赖 UI 轮询） |
+| 用户在循环期间拖到 `[A,B]` 之外 | **允许，不钳制**；拖出区间后按新的自然播放路径重新判定边界 |
+| 只设了 A（未设 B） | 只有标记，不循环 |
+
+（当前实现里 ViewModel 的手势、`seekBy` 与底栏进度条的拖动预览都不再对 AB 钳制，`AbLoopLimiter.clamp`/`seekBy` 已在阶段 1 删除；
+详见本节末"实现现状"。）
+
+交互与几何**实现规格**（几何/材质/动效一律与截图胶囊**同源**，不再有第二套常量；当前落地进度见本节末"实现现状"）：
+
+- **入口三处同一状态源**：竖屏「更多」工具托盘（主）、设置面板「工具」分组、顶栏溢出菜单；三处读同一份会话状态（`docs/17` §13.2），**打开动作也收在同一条路径**（`PlayerViewModel.openAbTool()`）。
+- **托盘/顶栏按钮**：图标 `a-b-2`（`YingLiIcon.AB2`，Tabler `Ab2`）；循环生效时**实心**（激活态），并把该状态写进语义（读屏念"已选中"，测试用 `assertIsSelected` 断言——颜色本身既读不出也测不了）。
+- **`REPLAY` 不删除**：`AB2` **不是** `REPLAY` 的改名。`REPLAY` 是"刷新/重播"语义（首页卡片、重试、撤销、重新播放都在用它，映射 `ti-refresh`），两者只是曾经共用一个字形；AB 改用 `AB2` 之后两条语义各有一个入口。（`docs/20` T3.1 原写"删除 `REPLAY`"，按实现修正为保留。）
+- **AB 胶囊占用底栏"辅助带"**，与截图胶囊**同一格**：高度 `PlayerScreenshotCapsuleHeight`（`64dp`）、内边距 `(64−48)/2 = 8dp`、按钮间距 `12dp`、材质 = `controlPrimary` 10% 底 + 12% 描边 + 胶囊圆角、出入场 `360ms`（`SCREENSHOT_CAPSULE_TRANSITION_MILLIS`）从右滑入行内居中。辅助带高度只有两种取值：托盘展开时按 `240ms` 高度动画，截图/AB 会话期间瞬时满高（`PlayerAuxiliaryBandHeight`）。
+- **A/B 按钮带时间文字**：`A 00:12`、`B 设置`（未设 B 时显示动作词）。`48dp`（`PlayerChromeButtonSize`）是**最小触控高度**而不是固定宽度 → 文字按钮必须**弹性宽度**；验收窄屏 / 横屏 / 系统字号放大下不溢出。
+- **进度条**：以完整媒体时长为坐标系画 **A–B 区间高亮 + 两端 `2dp` 标记**，并在进度行下方显示两端时间；计数文案 `循环 ×N`（Q1 定稿口径，避免裸数字歧义）。
+- **与截图工具的互斥是三分支**（`docs/20` §3.2）：
+
+  | 截图状态 | 打开 AB 工具时 | 关闭 AB 时 |
+  | --- | --- | --- |
+  | `Armed` / `Capturing` | 先结束截图会话，再打开 AB | 不恢复截图工具 |
+  | `Preview`（预览卡/大图共存） | 保留预览卡与倒计时，只退出截图"工具模式" | 不影响预览卡 |
+  | `Capturing` → **捕获回调晚到** | 结束会话后，**晚到的捕获结果必须丢弃**（不得进入 `Preview`，不得与 AB 胶囊同时出现）；已落盘的文件保留，但不弹预览卡/保存提示 | 不恢复截图工具 |
+
+- **关闭 ≠ 取消**（D3）：关闭胶囊不改变循环——托盘按钮保持实心、进度条区间与计数继续显示、循环继续跑；只有「清除」才取消区间。"只设了一端后关闭胶囊"保留该点（Q4）。
+- **切换媒体清除 AB**；AB 是当前会话状态，不写全局 DataStore。
+- 进入 AB 工具**不自动暂停**播放（D6）。
+
+引擎契约（`events` / `configureAbLoop` / `activateAbLoop` / `currentPositionMillis`）、边界检测机制、generation 与
+`SeekOrigin` 语义见 [`17-playback-architecture-refactor-spec.md`](17-playback-architecture-refactor-spec.md) §13.2；
+真机证据见 [`19-player-implementation-progress.md`](19-player-implementation-progress.md)。
+
+**实现现状（截至编写本节时的工作区；本节编写期间阶段 3 的 UI 正在同一工作区推进，逐项状态会变，判定以代码为准）**：
+
+- 已落地：<br>· 会话侧唯一权威的 AB 状态与计数；引擎侧自然边界检测与精确回跳（真机证据见 `docs/19`）；<br>· 进度条上的 A–B 区间高亮、两端 `2dp` 标记与两端时间文字（`A 00:12` / `B 00:22`）；<br>· 计数文案走资源 `player_ab_loop_count`（**截至本节编写时该字符串尚未出现在 `strings.xml` 里**，属阶段 3 收尾项；本节只固定文案口径 `循环 ×N`，不声明已编译通过）；<br>· `YingLiIcon.AB2` 与底栏/顶栏 AB 按钮的 `filled` + `selected` 激活态（读屏与测试都据此断言）；<br>· 三入口收敛到 `PlayerViewModel.openAbTool()`（含 `Armed`/`Capturing` 与 `Preview` 的分别处理）；**互斥的异步晚到契约**（`isScreenshotCaptureResultCurrent` + `screenshotCaptureGeneration`）；<br>· AB 胶囊与截图胶囊**共用辅助带同一格**（由单一判定决定画哪一枚，不靠两处各画一个）；**进度条拖动不再钳进 `[A,B]`**（与本节 D8-A 一致）。
+- 仍属"规格已定、需按代码确认"的项：AB 胶囊的 `360ms` 出入场与"从右滑入行内居中"是否与截图胶囊完全同源；`PlayerScreen` 里旧的居中浮层写法是否已彻底删除（**不要以本节为准，以当时的代码为准**）；三入口在**同一帧**读到同一状态；窄屏 / 横屏 / 系统字号放大下 A、B、清除、关闭四个文字按钮不溢出。
+- **未验证**：真机观感与上述 instrumented 用例；`lintDebug` 门禁（本节不声明其结论）。
 
 ### 5.12 画中画
 
@@ -525,7 +566,7 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 #### 水平拖动调进度
 
 - 水平拖动调整进度，拖动只更新 HUD 预览，松手才提交，与进度条一致；
-- 目标位置经 `AbLoopLimiter` 钳制在完整时长和 AB 区间 `[A, B]` 内；
+- 目标位置钳制在完整时长（下界 `0`）内；**AB 生效时不再钳制到 `[A, B]`**（D8-A，见 §5.11）；
 - HUD 显示目标时间和总时长，拖动过程中不阻塞画面。
 
 #### 双指缩放与平移
@@ -629,7 +670,7 @@ Compose 使用 `LazyVerticalGrid/LazyRow` 与稳定 reorder 方案，同时提�
 - 暂停默认保持显示；用户主动隐藏后尊重该状态。
 - Loading/Buffering 显示状态；Error/Ended 不自动隐藏。
 - 拖动进度、AB、面板滚动期间不隐藏。
-- 同时只打开一个 Drawer/Dialog/Sheet；截图与 AB 胶囊互斥。
+- 同时只打开一个 Drawer/Dialog/Sheet；截图与 AB 胶囊互斥（三分支与"捕获回调晚到"的判定见 §5.11；当前代码里 AB 胶囊还是 `PlayerScreen` 里的独立居中浮层，阶段 3 才迁入底栏辅助带）。
 - 危险确认 Dialog 不允许遮罩误关。
 
 返回优先级（由 `resolvePlayerBack` 单点解析，UI 只按解析结果分发）：
@@ -764,7 +805,7 @@ sealed interface PlayerEvent {
 3. 给 Service 侧 `PlaybackSessionRuntime` 注入 `PlaybackQueueRepository` 和队列导航策略；`PlayerViewModel` 只通过 `PlaybackSessionClient` 发出上一项/下一项命令。
 4. 让 `MainActivity` 的方向状态从窗口回调同步回 UI，不要只用 `landscapeRequested` 翻转。
 5. 把音轨/字幕设置从当前 `AdvancedSettingsSheet` 细化为可测试列表组件；无轨道时显示空状态。
-6. 增加 `AbLoopLimiter` 和纯 Kotlin reducer；AB 不需要持久化。
+6. 增加 AB 的纯 Kotlin reducer（设点校验、A/B 互换、相等边界、帧吸附）与会话状态 `AbLoopSession`（区间 `AbLoopState` + `loopCount`，两者一起投影，避免 UI 读到"区间已更新、计数还没更新"的中间态）；**不再有"由 UI 钳制 seek 范围"这一层**（D8-A）；AB 不需要持久化。循环本身由引擎判定与回跳，见 §5.11 与 `docs/17` §13.2。
 7. 独立建立 Shorts Feature，不在 `PlayerScreen` 增加 `mode == SHORTS` 分支。
 
 ## 12. 动画与动效
@@ -778,6 +819,7 @@ sealed interface PlayerEvent {
 | 辅助带高度（托盘开关） | 240ms | `animateDpAsState(0 ↔ 80dp)`，进度行随之平滑上移/回位（见 §5.14） |
 | 辅助带高度（截图会话） | 瞬时（0ms） | `playerAuxiliaryBandHeight(..., screenshotHold = true)` 直接取满高：胶囊的竖直带不参与动画（见 §5.14） |
 | 截图胶囊出入场 | 360ms | `slideIn/OutHorizontally` + `fadeIn/Out`，比底栏三段慢一档（见 §5.10） |
+| AB 胶囊出入场 | 360ms | 与截图胶囊**同一时长与轨迹**（同住辅助带同一格，见 §5.11）；胶囊在场期间辅助带保持满高，竖直带不参与动画 |
 | 中央三连（上一个/播放/下一个）进出场 | 240ms | 与底栏三段同拍；截图模式激活期间不出现（见 §5.10） |
 | 帧数胶囊进出场 | 240ms | 与底栏三段同拍；`frameCounter` 为 null 时整个胶囊不出现（见 §5.10） |
 | 截图飞入 | 420ms | `animateFloatAsState` 单一 `0 → 1` 进度量同时驱动 `scale(2.4) → 1` 与位移；起点 = 视频画面区域（不含黑边）的右下角，终点 = 屏幕左上角（见 §5.10） |
@@ -819,7 +861,7 @@ YLShorts 的优先级只在 Shorts Feature 内计算，不能反向提升常规�
 - `AbLoopReducer/Limiter`：A/B 顺序、最小一帧、Seek/Ended/切换视频。
 - `PlayerOverlayReducer`：3 秒隐藏（锁定态同样生效）、拖动不隐藏、锁定态单击只唤出解锁与播放/暂停入口、面板互斥。
 - `PlayerGestureRecognizer`：6/10dp 起手与主轴锁定、长按 360ms（移动 8dp 取消）、竖向音量/亮度按中线 50/50 二分且不做边缘避让（口径修正：原写「左右 45%＋中间 10% 分区、边缘 12dp 不接手势」）、双击分区（左右各 40%、中间 20%）、开关与锁定打断、左右映射互换。
-- `PlayerViewModel` 手势：拖动只预览松手提交并受 AB 钳制、临时倍速不写媒体偏好且恢复先前倍速、亮度退出播放页恢复。
+- `PlayerViewModel` 手势：拖动只预览松手提交且**不受 AB 钳制**（D8-A，见 §5.11）、临时倍速不写媒体偏好且恢复先前倍速、亮度退出播放页恢复。
 - `ScreenshotReducer`：Armed/Capturing/Saved/Failed、3 秒超时、点击暂停倒计时、删除。
 - `TrackPreference`：每媒体覆盖全局、坏值回退、速度和比例边界。
 - `PlayerViewModel`：命令拒绝不改变 UI、暂停截图可调用、队列切换和进度写入。
@@ -874,7 +916,7 @@ git diff --check -- "docs/16-player-ui-ux-interaction-implementation-spec.md"
 4. 接入播放列表、视频信息、速度、比例、音轨、字幕、PiP 和锁定。
 5. 实现截图状态机和 MediaStore 结果预览，验证暂停状态截图。
 6. 实现控件布局编辑器、DataStore 持久化和无障碍 reorder 语义。
-7. 增加 AB 标记拖动、区间限制和播放器回跳。
+7. 增加 AB 标记拖动、A–B 区间高亮与计数文案 `循环 ×N`；回跳由引擎完成（D8-A 不限制可播放范围，见 §5.11）。
 8. 建立 `ShortsRoute` 和独立 `ShortsViewModel`，实现上下滑、收藏、黑名单、更多 Sheet。
 9. 执行 JVM、Compose、Media3 真机和 Release/Lint/R8 回归，填写前后行为表。
 
@@ -893,7 +935,7 @@ git diff --check -- "docs/16-player-ui-ux-interaction-implementation-spec.md"
 1. 横屏、竖屏使用同一播放会话完成播放、暂停、Seek、切换和错误恢复。
 2. Demo 中承诺保留的按钮都有真实命令、状态反馈、禁用和错误路径。
 3. 截图在暂停和播放状态均工作，预览从**视频画面区域的右下角**飞入左上角、轨迹单调、3 秒倒计时、点击卡片放大与删除真删文件都完整（见 §5.10）。
-4. AB 的 A/B 标记可拖动，进度和播放范围真实受限。
+4. AB 的 A/B 标记可拖动、区间高亮与 `循环 ×N` 可见；**播到 B 时由引擎自然回跳 A，且用户仍可拖到区间之外**（D8-A，见 §5.11）——"播放范围真实受限"是旧口径，已废止。
 5. 播放顺序四态、速度、比例、轨道、控件布局具备统一状态源和持久化策略。
 6. YLShorts 是独立一级页面，不污染常规 PlayerRoute。
 7. 相关旧功能、边界、异常、无障碍和安全行为均有前后测试证据。
@@ -966,8 +1008,8 @@ Demo 在 `input`、`timeupdate` 和 `loadedmetadata` 三个时机更新所有进
 
 - `loadedmetadata` 对应 Media3 `duration`/`Tracks` 就绪，重新计算时长、帧率和视频信息。
 - 播放事实来自播放器 position；Compose 的重组计时器只能刷新显示，不能成为 position 的来源。
-- AB 开启后，进度条坐标仍以完整媒体时长为坐标系，但 `seekTo`、拖动、逐帧和自动播放位置必须经过 `AbLoopLimiter`。
-- 播放到 B 点时由播放器命令层跳回 A 点；不能依赖 UI 每帧轮询才能循环。
+- AB 开启后，进度条坐标仍以完整媒体时长为坐标系；`seekTo`、拖动、逐帧**都不再被 AB 钳制**（用户可拖到区间之外，D8-A），自动回跳由引擎完成（`docs/17` §13.2），不由 UI 轮询。
+- 播放到 B 点时由**引擎自己**精确回跳 A（并在回跳前上报 `AbBoundaryReached` 供会话计数）；既不能依赖 UI 轮询，也不经过客户端命令层（`SeekOrigin.AB_LOOP` 只用于引擎内部回跳，见 `docs/17` §13.2）。
 - 进度输入框、横屏 Seek、竖屏 Seek、Shorts Seek 必须共享同一个 position state，避免三处显示漂移。
 
 ### 18.6 AB 标记的无障碍和键盘行为
@@ -976,7 +1018,7 @@ Demo 的 A/B 标记是可聚焦 slider，具有 `aria-valuemin`、`aria-valuemax
 
 - 使用 `progressBarRangeInfo` 暴露范围、当前值和步进信息。
 - 使用 `customActions` 提供“向左一帧”“向右一帧”，外接键盘的 `ArrowLeft/ArrowRight` 也必须生效。
-- 拖动期间保持控制层可见，结束后宣布“A 点已调整”或“B 点已调整”；值被边界钳制时仍返回合法状态。
+- 拖动期间保持控制层可见，结束后宣布“A 点已调整”或“B 点已调整”；**设点本身**被边界规则拒绝或吸附到合法值时仍返回合法状态（这里的"钳制"只指设点，不是把用户 seek 关进 `[A,B]`，见 §5.11）。
 - A 与 B 至少间隔一帧；A 不得晚于 B；切换媒体、关闭 AB 工具或清除 AB 后焦点返回触发按钮。
 
 ### 18.7 截图 Demo 占位与正式能力的区别
@@ -1096,7 +1138,7 @@ Shorts 更多面板使用独立 scrim 和 Bottom Sheet：上圆角约 `26dp`，�
 1. Demo 展示层不得出现在正式 Android 屏幕节点；正式页面使用系统 Insets 而非假状态栏。
 2. 常规播放器空白区域点击只切换控制层，YLShorts 视频点击播放/暂停；滑动结束不误触发 click。
 3. 自动播放拒绝、主动播放失败、队列切换和切换媒体清理 AB 的命令结果均可观察、可测试。
-4. AB 标记支持拖动、左右一帧键盘操作、边界钳制和 TalkBack 范围语义。
+4. AB 标记支持拖动、左右一帧键盘操作、设点边界规则（一帧间隔 / A 不晚于 B）和 TalkBack 范围语义；**不包含"把用户 seek 关进 `[A,B]`"**（D8-A，见 §5.11）。
 5. 截图在 Ready/Paused/Playing 均可调用；预览飞入（起点为画面右下角）、3 秒倒计时、点击放大/收起、**删除真删文件**与**关闭预览不删文件**两种语义必须明确区分且一致，真实 MediaStore URI 可验证；帧数胶囊在容器帧率缺失时不出、`≈` 只在估算耗时 ≥600ms 时出现。
 6. Shorts 手势覆盖轴向锁定、阈值回弹、邻项预加载失败、切换防重入、长按倍速与滑动冲突。
 7. Shorts 自动下一条、循环当前、收藏、黑名单、删除确认和管理列表的状态同步覆盖空列表、当前项和文件缺失边界。

@@ -201,6 +201,11 @@ Phase 0、Phase 1 和 Phase 2 的本地门禁均有真实结果；设备级安�
 > **再次更正（同日，画中画参数镜像那一批）：那唯一一条 `PictureInPictureIssue` 抑制已经删除。** 当时是"只实现了 `setSourceRectHint`、`setAutoEnterEnabled` 有意不用"所以写了 `tools:ignore` 并附理由；本批把自动进入改成真正的参数镜像（见下文"画中画自动进入的参数镜像"一节），lint 要求的两项都已真实下发，抑制与理由注释一并删除。当前真实状态是 **`.\gradlew.bat :app:lintDebug` → `No issues found.`（0 errors / 0 warnings / 0 hints）**——上一条更正里写的 4 条 `AutoboxingStateCreation` hint 也已经不在报告里。引用本文件时不要再用更旧的结论。
 
 真机验证需要在 Xiaomi/MIUI 设备测试期间临时允许 `MIUIOP(10021)`，Gradle 安装会重置该模式。常规播放器此前已完成 80/80；YLShorts 改动后的本轮重跑在 Windows 结果文件被占用时中止，未获得新的设备级完整结果。媒体格式兼容性矩阵、Service 销毁重建专门生命周期用例仍未覆盖。
+
+> **更正（2026-10-03，A-B 循环阶段 1/2）：本节（"常规播放器 UI：持续实施记录（2026-09-13）"）里的 AB 条目已不是当前口径。**
+> 具体是：①"播放位置通过 `AbLoopLimiter` 钳制""Seek/快退/快进限制"——**用户 seek 不再被 AB 钳制**（D8-A），
+> `AbLoopLimiter.clamp`/`seekBy` 已删除；②"到 B 回跳 A"的归属从 UI/命令层移到**引擎**（`AbBoundaryReached` + `AB_LOOP`）。
+> 以本文末尾"A-B 循环方案阶段 1 / 阶段 2"一节与 `docs/17` §13.2 为准；本节其余条目（布局、截图、播放列表、Vault 等）不受影响。
 # YLShorts implementation
 
 - Added independent `SHORTS` root destination and immersive `ShortsRoute`/`ShortsScreen`; it does not reuse the regular player chrome or page state.
@@ -1020,3 +1025,104 @@ spike 取证材料（全部在 gitignore 的 `build/` 下，不进入提交；`b
 设备侧收尾：`adb shell cmd appops set seeyuer.yingli.player 10021 ignore`（恢复 `ignore`）、
 删除 `/data/local/tmp/spike_land.m4v` 与 app 私有目录 `files/spike/`、`files/spike_land.m4v`，
 并用 `adb install -r -d` 重装**回退后**的 debug APK（设备上不留 spike 版本）。
+
+## A-B 循环方案阶段 1 / 阶段 2：真机证据（2026-10-03）
+
+对应 `docs/20-ab-loop-refactor-plan.md` §5 的**阶段 1**（状态收敛与域层）与**阶段 2**（播放管线与真机验收）。
+与上面两节不同，本轮**不是 spike**：源码在主线（提交 `d1fce70` 阶段 1、`98859b5` 阶段 2），
+本节记录的是**已实现行为**的实测与结论。
+
+### 环境与方法（可复现）
+
+| 项目 | 取值 |
+| --- | --- |
+| 设备 | Xiaomi 25102RKBEC（`f3ba305a`）/ HyperOS V816 / Android 16 / API 36 |
+| 素材 | `/sdcard/Movies/ab_loop_probe.m4v`（H.264 + AAC，`durationMillis=95458`，**一帧 = 40 ms**） |
+| 区间 | A ≈ 20000/20040 ms、B ≈ 22000/22040 ms（按轮次见下表；A/B 是**吸附后的实测值**） |
+| 宿主 | **真 app 进程**：真 `YingLiPlaybackService` + 真 `MediaController` + 真音频渲染器（不是 instrumentation 里的离屏渲染，因此本轮**能验证音频通路**） |
+| 观测手段 | ① 每 100 ms 一次的运行时心跳（`HB`：`pos`/`rtPos`/`state`/`playing`/`speed`/`a`/`b`/`loops`/`underruns`/`decInit`/`fmt`）；② `Player.Listener` 的 `POSITION_DISCONTINUITY`（`reason` 按 Media3 常量：`1=SEEK`、`2=SEEK_ADJUSTMENT`）、`PLAYBACK_STATE`、`IS_LOADING`；③ 音频侧钩子 `AUDIO_DECODER_INIT` / `AUDIO_INPUT_FORMAT` / `AUDIO_TRACK_INIT` / `AUDIO_TRACK_RELEASED` / `AUDIO_ENABLED` / `AUDIO_POSITION_ADVANCING`；④ `dumpsys media_session` / `audio` / `audio_flinger` / `power` 与整段 logcat 落盘 |
+| 原始证据 | `build/spike/forensics/`（`fix1x-181929`、`fix15x-182258`、`fix2x-182430`、`fixbg-182631`、`fixlock-183730`、`fixpip-184836`、`volA0-190347`、`volB10-190523` 八轮的 `*-abspike.txt` + `*-logcat.txt` + `dumpsys` 快照）；统计脚本 `build/spike/analyze_abspike.py`（口径：逐次量重缓冲时长、AudioTrack 重建延迟、声音重新起播延迟、落点、循环墙钟周期） |
+
+**统计口径必须先说清（下面每个数字都按这三条之一读）**：
+
+1. **落点（回跳目标）**：`POSITION_DISCONTINUITY` 的 `new` 值 vs 配置里的 A —— 本轮**全部等于 A，偏差 0 ms**。
+2. **边界越界量（overshoot）**：`old` 值 vs B 的超出量（毫秒级，见下表）；它衡量"发现得有多晚"，**不是落点误差**。
+3. **`STATE_BUFFERING` 时长**：一次循环里 `PLAYBACK_STATE state=2 → state=3` 的墙钟差。
+
+### 缺陷 1：设点用了陈旧快照位置（真机前后对比）
+
+| 项目 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 现场 | 静置播放 60 s 后按"设 A"：`livePos=59894`，而 runtime 读到 `rtPos=0` → **A 被设成 `0 ms`** | 同一操作：`REALFLOW_SET_A atPos=20005`，随后一次落点 `new=20000` 的位置跳变 → **A = 20000 ms（= 实时位置吸附后的值）** |
+| 证据 | 提交 `98859b5` 记录的现场（`rtPos` 是心跳里的"快照位置"字段：本轮每一条 `HB` 都能看到 `pos` 持续前进而 `rtPos` 长时间不动） | `fix1x-181929-abspike.txt`：`REALFLOW_SET_A atPos=20005` / `REALFLOW_ACTIVATED livePos=20000` / `POSITION_DISCONTINUITY old=22002 new=20000`；`fixbg-182631` 同字段为 `atPos=20042` → A=20040 |
+| 根因 | 快照 `timeline.positionMillis` 只在引擎状态跳变时刷新，稳定播放期间不更新 | 三层各加**无默认实现**的 `currentPositionMillis()`，11 处决策调用点改为决策时拉取（契约与调用点清单见 `docs/17` §13.2.4） |
+
+> 读法注意（两条，避免把数字读成别的意思）：
+> 1. 修复前 `rtPos` 并不总是 `0`——它**停在上一次状态跳变的位置**上，只是"静置 60 s 恰好读到 0"。
+>    因此这一条的判据是"快照位置与实时位置可以相差任意大"，不是"它恒为 0"。
+> 2. 激活那一次在原始日志里紧跟两行位置跳变：`reason=1 old=22002 new=20000`（引擎为激活发的 seek），
+>    随后 `reason=2 old=20000 new=19720`（Media3 的 `SEEK_ADJUSTMENT`，把落点微调到可解码的样本位置）。
+>    **本条只记录现象，不对这 280 ms 的来源下结论**；后续所有循环跳变的落点都精确等于 A（见下表"落点全 0 ms"）。
+
+### 缺陷 2：设完 B 后循环不启动（真机前后对比）
+
+| 项目 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 表现 | 设完 B 后 **60 s 内 0 次回跳**（`loops=0`，位置自然播过 B 继续往前） | **无需任何人工 seek**即回跳，且计数递增：`fix1x-181929-abspike.txt` 里 `REALFLOW_SET_B atPos=22002` → 立刻一次落点 `new=20000` 的跳变（激活）→ 之后每隔约 2.24 s 出现一次落点为 A 的跳变，`loops` 依次变成 0 → 1 → 2 → …（该轮结束 `loops=21`，共 22 次落点跳变 + 1 次激活跳变） |
+| 证据 | 提交 `98859b5` 记录的现场 | 每轮 `*-abspike.txt`：`REALFLOW_ACTIVATED livePos=20000` 之后紧接一次落点为 A 的位置跳变，随后同型跳变逐次出现且 `loops` 单调递增；自动化回归 `AbLoopActivationInstrumentedTest`（真 `ExoPlayer`）断言"循环自己启动、且不止一次" |
+| 根因 | `AbBoundaryWatcher.configure` 用"配置生效瞬间位置 ≥ B"判定 `boundaryVisited`；用户就是把 B 设在**当前位置**上，配置落地时已越过 B → 定时器永不武装 | 新增原子入口 `PlaybackEngine.activateAbLoop(loop)`：引擎内**先精确 seek 到 A、再武装**（顺序不可交换）；`boundaryVisited` 改为调用方显式传入（`configure` 传 `position >= B`，`activate` 直接传 `false`）；新增 `SeekOrigin.AB_ACTIVATION` 与 `AB_LOOP` 并列 |
+
+### 音频对照实验：把"静音干扰"这条解释排除
+
+同一素材、同一区间（A=20000/B=22000）、同一宿主，只改设备媒体音量（`STREAM_MUSIC`）：
+
+| 项 | 静音轮（`volA0-190347`） | volume 63 轮（`volB10-190523`） |
+| --- | --- | --- |
+| 设备音量（`dumpsys audio` / `cmd media_session volume`） | `volume_music_speaker=0`（`AudioHardening` 记录多行 "background playback would be muted"） | `streamVolume:63`（`volume_music=5`、`volume_music_speaker=63`），`Muted: false` |
+| `AUDIO_DECODER_INIT` | **1** | **1** |
+| `AUDIO_INPUT_FORMAT` | 1 | 1 |
+| `AUDIO_ENABLED` | 1 | 1 |
+| `AUDIO_TRACK_INIT` | **23** | **23** |
+| `AUDIO_TRACK_RELEASED` | 22 | 22 |
+| 循环跳转次数（`reason=1`） | 22 | 22 |
+| `underruns`（心跳累计字段） | **全 0** | **全 0** |
+
+**结论：两轮的音频解码器初始化次数、`AudioTrack` 重建次数与循环次数**完全相同**（1 / 23 / 22），
+所以"静音导致音频行为异常"这条解释被排除**；本轮观测到的音频行为与设备音量无关。
+
+（读法注意：这一条**不能**用来证明"听感上无 click"——它只能证明可观测面与静音无关。判据边界见本节末尾的用户裁决 2。）
+
+### 循环质量：重缓冲、落点越界量与每循环墙钟开销
+
+按上表统计口径逐次统计（`n` = 该轮循环次数）：
+
+| 轮次（场景） | A / B（ms） | 循环数 | `STATE_BUFFERING` 时长（ms） | 边界越界量 overshoot（ms） | AudioTrack 重建（ms） | 循环墙钟周期（ms） |
+| --- | --- | --- | --- | --- | --- | --- |
+| `fix1x-181929`（前台 1.0x） | 20000 / 22000 | 22 | min 76 / mean 90.6 / **P95 100** / max 303 | min 0 / mean 4.6 / P95 9 / max 9 | min 39 / mean 42.9 / max 62 | min 2236 / mean 2254 / max 2538 |
+| `fix15x-182258`（1.5x） | 20040 / 22040 | 35 | min 61 / mean 77.5 / P95 103 / max 306 | min −16 / mean 6.4 / P95 14 / max 15 | min 35 / max 68 | min 1555 / mean 1572 / max 1809 |
+| `fix2x-182430`（2.0x） | 20040 / 22040 | 46 | min 71 / mean 82.4 / P95 89 / max 310 | min −9 / mean 6.4 / P95 19 / max 19 | min 35 / max 76 | min 1232 / mean 1245 / max 1415 |
+| `fixbg-182631`（后台 600 s） | 20040 / 22000 | **278** | min 44 / mean 83.5 / **P95 89** / **max 319** | min 0 / mean 4.4 / P95 9 / max 11 | min 28 / max 55 | min 2159 / mean 2198 / P95 2204 / max 2503 |
+| `fixlock-183730`（锁屏 Dozing 600 s） | 20040 / 22000 | **278** | min 40 / mean 82.8 / **P95 91** / **max 290** | min 0 / mean 4.5 / P95 9 / max 10 | min 27 / max 61 | min 2157 / mean 2196 / P95 2205 / max 2538 |
+| `volA0-190347`（静音对照） | 20000 / 22000 | 22 | min 76 / mean 90.6 / P95 99 / max 300 | min 0 / mean 5.0 / P95 9 / max 9 | min 41 / mean 44.6 / max 52 | min 2236 / mean 2254 / max 2534 |
+| `volB10-190523`（volume 63 对照） | 20000 / 22000 | 22 | min 75 / mean 91.0 / P95 103 / max 319 | min 0 / mean 5.0 / P95 9 / max 9 | **min 39 / mean 46.6 / max 53** | min 2233 / mean 2254 / max 2544 |
+
+要点：
+
+- **落点全 0 ms**：全部轮次的回跳落点 `new` 都精确等于配置的 A（含 1.5x / 2.0x）。
+- **越界量 < 一帧**：overshoot 的 P95 为 9–19 ms，max 19 ms，**名义一帧 = 40 ms** → 判定为帧精确。
+- **每循环墙钟开销稳定**：`循环墙钟周期 − (B − A)` 在 1.0x 下为 **mean ≈ 236–254 ms、P95 ≈ 243–247 ms**（后台 238.5 / 243.8，锁屏 236.3 / 244.5，前台 1.0x 与两个音量对照轮 254.2–254.4 / 243.3–247）；1.5x 与 2.0x 是同一段真实时间被倍速压缩后的结果，不作为"开销更小"的证据。
+- **每轮循环都有一次重缓冲 + 一次视频输出重载**：后台轮 `PLAYBACK_STATE state=2` 与 `IS_LOADING loading=true` 各 **280** 次（与心跳里的 278 次循环同量级；多出的 2 次出现在激活与首次准备附近），与本项目既有结论（方案 A 循环点必然一次 `STATE_BUFFERING`）一致。
+- 倍速轮（1.5x / 2.0x）的 A/B 是 20040–22040；前台 1.0x 轮为 20000–22000。跨轮对比精度时按各自配置的 A 读，不要混用。
+
+### 三条用户裁决（本轮记录，不得改写）
+
+1. **重缓冲阈值：保留目标、记为已知未达标。** 目标仍是 **P95 ≤ 名义一帧（40 ms）**，**不得降低**；实测**未达标**，按"已知未达标"记录，不改成"通过"、不把 max 写成硬阻断、也不把目标改成"≤1 次重缓冲"。
+   - 裁决里引用的实测区间 **P95 88–106 ms / max 270–319 ms** 覆盖了上表的取值：低端 = 后台/锁屏轮（**P95 89 / 91**，max 319 / 290），高端 = 倍速与对照轮（`fix15x` P95 103、`volB10` P95 103 / max 319）。
+2. **音频回环补测：跳过。** 可观测面正常（`onAudioUnderrun` 在全部六轮里**全 0**；音频解码器 `AUDIO_DECODER_INIT` 全程只有 1 次、从不重建；`AudioTrack` 每循环重建一次，延迟见上表；静音对照实验证明与静音无关），但**"可听 click / 真实静音时长"在本设备上无法客观测量**（既没有可靠的音频回环采集，也不能用主观听感当通过依据）→ **不签署音频达标**，如实记录为"可观测面正常、可听维度未验证"（`docs/20` T2.10 因此仍未闭环）。
+3. **PiP：跳过。** 三次自动化尝试均**未能让 Activity 进入 PiP**：`fixpip-184836-pip-check.txt` 里目标任务始终 `mode=fullscreen`（`mLastReportedPictureInPictureMode=false`，只有 `supportsPictureInPicture=true`、`autoEnterPipEnabled=true`），同轮整段 logcat 里也没有任何 `PictureInPicture` 模式切换记录 → 记为**未验证**并写明原因（自动化无法可靠触发进入 PiP，不是"试过且失败"）。因此 **D4 只能声称"后台与锁屏已验证"**（各 600 s / 278 次循环，见上表），不含 PiP。
+
+### 覆盖范围与未覆盖
+
+- **已覆盖**：前台 1.0x / 1.5x / 2.0x、后台 600 s、锁屏（Dozing）600 s、静音 vs volume 63 对照、单素材单设备单区间；两个阻断缺陷的修复前后对比。另有一轮 `fixpip-184836` 在**试图**进入 PiP 的同时跑了约 4.3 分钟 / 113 次循环，`underruns` 全 0——它证明"循环在尽力模拟后台/PiP 的场景下继续跑"，**不**证明 PiP 本身可用（见裁决 3）。
+- **未覆盖**：PiP（见裁决 3）；"可听 click / 静音时长"（见裁决 2）；Vault / 保险库媒体；未知时长或不可 seek 媒体的 AB 可用性真机路径；Shorts 页内的 AB；长视频与短视频边界；`ShortsViewModel.progressMillis` 这一处同类陈旧位置残留（已在 `docs/17` §13.2.4 登记待决）。
+

@@ -1103,7 +1103,8 @@ sealed interface PlaybackEngineEvent {
 
 已改为决策时拉取的 11 处调用点（阶段 2 记录，按提交信息）：runtime 的 `applyAbPoint`（设 A/B）、`captureFrame`（截图位置与文件名时间戳）、`navigate(previous)` 的 5 秒判定；bridge 的 `previous` 与 `SeekBy` 基准；ViewModel 的 `previous`、`seekBackward/Forward`、`captureScreenshot`、`stepScreenshotFrame`、`beginSeekGesture`。
 不受影响并已登记的位置读取处：`duration`/`isSeekable`、`MediaSessionPlayerAdapter` 与 `persistProgress`（本来就实时）、`toPlaybackState.startPositionMillis`（非决策）。
-`ShortsViewModel.progressMillis` 属同类残留，本轮未改，**已登记待决**。
+`ShortsViewModel.progressMillis` 这处同类残留**已收口**（阶段 3，提交 `a9de889`）：`captureScreenshot()` 的时间戳改为**用时拉取实时值** `sessionClient.currentPositionMillis()`（此前用的是快照里的 `timeline` 位置，只在状态跳变时刷新，会存下一个偏后的位置——截图文件名里的时间点与实际那一帧对不上，与上面「缺陷 1：设点用了陈旧快照位置」同源）。
+`ShortsUiState.progressMillis` **从此只服务 UI 的进度显示**（`ShortsScreen` 的进度条与时间文本），**不再参与任何决策或时间戳**；`ShortsReducer` 里它仍随 `PlaybackChanged` 快照进入状态，那是**展示投影**，不是决策输入。这不改变上面那条规则的字面口径，只是把它覆盖到的范围补齐。
 
 #### 13.2.5 `SeekOrigin.AB_ACTIVATION` 与 `AB_LOOP`
 

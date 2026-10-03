@@ -164,7 +164,7 @@ object PlayerDimensions {
 | 速度 | `BrandSpeedtest` | 点击在底栏行内展开档位条 |
 | 画面比例 | `AspectRatio`（适应）、`Crop`（裁剪）、`ArrowsHorizontal`（拉伸） | 三态动态，底栏一次点按循环 |
 | 截图 | `Aperture` | 捕获按钮可 filled；入口在「更多」托盘与设置面板「工具」分组，不再占底栏（口径修正：原表写 `Camera`，代码为 `TablerIcons.Outline.Aperture`） |
-| AB 循环 | `a-b-2`（`YingLiIcon.AB2`，Tabler `Ab2`；口径修正：先前的 `YingLiIcon.REPLAY` 是借用字形，**`REPLAY` 本身保留**给"刷新/重播"语义） | 循环生效时**实心**（激活态）；入口三处一致：底栏「更多」工具托盘、设置面板「工具」分组、顶栏溢出菜单（见 §5.11） |
+| AB 循环 | `a-b-2`（`YingLiIcon.AB2`，Tabler 契约名 `a-b-2`、代码属性名 `AB2`；口径修正：先前的 `YingLiIcon.REPLAY` 是借用字形，**`REPLAY` 本身保留**给"刷新/重播"语义） | 循环生效时**实心**（激活态）；入口三处一致：底栏「更多」工具托盘、设置面板「工具」分组、顶栏溢出菜单（见 §5.11） |
 | 镜像翻转 | `flip-horizontal` / `flip-vertical` 设计资产逐路径移植（`YingLiCustomIcons`，`IconProvider.LOCAL_VECTOR`） | 托盘开关，开启时 filled；只做视图层变换（见 §5.16） |
 | 后台播放 | `Headphones` | 托盘开关，开启时 filled；默认开启，关闭后离开前台即暂停（见 §5.17） |
 | 画中画 | `PictureInPicture` | 不可用时禁用 |
@@ -436,11 +436,26 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 交互与几何**实现规格**（几何/材质/动效一律与截图胶囊**同源**，不再有第二套常量；当前落地进度见本节末"实现现状"）：
 
 - **入口三处同一状态源**：竖屏「更多」工具托盘（主）、设置面板「工具」分组、顶栏溢出菜单；三处读同一份会话状态（`docs/17` §13.2），**打开动作也收在同一条路径**（`PlayerViewModel.openAbTool()`）。
-- **托盘/顶栏按钮**：图标 `a-b-2`（`YingLiIcon.AB2`，Tabler `Ab2`）；循环生效时**实心**（激活态），并把该状态写进语义（读屏念"已选中"，测试用 `assertIsSelected` 断言——颜色本身既读不出也测不了）。
+- **托盘/顶栏按钮**：图标 `a-b-2`（`YingLiIcon.AB2`，Tabler 库里的**契约名**是 `a-b-2`、生成到代码里的**属性名**是 `AB2`——已解包 `icons-tabler-0.1.0-local.1.aar` 核对，写成 `Ab2` 编译不过）；循环生效时**实心**（激活态），并把该状态写进语义（读屏念"已选中"，测试用 `assertIsSelected` 断言——颜色本身既读不出也测不了）。
 - **`REPLAY` 不删除**：`AB2` **不是** `REPLAY` 的改名。`REPLAY` 是"刷新/重播"语义（首页卡片、重试、撤销、重新播放都在用它，映射 `ti-refresh`），两者只是曾经共用一个字形；AB 改用 `AB2` 之后两条语义各有一个入口。（`docs/20` T3.1 原写"删除 `REPLAY`"，按实现修正为保留。）
-- **AB 胶囊占用底栏"辅助带"**，与截图胶囊**同一格**：高度 `PlayerScreenshotCapsuleHeight`（`64dp`）、内边距 `(64−48)/2 = 8dp`、按钮间距 `12dp`、材质 = `controlPrimary` 10% 底 + 12% 描边 + 胶囊圆角、出入场 `360ms`（`SCREENSHOT_CAPSULE_TRANSITION_MILLIS`）从右滑入行内居中。辅助带高度只有两种取值：托盘展开时按 `240ms` 高度动画，截图/AB 会话期间瞬时满高（`PlayerAuxiliaryBandHeight`）。
-- **A/B 按钮带时间文字**：`A 00:12`、`B 设置`（未设 B 时显示动作词）。`48dp`（`PlayerChromeButtonSize`）是**最小触控高度**而不是固定宽度 → 文字按钮必须**弹性宽度**；验收窄屏 / 横屏 / 系统字号放大下不溢出。
-- **进度条**：以完整媒体时长为坐标系画 **A–B 区间高亮 + 两端 `2dp` 标记**，并在进度行下方显示两端时间；计数文案 `循环 ×N`（Q1 定稿口径，避免裸数字歧义）。
+- **AB 胶囊占用底栏"辅助带"**，与截图胶囊**同一格同源**：截图胶囊与 AB 胶囊渲染在**同一个槽**（`AuxiliaryToolCapsuleSlot`）里，由纯函数 `auxiliaryToolCapsule(abToolOpen, screenshot)` **只选一枚**（同一帧的中间态归 AB —— 用户刚点的就是它），因此两枚胶囊的**竖直带、水平起点、时序逐像素同源**（instrumented 断言"顶边与高度一致、且完整落在 `AUXILIARY_BAND` 内"，见 `docs/19` 阶段 3）。几何与材质**没有第二套常量**，全部复用截图胶囊那一份：
+
+  | 项 | 取值 / 常量 | 说明 |
+  | --- | --- | --- |
+  | 胶囊高度 | `PlayerScreenshotCapsuleHeight` = `64dp` | = `PlayerChromeButtonSize`(48dp) + `PlayerPortraitControlsSpacing`(16dp) |
+  | 按钮尺寸 | `PlayerScreenshotCapsuleButtonSize` = `PlayerChromeButtonSize` = `48dp` | **最小触控高度**（§3.2），不是固定宽度；关闭圆钮也用同一个常量 |
+  | 按钮间距 | `PlayerScreenshotCapsuleButtonSpacing` = `12dp` | 紧凑档 `PlayerScreenshotCapsuleButtonSpacingCompact` = `4dp` |
+  | 内边距 | `ScreenshotCapsuleInnerPadding` = `(64 − 48) / 2` = `8dp` | 水平方向取同一个值；紧凑档 `ScreenshotCapsuleInnerPaddingCompact` |
+  | 出入场 | `SCREENSHOT_CAPSULE_TRANSITION_MILLIS` = `360ms` | 从右滑入 + 淡入、行内居中；退出反向（与截图胶囊同一时长与轨迹） |
+  | 材质 | `PlayerChromeControlFillAlpha`(0.10) 底 + `PlayerChromeControlBorderAlpha`(0.12)/`PlayerChromeControlBorderWidth`(1dp) 描边 + `PlayerChromeCapsuleShape`（全圆胶囊） | 由 `PlayerChromeCapsuleSurface` 统一提供，与底栏圆钮、截图胶囊**同源**，不写第二份 alpha |
+  | 占用满高 | `PlayerAuxiliaryBandHeight` = `PlayerScreenshotCapsuleHeight` + `PlayerPortraitControlsSpacing` = `80dp` | 与托盘行共用一格；高度怎么变见下面"辅助带高度"与 §5.14 |
+
+- **辅助带高度的两条判据（阶段 3 落地，"终值"与"怎么过去"分开）**：**终值**由 `playerAuxiliaryBandHeight(bandHold, trayExpanded)` 给出（胶囊在场或托盘展开 → 满高 `80dp`，否则 `0dp`），**"怎么过去"**由 `auxiliaryBandTransition(bandHold)` 给出 —— **胶囊在场（含它滑出屏幕的 360ms 留位窗口）→ `SNAP` 瞬时**；**托盘开关、以及胶囊滑出后的回位 → `ANIMATE`（240ms 动画）**。这两条判据**同时避免**两条历史回归：只有动画时胶囊会跟着带子往上滑（**"胶囊竖直跳变"**）、全都瞬时则托盘开关会让进度行**瞬移**（**"进度行瞬移"**）；合成单一 `Animatable` 后两种成因各自拿到自己的变化方式，谁也不会污染谁（详见 §5.14、§12）。
+- **`testTag`（instrumented 断言的唯一锚点，`PlayerTestTags`）**：`AUXILIARY_BAND`（辅助带那一格，**它的宽度就是胶囊排版决策用的可用宽度**）、`AB_RANGE`（进度条上的 A–B 区间高亮与两端标记）、`AB_RANGE_LABELS`（读数行 `A 00:12` / `循环 ×12` / `B 00:37`，三段文字是这一行的孩子）、`AB_LOOP_COUNT`（计数文本，只在区间完整时挂载）、`AB_CAPSULE`（AB 胶囊内容，与 `SCREENSHOT_CAPSULE` 二选一）。
+- **带文字按钮与圆钮的分工（`PlayerChromeTextButton` vs `PlayerChromeIconButton`）**：`PlayerChromeIconButton` 是**定尺寸圆钮**（宽度恒为 `PlayerChromeButtonSize`，图标按钮的宽度不携带信息）；`PlayerChromeTextButton` 是**弹性宽度**的文字按钮 —— 高度仍**恰为** `48dp`（`PlayerChromeButtonSize` 是**最小触控高度**而不是固定宽度），宽度由文字决定，材质（底色 alpha / 描边 / 胶囊圆角）与圆钮、截图胶囊**同源**。可用宽度不够时它**缩字号**而不是把文字省略成 `A 00…`（那会丢掉"这是哪个时间点"的信息）。
+- **字号模型与"常规档 ↔ 紧凑档"**：`playerChromeTextFontSizeSp(availableWidth, labels, baseFontSize, fontScale)` 按每个字符 `k × 字号 × 系统字号缩放` 反推"整排文字全放得下的**唯一**字号"（上限 `baseFontSize`、下限 `PlayerChromeTextMinFontSize` = **`10sp`**；宽字符 `1.1em`、窄字符 `0.55em`、3% 安全余量）。`abCapsuleTextLayout(availableWidth, labels, baseFontSize, fontScale)` 是**唯一**的排版决策点，按次序给出四件事**一起用**的档位：① **常规档**（`8dp` 内边距 / `12dp` 间距 / `PlayerChromeTextButtonHorizontalPadding` = `12dp` 文字按钮内边距）能放下就用它；② 放不下 → **紧凑档**（`ScreenshotCapsuleInnerPaddingCompact` / `4dp` 间距 / `PlayerChromeTextButtonCompactHorizontalPadding` = `4dp`）**先收留白再缩字**；③ 常规档**与紧凑档都放不下**时（比 `320dp` 还窄**且**系统字号 ≥ `2` 倍这种极端组合）仍返回紧凑档、字号被 `10sp` 下限托住 —— 这是**已知取舍**：**以可读为先**，不再继续收留白或缩字号（已如实登记，见本节末"已知取舍"与 `docs/19` 阶段 3）。`AbCapsuleTextLayout.labelsFit(...)` 会复核"这一档算出的字号确实放得进"，这就是"窄屏 / 横屏 / 系统字号放大不截断"的可验证形式。**四个几何值与字号必须一起用**：只取一部分就会出现"模型说放得下、实际把关闭圆钮挤成 0 宽"（实测过）。
+- **A/B 按钮带时间文字**：`A 00:12`、`B 设置`（未设 B 时显示动作词）；时间格式与进度行**同源**（`formatAbTime → formatDuration`，旧胶囊的 `m:ss` 已统一掉——同一时刻在两处显示成两个样子会让用户怀疑自己设错了点）。**未设 A 时 B 禁用**（没有 A 就没有区间）。
+- **进度条**：以完整媒体时长为坐标系画 **A–B 区间高亮 + 两端 `2dp` 标记**，并在进度行下方显示两端时间；计数文案 `循环 ×N`（Q1 定稿口径，避免裸数字歧义）。读数行的预留行高取**主题行高**（`labelLarge.lineHeight`）而不是写死的 `16dp`：行高跟着 sp 走，`1` 倍字号下恰好也是 `16dp`（常规机型几何不变），系统字号放大时它自动变高，读数行才不会被压成半行。
 - **与截图工具的互斥是三分支**（`docs/20` §3.2）：
 
   | 截图状态 | 打开 AB 工具时 | 关闭 AB 时 |
@@ -452,16 +467,18 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 - **关闭 ≠ 取消**（D3）：胶囊的关闭键读屏文案是「关闭」、清除键是「清除」（**不要写成"取消"**，否则用户会以为关闭即取消循环）。**关闭胶囊不改变循环**——托盘按钮保持实心、进度条区间与计数继续显示、循环继续跑；只有「清除」才取消区间。"只设了一端后关闭胶囊"保留该点（Q4）。
 - **切换媒体清除 AB**；AB 是当前会话状态，不写全局 DataStore。
 - 进入 AB 工具**不自动暂停**播放（D6）。
+- **不做边界（`docs/20` T4.6，本批明确不做）**：**短视频模式（D12）**不做（AB 只在常规播放页；Shorts 页内的 AB 未列入本批）；**`loopCount` 不持久化**（计数是当前会话状态，切歌/换媒体归零，不写 DataStore、不进历史）；**不按 item 记忆 A/B**（换媒体即清除，不存在"下次打开这段视频还记得上次的 A/B"）。另：双 `ExoPlayer` 预热仅在**产品坚持绝对无缝**时才单独评估（`docs/20` §1.2），**本轮不实现、不排期**。
 
 引擎契约（`events` / `configureAbLoop` / `activateAbLoop` / `currentPositionMillis`）、边界检测机制、generation 与
 `SeekOrigin` 语义见 [`17-playback-architecture-refactor-spec.md`](17-playback-architecture-refactor-spec.md) §13.2；
 真机证据见 [`19-player-implementation-progress.md`](19-player-implementation-progress.md)。
 
-**实现现状（截至编写本节时的工作区；本节编写期间阶段 3 的 UI 正在同一工作区推进，逐项状态会变，判定以代码为准）**：
+**实现现状（截至阶段 3 提交 `a9de889`；逐项判定仍以代码为准）**：
 
-- 已落地（按编写本节时的工作区核对）：<br>· 会话侧唯一权威的 AB 状态与计数（`AbLoopSession` 一起投影区间与计数）；引擎侧自然边界检测与精确回跳（真机证据见 `docs/19`）；<br>· 进度条上的 A–B 区间高亮、两端 `2dp` 标记、两端时间文字（`A 00:12` / `B 00:22`）与中间的 `循环 ×N`（资源 `player_ab_loop_count`，只在区间完整时出现，避免"已在循环却显示 ×0"）；<br>· AB 胶囊**已迁入底栏辅助带**与截图胶囊同一格（由 `auxiliaryToolCapsule` 单一判定决定画哪一枚；`AbLoopToolCapsule` 只做内容，位置/几何/材质/出入场交给槽位），按钮是**弹性宽度文字按钮**（同一排共用一个按可用宽度缩放的 `playerChromeTextFontSizeSp`），时间格式与进度行同源（`formatAbTime → formatDuration`）；<br>· `YingLiIcon.AB2` 与底栏/顶栏 AB 按钮的 `filled` + `selected` 激活态（读屏与测试都据此断言）；<br>· 三入口收敛到 `PlayerViewModel.openAbTool()`（含 `Armed`/`Capturing` 与 `Preview` 的分别处理）；**互斥的异步晚到契约**（`isScreenshotCaptureResultCurrent` + `screenshotCaptureGeneration`）；<br>· **进度条拖动不再钳进 `[A,B]`**（与本节 D8-A 一致），`AbLoopLimiter` 只剩设点校验。
-- 仍属"规格已定、需按代码确认"的项：三入口在**同一帧**读到同一状态；窄屏 / 横屏 / 系统字号放大下 A、B、清除、关闭四个按钮不溢出（字号缩放是估算模型，需真机核对）。
-- **未验证**：真机观感与相关 instrumented 用例；`lintDebug` 门禁与构建结果（本节不声明其结论——**本节编写期间阶段 3 的 UI 正在同一工作区推进，逐项状态以当时的代码为准**）。
+- 已落地：<br>· 会话侧唯一权威的 AB 状态与计数（`AbLoopSession` 一起投影区间与计数）；引擎侧自然边界检测与精确回跳（真机证据见 `docs/19`）；<br>· 进度条上的 A–B 区间高亮、两端 `2dp` 标记、两端时间文字（`A 00:12` / `B 00:22`）与中间的 `循环 ×N`（资源 `player_ab_loop_count`，只在区间完整时出现，避免"已在循环却显示 ×0"）；读数行改按**主题行高**预留；<br>· AB 胶囊**已迁入底栏辅助带**与截图胶囊同一格（由 `auxiliaryToolCapsule` 单一判定决定画哪一枚；`AbLoopToolCapsule` 只做内容，位置/几何/材质/出入场交给槽位），按钮是**弹性宽度文字按钮**（同一排共用一个按可用宽度缩放的 `playerChromeTextFontSizeSp`，档位由 `abCapsuleTextLayout` 唯一决定），时间格式与进度行同源（`formatAbTime → formatDuration`）；<br>· `YingLiIcon.AB2` 与底栏/顶栏 AB 按钮的 `filled` + `selected` 激活态（读屏与测试都据此断言）；**`REPLAY` 保留**给刷新/重播语义；<br>· 三入口收敛到 `PlayerViewModel.openAbTool()`（含 `Armed`/`Capturing` 与 `Preview` 的分别处理）；**互斥的异步晚到契约**（`isScreenshotCaptureResultCurrent` + `screenshotCaptureGeneration`）；<br>· 辅助带高度合成**单一 `Animatable`**，终值与变化方式分别由 `playerAuxiliaryBandHeight` / `auxiliaryBandTransition` 给出；<br>· **进度条拖动不再钳进 `[A,B]`**（与本节 D8-A 一致），`AbLoopLimiter` 只剩设点校验。
+- 已按真机 / instrumented 核对（结果与取证见 `docs/19` 阶段 3）：窄屏 `320dp`、横屏 `800dp`、`360dp` + `2` 倍字号、`320dp` + `2` 倍字号四个场景下胶囊均不溢出、完整落在 `AUXILIARY_BAND` 内、四个按钮 `clipped == unclipped`、字号 ≥ `10sp`；JVM 矩阵 `320–768dp` × `1/1.3/1.5/2.0` 全部 `labelsFit`；相关 JVM **117/0**、instrumented **22/0**（含 `PlayerScreenStateTest` 15 项回归）、`lintDebug` `No issues found`。
+- **已知取舍（未解决，如实记录）**：宽度 `<320dp` **且**系统字号 `≥2.0` 时，紧凑档 + `10sp` 下限仍可能放不下 —— 取"可读优先"，不把字号继续往下缩（`docs/19` 阶段 3 的未完成项）。
+- **未验证**：真机全链路观感（与截图、镜像、后台播放共存等整体回归）由另一代理在阶段 4 补测，结论见 `docs/19` 的阶段 4 回归小节；本文不预写其结论。
 
 ### 5.12 画中画
 
@@ -506,11 +523,12 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 
 - `PlayerControlId.MORE`（图标复用 `YingLiIcon.OVERFLOW` = Tabler `DotsVertical`）**默认只放竖屏底栏、位于最右**（`PORTRAIT_BOTTOM` 默认列表的最后一项）；横屏默认不安排该控件，顶栏常驻溢出菜单维持原样。
 - 点击在按钮行上方展开工具托盘。**当前实现是「固定槽位 + 内容单独淡入淡出」，不是 `expandVertically`/`shrinkVertically`**（口径修正：本节原写 `AnimatedVisibility + fadeIn/expandVertically` 进场、`fadeOut`/`shrinkVertically` 退场）。底栏是底部对齐的悬浮控制条，因此展开时**按钮行位置不变、进度行上移一个辅助带高度**，画面区域尺寸不变（不挤压画面）。
-- 辅助带高度有**两条互不影响的路径**，缺一条就会退化成下面两个已修过的缺陷之一：
-  1. **普通模式开关托盘 → 高度走动画**：`animateDpAsState(0 ↔ PlayerAuxiliaryBandHeight, 240ms)`（`TRANSPORT_SECTION_TRANSITION_MILLIS`，与三段淡入淡出同拍），进度行随高度**平滑上移/回位**；
-  2. **截图会话期间 → 瞬时满高、不参与动画**：`playerAuxiliaryBandHeight(trayAnimatedHeight, screenshotHold)` 在 `screenshotHold`（截图会话，或胶囊滑出期间的留位窗口 `capsuleBandHeld`）为真时**直接返回满高**，胶囊的竖直带一帧都不动。
-  - 为什么必须分成两条路径（两条各出过一次问题）：只有路径 1 时，胶囊出现的那一帧带子还在做 `0→满高` 动画，胶囊会跟着带子从下往上滑——这就是「胶囊竖直跳变」，commit `01ebdfa` 修的就是它；只有路径 2 时，托盘开关变成瞬时切换，用户实测看到「进度条突然上移、突然回到原位」，commit `5632ac8` 把它改回高度动画。两条路径相加才等于带子的最终高度。
-- 底栏三段（进度行 / 辅助带（工具托盘行与截图胶囊）/ 按钮行）一律**固定槽位 + 内容单独淡入淡出**，槽位高度不参与任何动画：进度行槽位恒为 `PlayerChromeButtonSize`（有 AB 标记时再加一个段距）、按钮行槽位恒为 `PlayerChromeButtonSize`、辅助带槽位只在「该满高」时为满高。若让槽位高度跟着 `AnimatedVisibility` 的进出场收缩，底对齐的 Column 会在动画中途整体重新定位——这正是 commit `01ebdfa` 的根因（`48dp`/`240ms` 的位移量与时刻与用户描述完全吻合）。胶囊竖直带的唯一依据因此是「按钮行槽位高度 + 底栏内边距」。
+- 辅助带高度**只有一条驱动**，拆成"**终值**"与"**怎么过去**"两个纯函数（阶段 3 把原来的"托盘动画值 + 截图会话硬覆盖"两条路合成**单一 `Animatable`**；再往前它是一条路径里混着动画值与硬覆盖，于是"胶囊出现"和"托盘开关"两种成因互相污染）；两条判据缺一条就会退化成下面两个已修过的缺陷之一：
+  1. **终值 → `playerAuxiliaryBandHeight(bandHold, trayExpanded)`**：`bandHold`（截图会话，或胶囊在场/正在滑出的留位窗口 `capsuleBandHeld`）或托盘展开 → 满高 `PlayerAuxiliaryBandHeight`(80dp)；否则 `0dp`。**它只回答"终值是多少"。**
+  2. **变化方式 → `auxiliaryBandTransition(bandHold)`**：胶囊（截图胶囊或 AB 胶囊）在场 → `SNAP`（**瞬时**到位，`snapTo`）；托盘开关、以及胶囊滑出后的回位 → `ANIMATE`（`animateTo(…, tween(TRANSPORT_SECTION_TRANSITION_MILLIS))`，`240ms`，与三段淡入淡出同拍）。
+  - 为什么必须分成这两条（两条各出过一次问题）：只有路径 2 的动画、没有 `SNAP` 时，胶囊出现的那一帧带子还在做 `0→满高` 动画，胶囊会跟着带子从下往上滑——这就是「胶囊竖直跳变」，commit `01ebdfa` 修的就是它；只有 `SNAP`、托盘开关也瞬时切换时，用户实测看到「进度条突然上移、突然回到原位」，commit `5632ac8` 把它改回高度动画。**两个纯函数都有单测**（`PlayerChromeLayoutMathTest`）。
+  - 胶囊滑出之后的回位**也走 240ms 动画**（此时底栏三段已经可见，瞬时塌掉同样会看到进度行瞬移）；而这**不**与"只要胶囊在场就必须瞬时"冲突 —— 滑出留位窗口期间 `bandHold` 仍为真，带子保持满高，窗口结束后 `bandHold` 才转假、回位走动画。
+- 底栏三段（进度行 / 辅助带（工具托盘行与截图胶囊）/ 按钮行）一律**固定槽位 + 内容单独淡入淡出**，槽位高度不参与任何动画：进度行槽位恒为 `PlayerChromeButtonSize`（有 AB 标记时再加一个读数行预留高度 —— 按**主题行高** `labelLarge.lineHeight` 取，而不是写死 `16dp`，见 §5.11）、按钮行槽位恒为 `PlayerChromeButtonSize`、辅助带槽位只在「该满高」时为满高。若让槽位高度跟着 `AnimatedVisibility` 的进出场收缩，底对齐的 Column 会在动画中途整体重新定位——这正是 commit `01ebdfa` 的根因（`48dp`/`240ms` 的位移量与时刻与用户描述完全吻合）。胶囊竖直带的唯一依据因此是「按钮行槽位高度 + 底栏内边距」。
 - 辅助带满高 `80dp`：`PlayerAuxiliaryBandHeight = PlayerScreenshotCapsuleHeight(64dp) + PlayerPortraitControlsSpacing(16dp)`。这一格要同时住得下 64dp 的截图胶囊与 48dp 的托盘按钮，且两者与下方按钮行之间都要留 16dp。托盘行比胶囊矮一档，用 `PlayerToolRowTopInset = 胶囊高度 − PlayerChromeButtonSize = 16dp` 补齐顶部，**托盘按钮的绝对位置与旧实现完全一致**（仍然离按钮行 16dp），多出来的 16dp 落在带子上方。
 - 托盘行按**满高**测量（`requiredHeight(PlayerAuxiliaryBandHeight)`，而不是 `height`）再参与裁剪：辅助带的 `Box` 必须带 `clipToBounds`，托盘行才会表现为「**随带子被推开露出**」，动画中途也不会把按钮画到下方按钮行上；带子塌回 0 时也不会有残留内容。**不要退回「原地淡入」**——那等于把「随高度展开」这条视觉线索丢掉。外层 `contentAlignment` 显式取 `TopStart`，托盘行在动画中途比带子高时才不会在格子里上下浮动。
 - 托盘按钮与底栏**同源**：复用同一个 `PlayerShortcut`；`Arrangement.spacedBy(PlayerShortcutSpacing, Alignment.End)` + 列表 `reversed()`，自右向左排列，间距与底栏一致。
@@ -816,8 +834,8 @@ sealed interface PlayerEvent {
 | Drawer/Sheet | 240ms | `slideInHorizontally` / `slideInVertically` |
 | Dialog | 180ms | alpha + scale `0.98 -> 1` |
 | 底栏三段（进度行 / 辅助带 / 按钮行）进出场 | 240ms | `TRANSPORT_SECTION_TRANSITION_MILLIS`：**固定槽位 + 内容单独淡入淡出**，槽位高度不参与动画（见 §5.14） |
-| 辅助带高度（托盘开关） | 240ms | `animateDpAsState(0 ↔ 80dp)`，进度行随之平滑上移/回位（见 §5.14） |
-| 辅助带高度（截图会话） | 瞬时（0ms） | `playerAuxiliaryBandHeight(..., screenshotHold = true)` 直接取满高：胶囊的竖直带不参与动画（见 §5.14） |
+| 辅助带高度（托盘开关 / 胶囊滑出后回位） | 240ms | `AuxiliaryBandTransition.ANIMATE`：`Animatable.animateTo(playerAuxiliaryBandHeight(...), tween(240ms))`，进度行随之平滑上移/回位（见 §5.14） |
+| 辅助带高度（工具胶囊在场，含滑出留位窗口） | 瞬时（0ms） | `AuxiliaryBandTransition.SNAP`：`Animatable.snapTo(满高)` —— 终值由 `playerAuxiliaryBandHeight` 给出、变化方式由 `auxiliaryBandTransition` 给出（见 §5.14） |
 | 截图胶囊出入场 | 360ms | `slideIn/OutHorizontally` + `fadeIn/Out`，比底栏三段慢一档（见 §5.10） |
 | AB 胶囊出入场 | 360ms | 与截图胶囊**同一时长与轨迹**（同住辅助带同一格，见 §5.11）；胶囊在场期间辅助带保持满高，竖直带不参与动画 |
 | 中央三连（上一个/播放/下一个）进出场 | 240ms | 与底栏三段同拍；截图模式激活期间不出现（见 §5.10） |

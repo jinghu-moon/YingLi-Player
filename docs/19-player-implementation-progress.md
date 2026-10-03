@@ -1126,3 +1126,116 @@ spike 取证材料（全部在 gitignore 的 `build/` 下，不进入提交；`b
 - **已覆盖**：前台 1.0x / 1.5x / 2.0x、后台 600 s、锁屏（Dozing）600 s、静音 vs volume 63 对照、单素材单设备单区间；两个阻断缺陷的修复前后对比。另有一轮 `fixpip-184836` 在**试图**进入 PiP 的同时跑了约 4.3 分钟 / 113 次循环，`underruns` 全 0——它证明"循环在尽力模拟后台/PiP 的场景下继续跑"，**不**证明 PiP 本身可用（见裁决 3）。
 - **未覆盖**：PiP（见裁决 3）；"可听 click / 静音时长"（见裁决 2）；Vault / 保险库媒体；未知时长或不可 seek 媒体的 AB 可用性真机路径；Shorts 页内的 AB；长视频与短视频边界；`ShortsViewModel.progressMillis` 这一处同类陈旧位置残留（已在 `docs/17` §13.2.4 登记待决）。
 
+## A-B 循环方案阶段 3：UI 与交互（2026-10-03，提交 `a9de889`）
+
+对应 `docs/20-ab-loop-refactor-plan.md` §5 的**阶段 3**（UI 与交互）与 **T3.1–T3.9**。
+源码在主线（`a9de889`），本节记录**已实现行为**；与 `docs/20` 原计划的偏离（`REPLAY` 保留、辅助带单一
+`Animatable`、异步晚到 generation 契约）在该文档 **§7.5** 逐条登记，本节只记录证据。
+
+> 与上面两节不同，本节的**门禁结果是阶段 3 代理在本机真实执行**的（命令与输出见 `a9de889` 的提交信息）；
+> 其中 instrumented 用例数可与 `app/src/androidTest` 的用例逐一对上，JVM 数字是**过滤后的相关测试**。
+
+### 图标：`AB2` 与 `REPLAY` 保留
+
+| 项 | 结论 | 证据 |
+| --- | --- | --- |
+| AB 入口图标 | 新增 `YingLiIcon.AB2`，`AB_LOOP` 在底栏与顶栏都映射到它 | `YingLiIcon.kt:107/179`（`AB2(IconProvider.TABLER)`、`TablerIcons.Outline.AB2`）、`PlayerTopBar.kt:139`、`PlayerTransportControls.kt:990` |
+| 属性名（**容易写错，已核对**） | 解包 `icons-tabler-0.1.0-local.1.aar` 得到的属性名是 **`AB2`**（全大写），不是 `Ab2` | 代码里的映射即 `TablerIcons.Outline.AB2`；写成 `Ab2` 编译不过 |
+| `REPLAY` | **保留**，映射 `ti-refresh`，仍被 **5 处**非 AB 语义使用 | `HomeScreen.kt:539/621`（首页卡片）、`ProcessingScreen.kt:386/459`（重试、撤销）、`PlayerStatusOverlay.kt:74`（重新播放）、`YingLiApp.kt:817`（重新播放） |
+
+**为什么不删**：`AB2` **不是** `REPLAY` 的改名 —— 两者只是曾经共用一个字形。`REPLAY` 是"刷新/重播"语义
+（首页卡片、重试、撤销、重新播放），这 5 处都还在用；删除它属于与本计划无关的重构，且**正确的删除方式**是
+把这 5 处改名为新的 `REFRESH`，**不在本计划范围**（`docs/20` T3.1 已按此更正）。另注：`YingLiIconTest` 里
+**既没有** `REPLAY` 也没有 `AB2` 的断言，本次改动不触及它。
+
+### 辅助带：AB 胶囊与截图胶囊**同格同源**
+
+两枚胶囊渲染在**同一个槽**（`AuxiliaryToolCapsuleSlot`，`PlayerTransportControls.kt:870`）里，由纯函数
+`auxiliaryToolCapsule(abToolOpen, screenshot)`（`:847`）**只选一枚**（AB 优先：同一帧的中间态归用户刚点的那一枚）。
+槽位内层 `Box` 的高度固定为 `PlayerScreenshotCapsuleHeight`（`:895`），因此胶囊在带子里的竖直位置只由"带子顶边"
+决定，不被动画中途的带子高度压扁。
+
+instrumented 断言（`PlayerAbLoopScreenTest.abCapsuleTakesTheSameAuxiliaryBandSlotAsTheScreenshotCapsule`）：
+
+| 断言 | 容差 |
+| --- | --- |
+| 两枚胶囊的**顶边一致**（"换个工具就跳一下"就是在这里被抓出来的） | `0.5px` |
+| 两枚胶囊的**高度一致**，且等于 `PlayerScreenshotCapsuleHeight` | `0.5px` / `1px` |
+| AB 胶囊**完整落在** `AUXILIARY_BAND` 内（顶/底/左/右四条边都在带子里） | `0.5px` |
+| 同一格只住一枚：AB 胶囊在场时 `SCREENSHOT_CAPSULE` 节点数 **0** | 精确 |
+
+### 互斥三分支 + 异步晚到 generation 契约
+
+**三分支**（`docs/20` §3.2）：`Armed`/`Capturing` → 先结束截图会话再打开 AB；`Preview` → **保留预览卡与倒计时**、
+只退出截图"工具模式"；`Idle` → 直接打开。异步晚到由域层契约
+`isScreenshotCaptureResultCurrent(captureGeneration, currentGeneration, captureMediaId, currentMediaId, state)`
+（`PlaybackSystemContracts.kt:176`）+ `PlayerViewModel.screenshotCaptureGeneration`（`PlayerViewModel.kt:251`）保证 ——
+每次结束/重开截图会话、打开 AB、切媒体都递增。
+
+| 层 | 用例数 | 覆盖 |
+| --- | --- | --- |
+| JVM（`PlayerViewModelTest` 的 AB 互斥族） | **5** | ① 打开 AB 结束 `Armed` 会话并丢弃其晚到捕获；② 晚到结果**不得落进重新武装后的截图会话**（"武装 → 捕获 → 关闭 → 再武装"这一时序，即内联守卫挡不住的那一条）；③ 打开 AB 保留预览卡与倒计时；④ 无截图会话时打开 AB 只是打开工具；⑤ 关闭 AB 胶囊后循环仍生效、计数不变（D3） |
+| JVM（`AbLoopUiContractTest` 的契约族） | **6** | 辅助带占用者判定（四种截图状态 × AB 开/关）、`Preview` 分支只让出截图工具模式、`abLoopActive` 判据、点标签/读屏文案、`isScreenshotCaptureResultCurrent` 的四种不匹配（generation 变 / 媒体变 / 状态不是 `Capturing` / **状态绕回 `Capturing` 但 generation 已变**） |
+| instrumented（`PlayerAbLoopExclusionTest`） | **2** | ① 晚到后 `screenshot == Idle`、预览卡节点数 **0** 且 AB 胶囊在场（"预览卡与 AB 胶囊不同时出现"）；② `Preview` 分支下**两者共存**（预览卡仍在、AB 胶囊在场、底栏三段回来）且**读条继续走动**（`remainingMillis` 变小） |
+
+第二条之所以要跑真机上的真 `PlayerViewModel`：要断言的时序是"按下快门 → 立刻打开 AB → 那次回调才回来"，
+中间夹着真实协程调度与重组时机；JVM 侧只覆盖同一批分支的纯时序，两层一起才算钉住。
+
+### 文字按钮排版验收
+
+**四个真机场景**（`PlayerAbLoopScreenTest.abCapsuleLabelsStayCompleteOnNarrowLandscapeAndLargeFont`，
+截图取证在 `app/build/ab-shots/`：`narrow.png`、`landscape.png`、`font2x.png`、`narrow-font2x.png`）：
+
+| 场景 | 尺寸 / 字号 |
+| --- | --- |
+| 窄屏竖屏 | `320 × 640dp`，`fontScale = 1` |
+| 横屏 | `800 × 400dp`，`fontScale = 1` |
+| 系统字号 2 倍 | `360 × 720dp`，`fontScale = 2` |
+| 窄屏 + 字号 2 倍 | `320 × 640dp`，`fontScale = 2` |
+
+每个场景断言四件事：① 胶囊**不溢出屏幕**（左右边都在屏宽内）；② 四个按钮（`A 点 00:12` / `B 点 00:37` / `清除` /
+`关闭`）都在场，且 `clipped == unclipped`（没有被任何祖先裁掉）；③ 胶囊**完整落在辅助带内**；④ 用界面自己那一套
+排版决策（`abCapsuleTextLayout`，可用宽度 = 辅助带宽度）复核"字号 ≥ `10sp` 且该档确实 `labelsFit`"。
+此外读数行（`AB_RANGE_LABELS`）的三个孩子逐个断言**既没被横向裁掉、也没被压扁**（实际高度 ≥ 字号 × `fontScale`）。
+
+**JVM 矩阵**（`AbLoopUiContractTest`）：宽度 `320 / 336 / 360 / 400 / 768dp`（带宽 = 宽 − `24dp`）× 字号
+`1 / 1.3 / 1.5 / 2.0`，共 20 组，全部 `labelsFit` 且字号 ≥ `10sp`；另有一条专测"常规档放得下就用常规档"、
+一条专测"大字号先收留白再缩字（切紧凑档）"。
+
+**靠截图抓到并修掉的两个真实缺陷**（这两个都是"模型说放得下、实际画出来不对"）：
+
+1. **2 倍字号下关闭键被挤成 0 宽**：字号模型漏了**系统字号缩放**与**文字按钮自己的内边距**这两项，
+   算出的字号偏大，三枚文字按钮把关闭圆钮挤到 0 宽（`AbLoopControls.kt` 的注释记了这两次实测：一次漏文字按钮
+   内边距、一次漏系统字号缩放）。修法是让 `abCapsuleTextLayout` 成为**唯一**排版决策点，把"内边距档 /
+   间距档 / 文字按钮内边距档 / 字号"四件事一起算、一起用，并让 `labelsFit(...)` 在排版前自检；
+   宽字符的宽度系数也不再按 `1.0em` 估算（实测中文约 `1.095em`，按 `1.0` 估会少算近 10%）。
+2. **读数行固定 `16dp` 槽位压掉大字行**：`A 00:12 / 循环 ×12 / B 00:37` 这一行的预留高度原来写死 `16dp`，
+   `2` 倍字号下这一行被切掉一半。修法是按**主题行高**（`labelLarge.lineHeight`）预留：行高跟着 sp 走，
+   `1` 倍字号下恰好仍是 `16dp`（常规机型几何完全不变），`2` 倍时自动变 `32dp`。
+   instrumented 用例为此专门加了一条"实际高度 ≥ 字号 × `fontScale`"的断言 —— 横向的
+   `clipped`/`unclipped` 断言抓不到"自己被压扁"这种情况（`PlayerAbLoopScreenTest` 的注释）。
+
+### 门禁结果（阶段 3 代理真实执行）
+
+| 检查项 | 结果 |
+| --- | --- |
+| `compileDebugKotlin` / `compileDebugAndroidTestKotlin` | 通过，**零警告** |
+| `lintDebug` | **`No issues found.`** |
+| 相关 JVM 过滤测试 | **117 / 0**（过滤范围覆盖辅助带几何与两条判据、排版决策与字号模型、辅助带占用者判定、异步晚到契约等本批相关用例） |
+| instrumented | **22 / 0** —— `PlayerScreenStateTest` **15** 项回归 + `PlayerAbLoopScreenTest` **5** 项 + `PlayerAbLoopExclusionTest` **2** 项 |
+
+### 未完成项（如实记录）
+
+- **`<320dp` 且系统字号 `≥2.0` 的极端组合**：紧凑档 + `10sp` 下限仍可能放不下。取舍是**可读优先** ——
+  不再继续缩字号（再往下就是拿可读性换排版）。JVM 矩阵的宽度下界因此取 `320dp`，**不声称覆盖更窄的设备**。
+- **真机全链路观感**：胶囊与截图、镜像、后台播放共存时的整体观感，以及真机手动操作下的排版复核，
+  由另一代理在本轮（阶段 4）补测 → 结论见 **阶段 4 回归小节**（本节的四个场景是 Compose 规则的离屏渲染，
+  **不是**真机上手动操作的观感证据）。
+
+### 与 `docs/20` 计划的偏离（详见 `docs/20` §7.5）
+
+1. **`REPLAY` 保留**（原计划写"删除"，有误）——理由与 5 处用途见本节开头；
+2. **辅助带高度合并为单一 `Animatable` + `SNAP`/`ANIMATE` 判据**（原计划只要求"路径复用"）；
+3. **异步晚到改为 generation 契约**（原计划只要求"必须丢弃"）。
+
+

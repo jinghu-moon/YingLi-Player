@@ -188,13 +188,15 @@ Phase 0、Phase 1 和 Phase 2 的本地门禁均有真实结果；设备级安�
 | 命令 | 结果 |
 | --- | --- |
 | `:app:testDebugUnitTest --rerun-tasks` | 207 tests，0 failures，0 errors，0 skipped |
-| `:app:lintDebug --rerun-tasks` | 通过，0 error |
+| `:app:lintDebug --rerun-tasks` | 通过，0 error（**2026-09-13 的旧结论，已被下方更正**） |
 | `:app:assembleDebug --rerun-tasks` | 通过 |
 | `:app:testDebugUnitTest --rerun-tasks` | 221 tests，0 failures，0 errors，0 skipped |
 | `:app:compileDebugAndroidTestKotlin --rerun-tasks` | 通过 |
-| `:app:lintDebug --rerun-tasks` | 通过，0 error |
+| `:app:lintDebug --rerun-tasks` | 通过，0 error（**2026-09-13 的旧结论，已被下方更正**） |
 | `adb shell am instrument ...PlayerScreenStateTest` | Android 16 / API 36 真机，11/11 通过 |
 | `:app:connectedDebugAndroidTest --rerun-tasks` | Android 16 / API 36 真机，80/80 通过，0 失败 |
+
+> **更正（2026-10-03）：上表两条 `:app:lintDebug` 的"0 error"已经不是当前事实。** 本批开始前实测 `.\gradlew.bat :app:lintDebug` → **FAILED，25 errors**（`ServicePlaybackEngine` 6 条 `UnsafeOptInUsageError`、`strings.xml` 11 条 `UnusedResources`、`AndroidManifest` 1 条 `PictureInPictureIssue`、`YingLiControls` 2、`Media3VideoSurface` 2、`LibraryScreen`/`PlayerTopBar`/`PlaylistPanel` 各 1），全部在这些旧结论之后、本批之前就存在。这 25 条已于 2026-10-03 逐条处理（修根因优先，仅 1 条 `PictureInPictureIssue` 有理由抑制，理由写在 `AndroidManifest.xml` 的注释里），当前真实状态是 **`lintDebug` 通过：0 errors / 0 warnings / 4 hints**；4 条 hint 均为 `AutoboxingStateCreation`（`LibraryScreen` 2、`PlayerTransportControls` 2），不阻断构建，留作后续单独处理。引用本文件时不要再用旧结论声称"lint 一直通过"。
 
 真机验证需要在 Xiaomi/MIUI 设备测试期间临时允许 `MIUIOP(10021)`，Gradle 安装会重置该模式。常规播放器此前已完成 80/80；YLShorts 改动后的本轮重跑在 Windows 结果文件被占用时中止，未获得新的设备级完整结果。媒体格式兼容性矩阵、Service 销毁重建专门生命周期用例仍未覆盖。
 # YLShorts implementation
@@ -233,6 +235,11 @@ Phase 0、Phase 1 和 Phase 2 的本地门禁均有真实结果；设备级安�
 - **结论一：耗时不是单纯由体积决定。** 0.65 MiB 的自造容器按带宽算只要 1 ms，实测 95–102 ms —— 因为它有 5,000 个样本。真实 1080p 素材约 60 KiB/样本，两项都会出场。
 - **结论二：拟合出的模型是** `耗时 ≈ 15 ms（打开容器）+ 样本数 × 18 µs + 容器 MiB × 1.0`（≈1 GiB/s 顺序读）。上表五个真机点的预测误差都在 ±6% 以内，这条拟合被 JVM 测试 `FrameCalibrationTest.cost model reproduces every measured device scan` 钉住。
 - **结论三：小文件无感，大文件确实要等。** 66 MiB 只要 104 ms；1.83 GiB 以上是 2.6–3.1 s，已越过"超过 3–5 秒就要有策略"的门槛。
+- **结论四（判据）：CFR 素材上"校准完成、`≈`消失，但总帧数没变"是正确行为，不是校准没生效。** 判据是 `真实样本数 == round(容器时长 × 容器帧率)`：只要容器帧率是如实的（含 29.97 这类分数帧率，Media3 报的就是真实平均值），两个口径**逐位相同**，界面上唯一可见的变化就只有 `≈` 消失。2026-10-03 真机复核（同一台 Xiaomi 25102RKBEC / Android 16）：
+  - 40 s / 3000 fps / 120,000 样本：`≈ 14506 / 120000`（估算）→ `14506 / 120000`（校准后），日志 `samples=120000`；
+  - 3600 s / 29.97 fps / 107,893 样本：`≈ 134 / 107893` → `134 / 107893`，日志 `samples=107893`（证明分数帧率也如实，不是被四舍五入成 30）；
+  - 只有这两种情况才会看到数字变化：**(a) 容器帧率缺失/为 0/写错**；**(b) 容器时长与视频轨时间跨度不一致**。判别性素材实测（视频轨 40 s / 120,000 样本 + 400 s 音轨，容器时长 400 s）：估算 `≈ 13918 / 1200000` → 校准后 `13918 / 120000`，日志 `samples=120000` —— 总数按真实样本数整体替换，证明校准值确实接到了显示上。
+  - 因此看到"总数没变"时先按这条判据核对，不要再当成"校准结果没被采用"重新排查。
 - **采用的策略**：仍是**静默后台校准**（不阻塞 UI、不弹进度条），但当模型估算耗时 ≥ `FRAME_CALIBRATION_NOTICE_THRESHOLD_MILLIS`（600 ms）时，帧数胶囊给整段数字加 `≈`（`player_frame_counter_approximate`），把"这几秒显示的是估算值、随后会换成精确值"告诉用户。
   - 阈值取 600 ms 的理由：帧数胶囊的入场动画本身有 360 ms（`SCREENSHOT_CAPSULE_TRANSITION_MILLIS`），比动画还快的扫描根本来不及被看见，给它加提示只会制造噪声；而 1.83 GiB 以上实测 2.6–3.1 s，用户确实在等。
   - 为什么用**估算耗时**而不是"体积阈值"：字节数只是两个因子之一，只看体积会漏掉"容器不大但样本极多"（40 分钟 60fps ≈ 14.4 万样本 → 约 2.9 s）的形态；估算耗时同时覆盖两项，且时长/帧率/体积缺项时能优雅退化。

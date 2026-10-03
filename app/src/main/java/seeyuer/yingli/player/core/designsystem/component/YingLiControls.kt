@@ -328,7 +328,10 @@ fun YingLiSegmentedControl(
             Surface(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .offset(x = animatedPillX, y = inset)
+                    // 走 lambda 重载：animatedPillX 是动画状态，每帧都在变；静态重载会把
+                    // "读取状态"这件事挪到组合阶段，导致整段（含所有选项文本）每帧重组。
+                    // lambda 版本只在布局阶段读，滑动只触发重新摆放。
+                    .offset { IntOffset(animatedPillX.roundToPx(), inset.roundToPx()) }
                     .width(optionWidth)
                     .height(metrics.pillHeight),
                 shape = RoundedCornerShape(metrics.pillCorner),
@@ -376,8 +379,9 @@ fun YingLiSegmentedControl(
 fun YingLiSlider(
     value: Float,
     onValueChange: (Float) -> Unit,
-    label: String? = null,
+    // modifier 必须排在所有可选参数之前（Compose 的 ModifierParameter 规则）。
     modifier: Modifier = Modifier,
+    label: String? = null,
     enabled: Boolean = true,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     onValueChangeFinished: (() -> Unit)? = null,

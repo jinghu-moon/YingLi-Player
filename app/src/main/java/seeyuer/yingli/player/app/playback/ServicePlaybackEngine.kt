@@ -2,9 +2,11 @@ package seeyuer.yingli.player.app.playback
 
 import android.net.Uri
 import android.os.Bundle
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import java.util.concurrent.ConcurrentHashMap
@@ -75,8 +77,13 @@ class ServicePlaybackEngine(
      */
     private var currentDurationMillis: Long? = null
 
-    /** 上一次真正下发给播放器的参数；用于把 `setSeekParameters` 的重复下发压掉。 */
-    private var appliedSeekParameters: SeekParameters? = null
+    /**
+     * 上一次真正下发给播放器的**有效精度**；用于把 `setSeekParameters` 的重复下发压掉。
+     *
+     * 存精度而不是 `SeekParameters` 本身：两者是一一对应的（见 [applySeekPrecision]），
+     * 判定完全等价，但这份状态里就不必出现 Media3 的不稳定类型了。
+     */
+    private var appliedSeekPrecision: SeekPrecision? = null
 
     /** 引擎自己的协程作用域：只服务于"策略变化 → 应用到播放器"这一条链，随 [release] 收掉。 */
     private val engineScope = CoroutineScope(SupervisorJob() + dispatchers.main)
@@ -154,7 +161,7 @@ class ServicePlaybackEngine(
         currentDurationMillis = source.durationMillis
         // 新的时长意味着"有效精度"可能变（短视频 EXACT / 长视频 CLOSEST_SYNC），清掉已下发记录，
         // 让下一次对齐重新计算并下发。
-        appliedSeekParameters = null
+        appliedSeekPrecision = null
         player.prepare()
     }
 
@@ -165,7 +172,7 @@ class ServicePlaybackEngine(
         hasEverBeenReady = false
         // 媒体已经清掉：旧时长与已下发的参数都不再代表任何东西，下次 prepare 重新判定。
         currentDurationMillis = null
-        appliedSeekParameters = null
+        appliedSeekPrecision = null
         mutableState.value = EngineState.Idle
     }
     override fun seekTo(positionMillis: Long) = player.seekTo(positionMillis)
@@ -205,17 +212,23 @@ class ServicePlaybackEngine(
     /**
      * 把当前"有效精度"下发到播放器。
      *
-     * 幂等：目标 `SeekParameters` 与上次下发相同就跳过——`setSeekParameters` 会让播放器内部重算，
+     * 幂等：有效精度与上次下发相同就跳过——`setSeekParameters` 会让播放器内部重算，
      * 而引擎状态每次跳动都会驱动到这里，没必要反复下发同一个值。
+     *
+     * `SeekParameters`（以及 `setSeekParameters`）在 Media3 里标着 `@UnstableApi`：
+     * 精确跳转只有这一条入口，所以按官方方式就近 opt-in，不把整个引擎都变成"接受不稳定 API"。
      */
+    @OptIn(UnstableApi::class)
     private fun applySeekPrecision(precision: SeekPrecision) {
-        val parameters = when (seekPrecisionFor(currentDurationMillis, precision == SeekPrecision.FRAME_ACCURATE)) {
-            SeekPrecision.FRAME_ACCURATE -> SeekParameters.EXACT
-            SeekPrecision.CLOSEST_SYNC -> SeekParameters.CLOSEST_SYNC
-        }
-        if (appliedSeekParameters == parameters) return
-        appliedSeekParameters = parameters
-        player.setSeekParameters(parameters)
+        val effective = seekPrecisionFor(currentDurationMillis, precision == SeekPrecision.FRAME_ACCURATE)
+        if (appliedSeekPrecision == effective) return
+        appliedSeekPrecision = effective
+        player.setSeekParameters(
+            when (effective) {
+                SeekPrecision.FRAME_ACCURATE -> SeekParameters.EXACT
+                SeekPrecision.CLOSEST_SYNC -> SeekParameters.CLOSEST_SYNC
+            },
+        )
     }
 
     private fun publish() {

@@ -2,6 +2,7 @@ package seeyuer.yingli.player.app
 
 import android.os.Bundle
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.os.StatFs
 import android.view.WindowManager
 import android.hardware.biometrics.BiometricManager
@@ -37,8 +38,16 @@ import seeyuer.yingli.player.domain.security.AppLockMode
 
 class MainActivity : ComponentActivity() {
     private var secureContent = true
+
+    /**
+     * 画中画入场动画的起点：视频输出视图在窗口里的矩形（拿不到时为 null）。
+     * 取的是**真实渲染输出**的位置而不是某个固定比例，这样浮窗看起来是从画面里长出来的。
+     */
+    private fun pictureInPictureSourceRect(): Rect? =
+        (application as YingLiApplication).playbackController.videoSurfaceBoundsInWindow()
+
     private val windowPlaybackGateway by lazy {
-        ActivityWindowPlaybackGateway(this, ActivityPictureInPictureGateway(this))
+        ActivityWindowPlaybackGateway(this, ActivityPictureInPictureGateway(this, ::pictureInPictureSourceRect))
     }
     private val viewModel: YingLiAppViewModel by viewModels {
         YingLiAppViewModel.factory((application as YingLiApplication).container.themeRepository)
@@ -61,7 +70,7 @@ class MainActivity : ComponentActivity() {
             app.mediaContainer.playerPreferenceRepository,
             app.mediaContainer.trackPreferenceRepository,
             Media3ScreenshotGateway(this, app.playbackController, app.container.dispatchers, app.container.clock),
-            ActivityPictureInPictureGateway(this),
+            ActivityPictureInPictureGateway(this, ::pictureInPictureSourceRect),
             app.mediaContainer.playbackQueueRepository,
             app.mediaContainer.playerControlLayoutRepository,
             app.mediaContainer.libraryRepository,
@@ -81,7 +90,7 @@ class MainActivity : ComponentActivity() {
             app.mediaContainer.organizeRepository,
             app.mediaContainer.libraryMutationRepository,
             Media3ScreenshotGateway(this, app.playbackController, app.container.dispatchers, app.container.clock),
-            ActivityPictureInPictureGateway(this),
+            ActivityPictureInPictureGateway(this, ::pictureInPictureSourceRect),
         )
     }
     private val libraryViewModel: LibraryViewModel by viewModels {

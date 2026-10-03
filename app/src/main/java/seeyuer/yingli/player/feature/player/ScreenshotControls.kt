@@ -366,7 +366,12 @@ internal fun ScreenshotPreviewCard(
                     }
                 }
                 .testTag(PlayerTestTags.SCREENSHOT_PREVIEW)
-                .clickable(onClick = onExpand),
+                // 读屏文案表达"点这一下会发生什么"：卡片本身是一张图（图片的 contentDescription
+                // 是文件名），不加动作标签的话，读屏只会念文件名、不会说它可点、点了会放大。
+                .clickable(
+                    onClickLabel = stringResource(R.string.player_screenshot_expand),
+                    onClick = onExpand,
+                ),
             shape = RoundedCornerShape(PlayerScreenshotPreviewCornerRadius),
             // 卡片底色用播放页画布色：截图本身可能是任意亮度，深底能让白描边与读条都稳定可读。
             color = YingLiTheme.player.canvas,
@@ -429,6 +434,7 @@ internal fun ScreenshotPreviewOverlay(
                 // 去掉水波纹：整屏的涟漪会很吵，这里点哪儿都是"关掉"。
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
+                onClickLabel = stringResource(R.string.player_screenshot_collapse),
                 onClick = onCollapse,
             )
             .testTag(PlayerTestTags.SCREENSHOT_PREVIEW_OVERLAY),

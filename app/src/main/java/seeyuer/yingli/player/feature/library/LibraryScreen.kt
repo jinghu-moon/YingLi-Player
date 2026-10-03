@@ -602,8 +602,11 @@ private fun LibraryContent(
                     },
                     label = "folderContent",
                     modifier = Modifier.weight(1f),
-                ) {
-                    key(folderPathKey, state.preference.viewMode) {
+                ) { targetFolderPathKey ->
+                    // 用 AnimatedContent 传进来的目标值（而不是外面捕获的 folderPathKey）：
+                    // 过渡期间旧内容要按旧 key 组合、新内容按新 key 组合；捕获外层变量会让
+                    // 两帧用同一个 key，进出场内容就完全一样了。
+                    key(targetFolderPathKey, state.preference.viewMode) {
                         FolderBrowseLayout(
                             state = state,
                             pagingItems = pagingItems,

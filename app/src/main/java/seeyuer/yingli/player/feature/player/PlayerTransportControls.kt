@@ -182,7 +182,7 @@ internal fun CenterPlaybackControls(
     ) {
         PlayerChromeIconButton(
             icon = YingLiIcon.PREVIOUS,
-            contentDescription = "上一项",
+            contentDescription = stringResource(R.string.player_previous),
             onClick = onPrevious,
             enabled = canNavigatePrevious,
             size = 56.dp,
@@ -196,7 +196,7 @@ internal fun CenterPlaybackControls(
         )
         PlayerChromeIconButton(
             icon = YingLiIcon.NEXT,
-            contentDescription = "下一项",
+            contentDescription = stringResource(R.string.player_next),
             onClick = onNext,
             enabled = canNavigateNext,
             size = 56.dp,
@@ -824,9 +824,9 @@ private fun PlayerShortcut(
         PlayerControlId.MIRROR_HORIZONTAL -> "水平翻转"
         PlayerControlId.MIRROR_VERTICAL -> "垂直翻转"
         PlayerControlId.BACKGROUND_PLAYBACK -> "后台播放"
-        PlayerControlId.PLAYLIST -> "播放列表"
+        PlayerControlId.PLAYLIST -> stringResource(R.string.player_playlist)
         PlayerControlId.INFO -> "视频信息"
-        PlayerControlId.PIP -> "画中画"
+        PlayerControlId.PIP -> stringResource(R.string.player_pip)
         PlayerControlId.ORIENTATION -> stringResource(
             R.string.player_rotation_state,
             stringResource(videoRotationLabelRes(state.rotation)),
@@ -835,8 +835,8 @@ private fun PlayerShortcut(
         PlayerControlId.LOCK -> stringResource(if (state.overlay.locked) R.string.player_unlock else R.string.player_lock)
         PlayerControlId.SETTINGS -> "播放设置"
         PlayerControlId.MORE -> "更多"
-        PlayerControlId.PREVIOUS -> "上一项"
-        PlayerControlId.NEXT -> "下一项"
+        PlayerControlId.PREVIOUS -> stringResource(R.string.player_previous)
+        PlayerControlId.NEXT -> stringResource(R.string.player_next)
         PlayerControlId.FULLSCREEN -> stringResource(
             if (state.isFullscreen) R.string.player_fullscreen_exit else R.string.player_fullscreen,
         )

@@ -150,18 +150,20 @@ internal fun PlayerTopBar(
             ) {
                 // 文案区分"进入截图模式"与"按下拍摄"（后者在截图胶囊里），
                 // 图标也按设计稿 §2.3 分成 camera / camera-filled 两个。
-                if (allowScreenshot) menuItem(stringResource(R.string.player_screenshot), onScreenshot) { menuExpanded = false }
-                if (allowPictureInPicture) menuItem("画中画", onPictureInPicture) { menuExpanded = false }
-                menuItem("播放列表", onOpenPlaylist) { menuExpanded = false }
-                menuItem("播放设置", onOpenSettings) { menuExpanded = false }
-                menuItem("视频信息", onOpenVideoInfo) { menuExpanded = false }
-                menuItem("A-B 循环", onOpenAbTool) { menuExpanded = false }
-                menuItem("上一项", onPrevious) { menuExpanded = false }
-                menuItem("下一项", onNext) { menuExpanded = false }
-                menuItem(if (state.overlay.locked) "解锁屏幕" else "锁定屏幕", onToggleLock) { menuExpanded = false }
+                // 用户可见文案一律走字符串资源（与 transport 底栏同一份），不在各处手写中文：
+                // 手写副本既会与资源里的文案漂移，也让资源看起来"没人用"。
+                if (allowScreenshot) MenuItem(stringResource(R.string.player_screenshot), onScreenshot) { menuExpanded = false }
+                if (allowPictureInPicture) MenuItem(stringResource(R.string.player_pip), onPictureInPicture) { menuExpanded = false }
+                MenuItem(stringResource(R.string.player_playlist), onOpenPlaylist) { menuExpanded = false }
+                MenuItem("播放设置", onOpenSettings) { menuExpanded = false }
+                MenuItem("视频信息", onOpenVideoInfo) { menuExpanded = false }
+                MenuItem("A-B 循环", onOpenAbTool) { menuExpanded = false }
+                MenuItem(stringResource(R.string.player_previous), onPrevious) { menuExpanded = false }
+                MenuItem(stringResource(R.string.player_next), onNext) { menuExpanded = false }
+                MenuItem(if (state.overlay.locked) "解锁屏幕" else "锁定屏幕", onToggleLock) { menuExpanded = false }
                 PlaybackOrder.entries.forEach { order ->
                     val orderLabel = stringResource(playbackOrderLabelRes(order))
-                    menuItem(
+                    MenuItem(
                         stringResource(R.string.player_order_state, orderLabel),
                         { onSetPlaybackOrder(order) },
                     ) { menuExpanded = false }
@@ -307,8 +309,14 @@ internal fun PlayerLockedControls(
     }
 }
 
+/**
+ * 顶栏溢出菜单的一项。
+ *
+ * 名字必须以大写开头：它是返回 Unit 的 @Composable（Compose 的 `ComposableNaming` 规则），
+ * 与普通小写函数区分开，读代码时一眼能看出"这里会进组合"。
+ */
 @Composable
-private fun menuItem(
+private fun MenuItem(
     label: String,
     action: () -> Unit,
     dismiss: () -> Unit,

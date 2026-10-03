@@ -13,6 +13,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <!--
+      PictureInPictureIssue：lint 要求同时调用 setAutoEnterEnabled(true) 与 setSourceRectHint(...)。
+      setSourceRectHint 已经实现（见 ActivityPictureInPictureGateway，取视频画面在窗口里的真实矩形，
+      入场动画因此不再"凭空出现"）；setAutoEnterEnabled(true) 有意不采用：
+      它必须在用户离开应用**之前**就下发，而这里的自动进入受「用户偏好（自动画中画）」与
+      「安全内容开关」两个运行期条件约束 —— 采用它就得每次偏好/安全状态/播放状态变化都重新下发
+      setPictureInPictureParams，等于在窗口层再维护一份状态镜像。
+      当前实现只在 onUserLeaveHint 里按这两个条件调用 enterPictureInPictureMode，行为等价、只有一张嘴。
+      若要改成 auto-enter，需要连同上面那份镜像一起设计并在真机上验证（MIUI/HyperOS 的画中画行为
+      在模拟器上测不出来）。
+    -->
     <application
         android:name=".app.YingLiApplication"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -21,7 +32,8 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"
         android:supportsRtl="true"
-        android:theme="@style/Theme.YingLi">
+        android:theme="@style/Theme.YingLi"
+        tools:ignore="PictureInPictureIssue">
         <activity
             android:name=".app.MainActivity"
             android:exported="true"

@@ -2,6 +2,7 @@ package seeyuer.yingli.player.engine.media3
 
 import android.graphics.Color
 import android.view.LayoutInflater
+import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -32,8 +33,9 @@ import seeyuer.yingli.player.domain.playback.SurfaceLease
 @Composable
 fun Media3VideoSurface(
     controller: Media3PlaybackController,
-    transformed: Boolean = false,
+    // modifier 必须排在所有可选参数之前（Compose 的 ModifierParameter 规则）。
     modifier: Modifier = Modifier,
+    transformed: Boolean = false,
 ) {
     val connectionState by controller.connectionState.collectAsStateWithLifecycle()
     val playbackState by controller.state.collectAsStateWithLifecycle()
@@ -45,7 +47,11 @@ fun Media3VideoSurface(
         AndroidView(
             factory = { context ->
                 val view = if (transformed) {
-                    LayoutInflater.from(context).inflate(R.layout.view_player_texture, null) as PlayerView
+                    // AndroidView 的 factory 只给 Context，没有现成的父容器。根节点是 match_parent，
+                    // 传 null 会把这两个布局参数直接丢掉，所以显式给一个一次性的父容器作为解析基准
+                    //（attachToRoot = false，不会真的挂上去；之后由 Compose 按自己的约束重新挂载）。
+                    LayoutInflater.from(context)
+                        .inflate(R.layout.view_player_texture, FrameLayout(context), false) as PlayerView
                 } else {
                     PlayerView(context)
                 }

@@ -30,11 +30,12 @@ import seeyuer.yingli.player.domain.playback.PlaybackQueue
 internal fun PlaylistPanel(
     queue: PlaybackQueue?,
     items: List<LibraryMedia>,
-    pagingItems: LazyPagingItems<PlaylistMediaItem>? = null,
     currentMediaId: String?,
     thumbnailRepository: ThumbnailLoader?,
     onSelect: (Int) -> Unit,
+    // modifier 必须排在所有可选参数之前（Compose 的 ModifierParameter 规则）。
     modifier: Modifier = Modifier,
+    pagingItems: LazyPagingItems<PlaylistMediaItem>? = null,
 ) {
     Surface(modifier = modifier, color = YingLiTheme.player.canvas, contentColor = YingLiTheme.player.controlPrimary) {
         if (queue == null || queue.mediaIds.isEmpty()) {

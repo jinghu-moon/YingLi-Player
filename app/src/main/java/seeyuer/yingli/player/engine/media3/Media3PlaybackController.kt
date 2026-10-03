@@ -2,13 +2,16 @@ package seeyuer.yingli.player.engine.media3
 
 import android.content.ComponentName
 import android.content.Context
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Bundle
+import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import java.io.FileNotFoundException
@@ -404,6 +407,25 @@ class Media3PlaybackController(
         }
 
     fun attachedPlayerView(): PlayerView? = playerViewReference.get()
+
+    /**
+     * 视频输出视图在**窗口坐标系**里的矩形；画中画入场动画用它做 `setSourceRectHint`，
+     * 系统才知道"这个浮窗是从画面里长出来的"，而不是从整屏缩放过去。
+     *
+     * 没有输出、还没测量、或已经脱离窗口时返回 null：宁可不下发提示，也不要给一个错的矩形
+     * （错的起点比没有起点更难看）。
+     *
+     * `PlayerView.getVideoSurfaceView()` 标着 `@UnstableApi`：它是拿到"真实输出视图"的唯一入口，
+     * 所以就近 opt-in；这里只读它的尺寸与位置，不碰 Media3 的任何播放语义。
+     */
+    @OptIn(UnstableApi::class)
+    fun videoSurfaceBoundsInWindow(): Rect? {
+        val surfaceView = attachedPlayerView()?.videoSurfaceView ?: return null
+        if (!surfaceView.isAttachedToWindow || surfaceView.width <= 0 || surfaceView.height <= 0) return null
+        val location = IntArray(2)
+        surfaceView.getLocationInWindow(location)
+        return Rect(location[0], location[1], location[0] + surfaceView.width, location[1] + surfaceView.height)
+    }
 
     /** Disable only video track selection while background audio continues. */
     fun setVideoOutputEnabled(enabled: Boolean) {

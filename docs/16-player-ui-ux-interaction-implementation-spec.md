@@ -327,26 +327,85 @@ Demo 四态为顺序、随机、列表循环、单曲重复。正式实现：
 
 #### 工具胶囊
 
-Demo 包含上一帧、截图当前帧、下一帧、取消；按钮视觉 `42×34px`，截图按钮宽 `52px`。正式 Compose 胶囊高度至少 `48dp`，每项触控区至少 `48dp`。
+Demo 包含上一帧、截图当前帧、下一帧、取消；按钮视觉 `42×34px`，截图按钮宽 `52px`。
+
+当前实现的几何与动效（唯一来源是 [ScreenshotControls.kt](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/feature/player/ScreenshotControls.kt)，数字关系由 `PlayerChromeLayoutMathTest` 钉住）：
+
+| 项 | 当前实现 |
+|---|---|
+| 胶囊高度 | `64dp`：`PlayerScreenshotCapsuleHeight = PlayerChromeButtonSize(48dp) + PlayerPortraitControlsSpacing(16dp)`。口径修正：本节原写「高度至少 48dp」，与代码不符 |
+| 四个按钮（含捕获） | 统一 `PlayerScreenshotCapsuleButtonSize`，它**等值于** `PlayerChromeButtonSize`(48dp)——与工具托盘**同一个常量**，单测直接断言两者相等，任何「顺手换个尺寸」都会红 |
+| 按钮间距 | `12dp`（`PlayerScreenshotCapsuleButtonSpacing`）：比托盘行同组按钮的 `PlayerShortcutSpacing`(8dp) 更大，托盘按钮的空隙外侧还有整行空白可以借，而胶囊是一整块容器，同样的间距在里面明显更挤 |
+| 内边距 | `(64 − 48) / 2 = 8dp`（`ScreenshotCapsuleInnerPadding`），水平方向取**同一个值**，四周呼吸圈才一致（写死 4dp 会让左右比上下窄一半） |
+| 出入场 | `360ms`（`SCREENSHOT_CAPSULE_TRANSITION_MILLIS`）：从右向左滑入 + 淡入，退出反向 |
+| 触控 | 每枚按钮 48dp，满足 §3.2 的最小触控区 |
+
+- 为什么是 360ms 而不是底栏三段的 240ms：胶囊是「工具入口」，进出比播放控制更需要从容——与三段淡入同拍时胶囊的横向滑行会显得仓促、和底栏的收起挤在一起；而且胶囊比底栏按钮大一圈，同样的位移速度下大控件看起来更快，放慢后速度感才与底栏一致。辅助带的「退出留位窗口」必须跟着它走（见 §5.14 的 `capsuleBandHeld`），否则带子会在胶囊还没滑完时提前塌掉。**不要为了「跟底栏同拍」把它改回 240ms。**
+- 从右侧滑入：截图入口位于工具托盘最右端（托盘按 `TOOLS` 槽位反序渲染，`SCREENSHOT` 显示在最右），按整行宽度从右滑入，视觉上就是「从这个按钮的位置滑出来」；改成从底部滑入，起点与刚才点的按钮毫无关系。
+- 材质与底栏按钮**同源**：同一份 `PlayerChromeControlFillAlpha` / `PlayerChromeControlBorderWidth` / `PlayerChromeControlBorderAlpha` / `PlayerChromeCapsuleShape`，帧数胶囊与它共用同一个 `ScreenshotCapsuleSurface`——胶囊与按钮同屏出现，各写一套 alpha 必然出现色差。
+- `PlayerScreenshotCapsuleHeight` 与底栏的 `PlayerAuxiliaryBandHeight` 都是**计算属性**（`get()`）而不是顶层 `val`：两者跨文件互相引用（胶囊高度要读底栏文件里的段距，底栏文件又要读胶囊高度），顶层 `val` 会构成初始化环，实测会算出 `16dp` 这种「说不出理由」的带子高度。**不要再改回顶层 `val`。**
 
 #### 交互
 
-1. 打开截图时关闭其他面板；Ready/Paused/Playing 都允许。
-2. 上一帧/下一帧先暂停，按 `1/frameRate` Seek；无元数据时禁用。
-3. 点击截图调用 `ScreenshotGateway.capture`；禁止因“未播放”拒绝。失败按空帧、权限、存储、只读、未知分类。
-4. 成功预览从画面缩小飞向左上角，约 `420ms`；卡片约 `116dp`，比例 `16:10`。
-5. 显示 3 秒，底部 `4dp` 倒计时条从满到空；点击图片暂停倒计时，删除按钮以 `200ms` 缩放、旋转和淡入出现。
-6. 超时只移除预览。若删除按钮只删除预览，文案应为“关闭预览”；若要删除 MediaStore 文件，必须新增返回 URI/token 的网关契约和可撤销删除用例。
-7. 入口在竖屏「更多」托盘（`PlayerControlSurface.TOOLS`）与设置面板的「工具」分组；底栏不再保留截图按钮，截图图标为 `Aperture`（见 §3.4）。口径修正原因：截图与 A-B 循环都是低频工具，底栏那两格让给高频控件，统一收进托盘（见 §5.14）。
+1. 打开截图时关闭其他面板（设置面板与 AB 工具）；Ready/Paused/Playing 都允许——`armScreenshot()` 在这三种播放状态下才生效，其余状态（Idle/Preparing/Ended/Failed）直接返回、不进入截图模式。
+2. **进入截图模式默认暂停播放**：与逐帧步进共用**同一条**暂停路径（`PlayerViewModel.pauseForFrameStepping` → `PlaybackSessionCommand.Pause`），不另写一份。理由：播放中位置每 `250ms` 才回报一次，而一帧只有 `33ms`（30fps）——画面一直在动时「当前帧」没有稳定含义，捕获出来的也未必是用户看到的那一帧。恢复由用户按播放键完成。
+3. **中央三连（上一个 / 播放暂停 / 下一个）在截图模式激活期间隐藏**：判据是 `ScreenshotUiState.hidesCenterTransportControls()`（`Armed`/`Capturing` 为真；`Preview` 不算激活——那时胶囊已收掉、用户看的是左上角那张小卡）。淡出/淡入时长 `240ms`，与底栏三段同拍（`TRANSPORT_SECTION_TRANSITION_MILLIS`），硬切会让它在画面正中「啪」地消失。这里只加「截图模式下不出现」这一条：横竖屏、锁定、控件自动隐藏等既有条件仍由调用方（`overlay.controlsVisible`、`overlay.locked`）判断。
+4. 上一帧/下一帧先暂停，再按**一帧**走到目标：`frameDurationMillisOf(fps) = round(1000 / fps)`（下限 `1ms`，避免高帧率素材四舍五入成 0 而原地不动），夹在 `[0, duration]` 内（第 1 帧再往前仍是 0、最后一帧再往后仍是总时长，不越界不抛错）。帧率优先用**实测帧率**（后台校准派生，见下），拿不到时退回 `34ms` 兜底步长。
+5. 连续步进有**锚点**：上一次步进的落点被记住，下一次从它起算（仅当锚点与回报位置相差不超过一帧时才算数；差距更大说明用户拖过进度条或换了媒体，锚点失效、回到真实位置），解决「连点两下只走一帧」。
+6. 点击截图调用 `ScreenshotGateway.capture`；禁止因“未播放”拒绝。失败按空帧、权限、存储、只读、未知分类。
+7. 捕获中捕获按钮切**等待态**（直接落在 `enabled = false` 上，与项目其余禁用按钮共用同一视觉语言），胶囊保持在场：`Armed` 与 `Capturing` 都算「工具打开」，否则按下的瞬间胶囊会在手指底下消失。
+8. 成功后的预览卡从**视频画面区域的右下角**以 `scale(2.4) → 1` 飞入左上角，`420ms`；卡片宽 `116dp`、比例 `16:10`、`1.5dp` 白描边、`7dp` 圆角（详见下面的「飞入起点与轨迹」）。
+9. 卡片显示 `3s`，下沿 `4dp` 读条**匀速**缩短：计时器每 `50ms`（`SCREENSHOT_PREVIEW_TICK_MILLIS`）把时间喂给会话，UI 只画 `remainingMillis / 3000` 的比例。
+10. 点击卡片展开大图预览（`0.82` 屏宽的图 + 压暗遮罩；退出路径是**点遮罩**与**系统返回键**两条，点图本身不做任何事，返回键先关大图而不是退出播放页），右上角删除按钮以 `200ms` 弹入（`scale(.55) rotate(-18deg) → 1`，直径 `27dp`、错误色）。注意：代码注释里提到的第三种「关闭按钮」在实现中并不存在，只有删除按钮。
+11. **删除是真的删文件**：走既有的 `ScreenshotFileGateway.delete`，与「关闭预览」明确区分；成功提示「截图已删除」，删除过的会话此后**不再提示保存路径**；失败按权限/失败分类提示，不撒谎、也不把卡片弹回来。
+12. 读条归零 → 卡片消失 + 提示保存路径（`已保存到 %1$s`）；位置为空则不提示（宁可不提示，也不弹半截文案）。展开期间读条定格，收起后按**剩余**时间继续，不重新给 3 秒。
+13. 入口在竖屏「更多」托盘（`PlayerControlSurface.TOOLS`）与设置面板的「工具」分组；底栏不再保留截图按钮，截图图标为 `Aperture`（见 §3.4）。口径修正原因：截图与 A-B 循环都是低频工具，底栏那两格让给高频控件，统一收进托盘（见 §5.14）。
 
 ```text
 ScreenshotState
-├── Closed
+├── Idle
 ├── Armed
 ├── Capturing
-├── Preview(displayName, expiresAt, paused)
-└── Failed(kind)
+├── Preview(displayName, uri, location, remainingMillis, expanded)
+└── Failed(reason)
 ```
+
+#### 飞入起点与轨迹
+
+- **起点 = 视频画面实际渲染区域（不含黑边）的右下角**，由纯几何 `VideoRotationStageMath.pictureBounds` 按 media3 `resizeMode` 口径算出：容器内的 contain（`FIT`）/ cover（`FILL`）/ 固定宽度（`ORIGINAL`）、90°/270° 时舞台宽高互换、`fillScreen` 的 cover 放大、以及画面自身的旋转，最后按画布夹一次。**不是屏幕右下角**——画面有黑边时两者相差很远（1080×2400 画布上的 16:9 画面，右下角在 `y≈1504`，而屏幕右下角是 `y=2400`）。画面宽高比未知时退化为容器右下角：没有依据时不猜比例，也不把起点画到黑边里。
+- 起点在**不带 `graphicsLayer` 变换的最外层 Box** 上测量；几何取当前的目标态（旋转角度 / 填满 / 缩放模式），画面旋转动画正好在跑时按终态算（差一帧不影响「从画面角落里飞出来」）。
+- **终点 = 卡片静止位置的中心**：屏幕左上角，由 `windowInsetsPadding(safeDrawing)` + 左侧 `PlayerPortraitBarHorizontalPadding`(12dp) + 顶部（**帧号胶囊下方**）`PlayerTopBarContentHeight`(64dp) + 状态栏 inset + `PlayerFrameCounterTopGap`(12dp) + `PlayerScreenshotPreviewTopGap`(12dp) 决定。**不许改成手写 padding 绕过 inset**（那样会压到状态栏/刘海或顶栏按钮上）。
+- 轨迹**必须单调**：位置只有唯一一次线性插值（`t` 由同一个 `0→1` 进度量给出），缩放与位移共用这同一个进度量，`transformOrigin` 锚在左上角；起点与卡片几何**都量到才启动动画**，而不是先跑起来再纠正。`ScreenshotPreviewAnimationTest` 从三个互补角度钉住单调性：到终点的距离单调不增、每步位移方向恒定、两个端点精确落位，另加越界进度夹紧与「几何未量到不给轨迹」。
+- 这条起点口径是一次实测缺陷（卡片「先向下移动、然后又回到左上角」）的根源修正：此前起点取捕获按钮中心、卡片量的是自身已带变换的 `positionInRoot`、且 `graphicsLayer` 默认变换原点在中心又把平移量再放大 2.4 倍。相关结论见 commit `5632ac8`。
+
+#### 帧数胶囊与后台校准
+
+- **位置：顶部居中，但在顶栏下方**（`windowInsetsPadding(safeDrawing)` + `PlayerTopBarContentHeight`(64dp) + 状态栏 inset + `PlayerFrameCounterTopGap`(12dp)）。口径修正：本节此前写「截图模式下标题段让位、不叠浮层」，那是胶囊还在顶栏槽位里的旧做法；真机截图证实帧号文本一长（`488912 / 802008` 这种）按整屏居中时右端会被顶栏右侧快捷按钮压住。下沉到顶栏下方后，它与顶栏所有按钮在**视觉与点击区域**上彻底分开，**标题段不再需要让位**。宽度上限取整屏的 `PlayerFrameCounterMaxWidthFraction`(0.8)，只作极窄屏/最大字体的兜底，届时按可用宽度反推等宽字号（下限 `10sp`），数字不换行、不省略。
+- 文本：`当前帧 / 总帧数`；帧号**从 1 开始**（时间 0 显示「1 / total」，位置等于总时长时显示「total / total」）。需要标估算时给整段数字加前缀 `≈`（字符串资源 `player_frame_counter_approximate`）。
+- **估算 → 后台校准**：进入截图模式时先显示估算值（总帧数 = `round(时长 × 帧率)`，至少 1；当前帧 = `round(位置 × 帧率) + 1`，两者都夹在 `[1, total]`）；校准完成后整体切换为**真实样本数**。校准用 `MediaExtractor` **只读容器**统计视频轨 sample 数：不 `readSampleData`、不解码、不把样本拷进 `ByteBuffer`，内存 O(1)。实测帧率由样本时间轴派生：`(N − 1) × 1e6 / (末样本时间 − 首样本时间)`，并**优先于**容器 `Format.frameRate` 用于帧号与逐帧步进——两者若各取一个值，帧号与步长会互相漂移。
+- `≈` 的出现条件只有一条：**正在校准 且 模型估算耗时 ≥ `FRAME_CALIBRATION_NOTICE_THRESHOLD_MILLIS`（600ms）**（`frameCounterPending = calibrationResult is Calibrating && frameCalibrationNoticeRequired(...)`）。阈值取 600ms 的理由：胶囊入场动画本身有 `360ms`，**比动画还快的扫描用户根本看不见**（实测 66 MiB / 1 249 样本 104ms、3.6 MiB / 191 样本 21ms），加提示只会闪一下；而 1.83 GiB 以上实测 2.6–3.1s，用户确实在等。校准失败/跳过保持估算值，但**不留**永久 `≈`（「没有精确值」与「正在校准」不是一回事）。
+- `≈` 与两个数字取自**同一份**校准状态：`PlayerViewModel` 在一次合并结果里同时算出 `frameCounter` 与 `frameCounterPending`，不存在两套判定。
+- **容器帧率缺失/为 0（或负、NaN）时整个胶囊不显示**（`frameCounterStateOf` 返回 `null`）：宁可不出这个胶囊，也不显示编造出来的帧号；这也与 `frameRateLabel` 把 `<= 0` 一律视为不可用的口径一致。唯一例外是校准值在场——此时总帧数是事实，缺容器帧率也能算出帧号。
+- 后台校准**只对本地源**执行：网络源标为 `Skipped`（为了帧号去下载整段视频不可接受），这不是失败，界面继续显示估算值；结果随会话复位，退出截图模式、换媒体、页面销毁都会取消（可中断取消的机制与设备级验证见 `19`）。
+
+**判据：估算值与校准值什么时候会不同（不要再当 bug 排查）**
+
+- CFR 素材上 `真实样本数 == round(容器时长 × 容器帧率)`，所以两个口径**逐位相同**，界面上唯一可见的变化就是 `≈` 消失。真机复核：40s / 3000fps / 120 000 样本 `≈ 14506 / 120000` → `14506 / 120000`；3600s / 29.97fps / 107 893 样本 `≈ 134 / 107893` → `134 / 107893`。
+- **真正会不同的是**：① 容器帧率缺失 / 为 0 / 写错；② 容器时长与视频轨时间跨度不一致。判别性素材（视频轨 40s / 120 000 样本 + 400s 音轨、容器时长 400s）：估算 `≈ 13918 / 1200000` → 校准后 `13918 / 120000`，总数按真实样本数整体替换。
+- Media3 对 MP4 报的是**真实**帧率（3600s 的容器报 `29.97`，没有被舍成 `30`），所以**分数帧率本身不会造成两个口径的差异**。这条曾被误判为「分数帧率导致估算偏差」，按代码与实测结论写入。
+
+**校准耗时模型（用途只是「要不要标 ≈」的启发式，不是进度条）**
+
+- 每样本成本**不是常数**，随样本数按约 `样本数^0.75` 上升（实测 5 千 19µs → 2 万 38µs → 5 万 77µs → 12 万 164µs → 20 万 271µs）。
+- 模型 = `max(15ms + 样本数 × 18µs × (样本数/5000)^0.75 + 容器 MiB × 1.0, 15ms + 样本数 × 18µs + 容器 MiB × 1.0)`（`estimatedFrameCalibrationMillis`，且幂律项在估算值超过 `1000ms` 之后**单独**承担：1 秒以内的短扫描上旧线性项实测更准，而短扫描够不到 600ms 阈值，所以这个分界不影响「要不要标 ≈」）。
+- 时长/帧率缺失时退化成「只用字节数」那一项；两者都拿不到就返回 `null`（拿不到就不打扰用户）。
+- 系数标定只在**一台设备**（Xiaomi 25102RKBEC / Android 16 / API 36）上做过，**换 ROM / 换芯片平台必须重测**；已知不覆盖「样本载荷把数据本身撑大」的形态（8 KiB/样本 → 实测 287ms、模型 144ms）。完整实测表、冷热/IO 竞争方差与错误分布见 [`19-player-implementation-progress.md`](19-player-implementation-progress.md) 的「帧号后台校准」「校准耗时模型：上界重标定」两节，此处不重复。
+
+#### 逐帧步进的帧精确 Seek（UI 侧口径）
+
+- 跳转精度的判定规则、引擎所有权与控制通道见 [`17-playback-architecture-refactor-spec.md`](17-playback-architecture-refactor-spec.md) §9.4（域层唯一判定点 `seekPrecisionFor(duration, frameAccurate)`）。本节只写 UI 侧必须遵守的两条：
+  - 进入截图工具时把共享策略置为 `FRAME_ACCURATE`（截图工具激活期间**一律精确跳转**），退出时恢复 `defaultSeekPrecision(当前时长)`（`≤120s` 精确 / 更长最近关键帧）；切换只改跳转参数，**不重新 prepare、不重设媒体**，播放不被打断。
+  - 逐帧步进先暂停再精确 Seek：`±1000/fps`（实测帧率优先）、夹 `[0, duration]`、带连点锚点，见上面的「交互」第 4、5 条。
 
 ### 5.11 AB 循环
 
@@ -387,7 +446,14 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 竖屏底栏的「更多」托盘：
 
 - `PlayerControlId.MORE`（图标复用 `YingLiIcon.OVERFLOW` = Tabler `DotsVertical`）**默认只放竖屏底栏、位于最右**（`PORTRAIT_BOTTOM` 默认列表的最后一项）；横屏默认不安排该控件，顶栏常驻溢出菜单维持原样。
-- 点击在按钮行上方展开工具托盘（`AnimatedVisibility` + `fadeIn`/`expandVertically` 进场、`fadeOut`/`shrinkVertically` 退场）。底栏是底部对齐的悬浮控制条，因此展开时**按钮行位置不变、进度行上移一个按钮行高度**，画面区域尺寸不变（不挤压画面）。
+- 点击在按钮行上方展开工具托盘。**当前实现是「固定槽位 + 内容单独淡入淡出」，不是 `expandVertically`/`shrinkVertically`**（口径修正：本节原写 `AnimatedVisibility + fadeIn/expandVertically` 进场、`fadeOut`/`shrinkVertically` 退场）。底栏是底部对齐的悬浮控制条，因此展开时**按钮行位置不变、进度行上移一个辅助带高度**，画面区域尺寸不变（不挤压画面）。
+- 辅助带高度有**两条互不影响的路径**，缺一条就会退化成下面两个已修过的缺陷之一：
+  1. **普通模式开关托盘 → 高度走动画**：`animateDpAsState(0 ↔ PlayerAuxiliaryBandHeight, 240ms)`（`TRANSPORT_SECTION_TRANSITION_MILLIS`，与三段淡入淡出同拍），进度行随高度**平滑上移/回位**；
+  2. **截图会话期间 → 瞬时满高、不参与动画**：`playerAuxiliaryBandHeight(trayAnimatedHeight, screenshotHold)` 在 `screenshotHold`（截图会话，或胶囊滑出期间的留位窗口 `capsuleBandHeld`）为真时**直接返回满高**，胶囊的竖直带一帧都不动。
+  - 为什么必须分成两条路径（两条各出过一次问题）：只有路径 1 时，胶囊出现的那一帧带子还在做 `0→满高` 动画，胶囊会跟着带子从下往上滑——这就是「胶囊竖直跳变」，commit `01ebdfa` 修的就是它；只有路径 2 时，托盘开关变成瞬时切换，用户实测看到「进度条突然上移、突然回到原位」，commit `5632ac8` 把它改回高度动画。两条路径相加才等于带子的最终高度。
+- 底栏三段（进度行 / 辅助带（工具托盘行与截图胶囊）/ 按钮行）一律**固定槽位 + 内容单独淡入淡出**，槽位高度不参与任何动画：进度行槽位恒为 `PlayerChromeButtonSize`（有 AB 标记时再加一个段距）、按钮行槽位恒为 `PlayerChromeButtonSize`、辅助带槽位只在「该满高」时为满高。若让槽位高度跟着 `AnimatedVisibility` 的进出场收缩，底对齐的 Column 会在动画中途整体重新定位——这正是 commit `01ebdfa` 的根因（`48dp`/`240ms` 的位移量与时刻与用户描述完全吻合）。胶囊竖直带的唯一依据因此是「按钮行槽位高度 + 底栏内边距」。
+- 辅助带满高 `80dp`：`PlayerAuxiliaryBandHeight = PlayerScreenshotCapsuleHeight(64dp) + PlayerPortraitControlsSpacing(16dp)`。这一格要同时住得下 64dp 的截图胶囊与 48dp 的托盘按钮，且两者与下方按钮行之间都要留 16dp。托盘行比胶囊矮一档，用 `PlayerToolRowTopInset = 胶囊高度 − PlayerChromeButtonSize = 16dp` 补齐顶部，**托盘按钮的绝对位置与旧实现完全一致**（仍然离按钮行 16dp），多出来的 16dp 落在带子上方。
+- 托盘行按**满高**测量（`requiredHeight(PlayerAuxiliaryBandHeight)`，而不是 `height`）再参与裁剪：辅助带的 `Box` 必须带 `clipToBounds`，托盘行才会表现为「**随带子被推开露出**」，动画中途也不会把按钮画到下方按钮行上；带子塌回 0 时也不会有残留内容。**不要退回「原地淡入」**——那等于把「随高度展开」这条视觉线索丢掉。外层 `contentAlignment` 显式取 `TopStart`，托盘行在动画中途比带子高时才不会在格子里上下浮动。
 - 托盘按钮与底栏**同源**：复用同一个 `PlayerShortcut`；`Arrangement.spacedBy(PlayerShortcutSpacing, Alignment.End)` + 列表 `reversed()`，自右向左排列，间距与底栏一致。
 - 托盘内容是可配置槽位 `PlayerControlSurface.TOOLS`（容量 8），默认 `[SCREENSHOT, AB_LOOP, MIRROR_HORIZONTAL, MIRROR_VERTICAL, INFO, BACKGROUND_PLAYBACK]`；设置页槽位编辑器里的「工具托盘（更多）」分组可拖拽重排（见 §6）。
 - 展开状态是纯 UI 状态（`remember { mutableStateOf(false) }`），不进 ViewModel；控件自动隐藏会把整条底栏移出组合，托盘随之回到收起状态。
@@ -532,6 +598,7 @@ Compose 使用 `LazyVerticalGrid/LazyRow` 与稳定 reorder 方案，同时提�
 
 - 文件名、MIME、时长来自媒体库；URI/路径按安全上下文脱敏。
 - 分辨率、编码、帧率、码率和轨道来自 Media3 `Tracks/Format`，缺失显示“未知”，不伪造。
+- **帧率的显示口径统一走纯函数 `frameRateLabel`**（[FrameRateText.kt](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/feature/player/FrameRateText.kt)，有单测 `FrameRateTextTest`）：`|值 − 最近整数| < 0.01` 时只显示整数、否则保留两位小数（`29.999 → "30 fps"`，**不得显示 29**；`23.976 → "23.98 fps"`、`59.94 → "59.94 fps"`，**不吸成 60**）；缺失 / `0` / 负数 / `NaN` / 无穷 → 返回 `null`，界面显示“未知”或整段不出现。**禁止任何调用点自己 `toInt()` 截断**——Media3 对精确 30fps 的容器在真机上报的是 `29.999x`。三处调用点共用这一份口径：顶栏副标题（§4.1/§4.2）、本节的播放器信息弹窗、Shorts 信息框。
 - Dialog 宽度为窗口减 `28dp`，最大高度减安全区 `48dp`，内部 `LazyColumn`。
 - 行高至少 `48dp`，左列 `76–90dp`，右列允许换行。
 - Shorts 可复用 Dialog，但数据来自当前 Shorts item。
@@ -689,12 +756,18 @@ sealed interface PlayerEvent {
 | 控件显示/隐藏 | 180–220ms | `AnimatedVisibility` + alpha/translation |
 | Drawer/Sheet | 240ms | `slideInHorizontally` / `slideInVertically` |
 | Dialog | 180ms | alpha + scale `0.98 -> 1` |
-| 截图飞入 | 420ms | `Animatable`，从当前画面到左上角 |
-| 截图倒计时 | 3000ms | `LaunchedEffect` + LinearProgressIndicator |
-| 删除按钮 | 200ms | scale `.55 -> 1` + alpha + 轻微旋转 |
+| 底栏三段（进度行 / 辅助带 / 按钮行）进出场 | 240ms | `TRANSPORT_SECTION_TRANSITION_MILLIS`：**固定槽位 + 内容单独淡入淡出**，槽位高度不参与动画（见 §5.14） |
+| 辅助带高度（托盘开关） | 240ms | `animateDpAsState(0 ↔ 80dp)`，进度行随之平滑上移/回位（见 §5.14） |
+| 辅助带高度（截图会话） | 瞬时（0ms） | `playerAuxiliaryBandHeight(..., screenshotHold = true)` 直接取满高：胶囊的竖直带不参与动画（见 §5.14） |
+| 截图胶囊出入场 | 360ms | `slideIn/OutHorizontally` + `fadeIn/Out`，比底栏三段慢一档（见 §5.10） |
+| 中央三连（上一个/播放/下一个）进出场 | 240ms | 与底栏三段同拍；截图模式激活期间不出现（见 §5.10） |
+| 帧数胶囊进出场 | 240ms | 与底栏三段同拍；`frameCounter` 为 null 时整个胶囊不出现（见 §5.10） |
+| 截图飞入 | 420ms | `animateFloatAsState` 单一 `0 → 1` 进度量同时驱动 `scale(2.4) → 1` 与位移；起点 = 视频画面区域（不含黑边）的右下角，终点 = 屏幕左上角（见 §5.10） |
+| 截图倒计时 | 3000ms | 恒转计时器每 `50ms` 喂一次会话 + `LinearProgressIndicator`，读条匀速 |
+| 删除按钮 | 200ms | scale `.55 -> 1` + alpha + `-18°` 旋转 |
 | Shorts 切换 | 320ms | 双层视频 translation |
 | 快退/快进反馈 | 1000ms 内 | alpha + 数值变化 |
-| 「更多」托盘展开/收起 | 框架默认（未显式指定） | fade + expandVertically 进场、fade + shrinkVertically 退场（见 §5.14） |
+| 「更多」托盘展开/收起 | 240ms | 辅助带高度动画（进度行上移/回位）+ 内容单独淡入淡出；**不是 `expandVertically`/`shrinkVertically`**（见 §5.14） |
 | 镜像翻面 | 240ms | `animateFloatAsState(1 ↔ -1)`，经过 0 自然"压扁再展开"（见 §5.16） |
 
 尊重系统 `AnimatorDurationScale=0`；状态和点击顺序不能依赖动画回调。
@@ -732,6 +805,7 @@ YLShorts 的优先级只在 Shorts Feature 内计算，不能反向提升常规�
 - `ScreenshotReducer`：Armed/Capturing/Saved/Failed、3 秒超时、点击暂停倒计时、删除。
 - `TrackPreference`：每媒体覆盖全局、坏值回退、速度和比例边界。
 - `PlayerViewModel`：命令拒绝不改变 UI、暂停截图可调用、队列切换和进度写入。
+- 截图工具 / 帧号 / 跳转精度的纯逻辑：`PlayerChromeLayoutMathTest`（辅助带两条路径、胶囊尺寸与动效常量、顶栏高度与帧数字号数学）、`ScreenshotPreviewAnimationTest`（飞入轨迹单调）、`FrameRateTextTest`（帧率显示口径）、`SeekPrecisionTest`（截图激活一律精确 / 退出按时长）、`FrameCalibrationTest`（耗时模型、`≈` 阈值与判据）、`PlayerViewModelTest`（精度切换与恢复、步进锚点、帧号估算/校准切换）。
 
 ### 14.3 Compose 仪器测试
 
@@ -800,7 +874,7 @@ git diff --check -- "docs/16-player-ui-ux-interaction-implementation-spec.md"
 
 1. 横屏、竖屏使用同一播放会话完成播放、暂停、Seek、切换和错误恢复。
 2. Demo 中承诺保留的按钮都有真实命令、状态反馈、禁用和错误路径。
-3. 截图在暂停和播放状态均工作，预览飞入左上角、3 秒倒计时、点击暂停、删除动画完整。
+3. 截图在暂停和播放状态均工作，预览从**视频画面区域的右下角**飞入左上角、轨迹单调、3 秒倒计时、点击卡片放大与删除真删文件都完整（见 §5.10）。
 4. AB 的 A/B 标记可拖动，进度和播放范围真实受限。
 5. 播放顺序四态、速度、比例、轨道、控件布局具备统一状态源和持久化策略。
 6. YLShorts 是独立一级页面，不污染常规 PlayerRoute。
@@ -893,7 +967,7 @@ Demo 的 `captureScreenshot()` 并未读取真实视频帧，而是直接显示�
 
 Demo 视觉事实：
 
-- 截图胶囊包含上一帧、截图当前帧、下一帧、取消四个按钮；截图按钮约 `52dp` 宽，其他按钮约 `42dp`，胶囊高度不低于 `48dp`。
+- 截图胶囊包含上一帧、截图当前帧、下一帧、取消四个按钮；截图按钮约 `52dp` 宽，其他按钮约 `42dp`，胶囊高度不低于 `48dp`（这是 Demo 的视觉事实；正式实现已定为胶囊 `64dp`、四枚按钮统一 `48dp`，见 §5.10）。
 - 预览位于播放区域左上角，视觉宽约 `116dp`、比例约 `16:10`、`2dp` 白边、`7dp` 圆角和阴影。
 - 预览约 `420ms` 从当前位置以约 `scale(2.4)` 飞入左上角，显示 `3s`；底部约 `4dp` 进度条从满到空。
 - 点击预览暂停倒计时并以约 `200ms` 缩放、旋转和淡入显示删除按钮。
@@ -924,7 +998,7 @@ Demo 播放列表使用 `72px` 宽、`16:9` 缩略图、约 `5px` 圆角；行�
 
 正式实现映射为：`ThumbnailLoader` 优先提供首帧，列表项最小高度不低于 `64dp`，当前项同时提供 selected 和“正在播放”语义；点击后更新 MediaItem、关闭 Drawer 并按当前自动播放策略执行。
 
-视频信息 Dialog 必须在媒体元数据改变后刷新；Demo 展示的文件名、位置、封装、大小、分辨率、方向、时长、编码、帧率、平均码率、音轨都不能使用固定字符串。缺失字段显示“未知”，路径按安全上下文脱敏。
+视频信息 Dialog 必须在媒体元数据改变后刷新；Demo 展示的文件名、位置、封装、大小、分辨率、方向、时长、编码、帧率、平均码率、音轨都不能使用固定字符串。缺失字段显示“未知”，路径按安全上下文脱敏；帧率的具体显示口径见 §7.2 的 `frameRateLabel`。
 
 ## 19. YLShorts Demo 对照补充
 
@@ -1005,7 +1079,7 @@ Shorts 更多面板使用独立 scrim 和 Bottom Sheet：上圆角约 `26dp`，�
 2. 常规播放器空白区域点击只切换控制层，YLShorts 视频点击播放/暂停；滑动结束不误触发 click。
 3. 自动播放拒绝、主动播放失败、队列切换和切换媒体清理 AB 的命令结果均可观察、可测试。
 4. AB 标记支持拖动、左右一帧键盘操作、边界钳制和 TalkBack 范围语义。
-5. 截图在 Ready/Paused/Playing 均可调用；预览飞入、3 秒倒计时、点击暂停和删除/关闭语义一致；真实 MediaStore URI 可验证。
+5. 截图在 Ready/Paused/Playing 均可调用；预览飞入（起点为画面右下角）、3 秒倒计时、点击放大/收起、**删除真删文件**与**关闭预览不删文件**两种语义必须明确区分且一致，真实 MediaStore URI 可验证；帧数胶囊在容器帧率缺失时不出、`≈` 只在估算耗时 ≥600ms 时出现。
 6. Shorts 手势覆盖轴向锁定、阈值回弹、邻项预加载失败、切换防重入、长按倍速与滑动冲突。
 7. Shorts 自动下一条、循环当前、收藏、黑名单、删除确认和管理列表的状态同步覆盖空列表、当前项和文件缺失边界。
 8. 常规比例与 Shorts 比例互不污染；旋转、PiP、全屏回调后按钮状态以系统事实为准。

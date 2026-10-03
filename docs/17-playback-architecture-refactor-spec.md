@@ -727,6 +727,9 @@ Media3 的 `STATE_BUFFERING`：
 跳转精度与加载指示（当前实现，REX 同构）：
 
 - `SeekParameters` 按源时长选择：`duration ∈ 1..120_000ms` 用 `EXACT`（短视频需要精确落点），更长的用 `CLOSEST_SYNC`（关键帧跳转）。Media3 默认是 `EXACT`，精确跳转要从目标前的关键帧解码到目标位置，大文件上会明显冻结；拖动进度条要"画面跟手"就必须用关键帧跳转。
+- **判定规则只有一处**：域层纯函数 `seekPrecisionFor(durationMillis, frameAccurate)`（`domain/playback/SeekPrecision.kt`，JVM 单测 `SeekPrecisionTest` 覆盖）。`frameAccurate = true`（截图工具激活期间）**一律 `FRAME_ACCURATE`**——逐帧检查时落点错一帧就白点了；否则退回上面的按 `duration` 选择（`defaultSeekPrecision`）。时长未知（null / 0 / 负数）按"长视频"处理，落在 `CLOSEST_SYNC`，因为拿不到长度的源做精确跳转只会卡住画面。UI 侧进入/退出截图工具时只改这份策略（`SeekPrecisionControl.setPrecision`），**不重新 prepare、不重设媒体**。
+- **真正执行 `setSeekParameters` 的是 service 侧的引擎**（`app/playback/ServicePlaybackEngine.applySeekPrecision`）：UI 侧的 `MediaController` 没有这个方法（javap 确认）。控制通道是 `MediaContainer` 里共享的 `SeekPrecisionControl`（同进程内的一个 `MutableStateFlow`），**service 与宿主同进程是这条设计成立的前提**——`AndroidManifest.xml` 里所有 service（含 `YingLiPlaybackService`）都没有 `android:process`，所以"只改策略、不打断播放"不必重新接管 MediaSession 的 `onConnect`（那会连带影响所有播放命令）。
+- 引擎侧还有两条必须保留的实现约束：`combine(精度, 引擎状态)` 只在**已经有过媒体**之后下发（`setMediaItem` 会重置 seek 参数，IDLE/PREPARING 阶段下发等于没设，截图模式下第一次步进就会退回关键帧跳转）；重复下发同一有效精度要跳过（`setSeekParameters` 会让播放器内部重算，而引擎状态每次跳动都会驱动到这里）。
 - **seek 不显示加载指示**：只有首次准备才显示全屏加载圈，即 `Preparing` 且 `isRebuffering = false`；进度条跳转、快进快退造成的重缓冲由 `Preparing.isRebuffering = true` 区分（`hasEverBeenReady` 决定该标志），否则每次 seek 都会闪一个全屏加载圈。
 
 ### 9.5 轨道和偏好
@@ -900,8 +903,8 @@ interface ScreenshotPreviewController {
 | 画面比例 | `SetScale` | Media3 映射 resize mode；不支持 ORIGINAL 时返回降级结果；底栏按钮一次点按循环三态并走统一瞬时反馈 |
 | 音轨 | `SelectTrack(Audio)` | 显示真实轨道；按 fingerprint 恢复；单轨不伪造可选列表 |
 | 字幕 | `SelectTrack(Subtitle)` | 包含关闭项；ASS 能力由后端报告；切换失败反馈稳定错误 |
-| 截图胶囊 | `FrameStepControl` + `SnapshotControl` | Ready/Paused/Playing 都可；不以“未播放”作为失败条件 |
-| 截图预览 | `ScreenshotPreviewState` | 420ms 缩小到左上角、3 秒倒计时、点击暂停、删除按钮动画；预览和文件删除分开授权 |
+| 截图胶囊 | `FrameStepControl` + `SnapshotControl` | Ready/Paused/Playing 都可；不以“未播放”作为失败条件。激活期间跳转精度一律 `FRAME_ACCURATE`（见 §9.4），逐帧步进为 `±1000/实测帧率` 并夹在 `[0, duration]`（几何与锚点见 `16` §5.10） |
+| 截图预览 | `ScreenshotPreviewState`（当前实现：`ScreenshotUiState.Preview` + `ScreenshotPreviewSession`） | 420ms 飞入（起点 = 视频画面区域右下角、终点 = 屏幕左上角，见 `16` §5.10）、3 秒倒计时、点击暂停、删除按钮 200ms 弹入；删除走 `ScreenshotFileGateway` **真删文件**，删除过的会话不再提示保存路径 |
 | AB 循环 | `SetAbPoint/ClearAb` | A/B marker 是时间线投影；B 到达由 Runtime 回跳 A；拖动重新定义范围 |
 | PiP | `WindowPlaybackGateway.enterPictureInPicture` | 系统确认后更新状态；Vault/无能力时禁用；MediaSession 不停止 |
 | 画面旋转 | 视图层 `VideoRotation` + 按媒体偏好 | 四态 0/90/180/270，视图层 `graphicsLayer` 变换并带过渡动画；不进播放管线，不请求系统方向 |
@@ -947,25 +950,31 @@ YLShorts：
 
 ### 13.1 截图状态机
 
+当前实现（`domain/playback/PlaybackSystemContracts.kt` 的 `ScreenshotUiState`，由 `ScreenshotUiReducer` 归约；UI 细节见 `16` §5.10）：
+
 ```text
-Closed
+Idle
   -> Armed
   -> Capturing
-  -> Preview(artifact, expiresAt, paused=false)
-  -> Preview(paused=true, deleteVisible=true)
-  -> Closed / Deleted
-Capturing -> Failed(kind) -> Armed or Closed
+  -> Preview(displayName, uri, location, remainingMillis, expanded=false)
+  -> Preview(expanded=true, deleteVisible=true)
+  -> Idle（读条归零 / 关闭 / 删除 / 换媒体）
+Capturing -> Failed(reason) -> Idle（Close / MediaChanged），也可再次 Arm 回到 Armed
 ```
+
+（没有单独的 `Deleted` 状态：删除先由 `ScreenshotPreviewSession.markDeleted()` 标记会话、再走 `Close` 回到 `Idle`，标记只用来抑制"已保存到…"这条提示。）
 
 实现要求：
 
-- `Armed` 胶囊包含上一帧、截图当前帧、下一帧、取消，触控区至少 48dp。
-- 上一帧/下一帧要求 `FrameStepControl` 能力；无帧率时禁用并反馈。
+- `Armed` 胶囊包含上一帧、截图当前帧、下一帧、取消，四枚按钮统一 `48dp`（`PlayerChromeButtonSize`，与工具托盘同一常量）、胶囊高度 `64dp`、按钮间距 `12dp`、出入场 `360ms`（见 `16` §5.10）。
+- **进入截图模式默认暂停播放**，与逐帧步进共用同一条暂停路径；中央三连以 `240ms` 与底栏同拍隐藏。
+- 上一帧/下一帧要求 `FrameStepControl` 能力；**帧率不可用时不因此禁用按钮**，而是退回 `34ms` 兜底步长（口径修正：原写"无帧率时禁用并反馈"，与当前实现不符——按钮的可用性只由 `Armed` 决定）；步进为 `±1000/实测帧率`、夹在 `[0, duration]`，并带连点锚点。
 - `captureFrame` 可以在 Ready、Paused、Playing 执行，不依赖“必须正在播放”。
 - Engine 返回真实图像或稳定失败分类；不得用延时猜测截图完成。
-- UI 预览 3 秒后自动关闭，倒计时条每帧由 expiry 计算；暂停后冻结。
-- 点击预览时只暂停预览倒计时，`deletePreview` 的语义必须明确是删除预览还是删除媒体文件。
-- 若要删除 MediaStore 文件，Artifact 必须带可撤销的授权 token，并增加确认、失败和撤销测试；默认只删除预览。
+- 帧号来自 `frameCounterStateOf`：**容器帧率缺失/为 0 时整个帧数胶囊不显示**（不编造帧号）；估算值先显示、后台校准完成后切换为真实样本数，`≈` 只在"正在校准 且 模型估算耗时 ≥600ms"时出现（判据与耗时模型见 `16` §5.10）。
+- UI 预览 3 秒后自动关闭，倒计时条由会话给出的剩余时间计算（每 `50ms` 喂一次）；展开大图期间冻结。
+- 点击预览展开大图并定格倒计时；收起后按**剩余**时间继续。
+- **删除的语义已经是"真的删文件"**（`ScreenshotFileGateway.delete`，口径修正：本节原写"默认只删除预览"）：删除过的会话不再提示保存路径，成功/权限/失败各有稳定文案；失败不弹回卡片。
 
 ### 13.2 AB 状态机
 

@@ -28,6 +28,7 @@ import seeyuer.yingli.player.domain.playback.PlaybackSessionCommand
 import seeyuer.yingli.player.domain.playback.PlaybackSessionId
 import seeyuer.yingli.player.domain.playback.PlaybackSourceContext
 import seeyuer.yingli.player.domain.playback.PlaybackSpeed
+import seeyuer.yingli.player.domain.playback.displayPositionMillis
 import seeyuer.yingli.player.domain.playback.VideoScaleMode
 import seeyuer.yingli.player.domain.playback.VideoRotation
 import seeyuer.yingli.player.domain.playback.ScreenshotGateway
@@ -74,10 +75,19 @@ class ShortsViewModel(
                 if (snapshot.phase !is PlaybackPhase.Ended) handledEndedMediaId = null
                 mutableState.value = mutableState.value.copy(
                     playing = playing,
-                    progressMillis = snapshot.timeline.positionMillis,
                     durationMillis = snapshot.timeline.durationMillis ?: current.durationMillis,
                 )
                 mutableState.value = ShortsReducer.reduce(mutableState.value, ShortsEvent.MediaInfoChanged(snapshot.mediaInfo))
+            }
+        }
+        // 读条与时间读数走**展示层位置**（见 `displayPositionMillis`）：快照的 `timeline.positionMillis`
+        // 只在状态跳变时刷新，拿它当读条会让短视频页的进度条在稳定播放期间整个冻住
+        // （与播放页 P1 回归同一个根因）。时间戳等决策仍然直接问 `sessionClient.currentPositionMillis()`。
+        viewModelScope.launch {
+            displayPositionMillis(sessionClient).collect { positionMillis ->
+                val current = mutableState.value.current ?: return@collect
+                if (sessionClient.snapshot.value.mediaId != current.id) return@collect
+                mutableState.value = mutableState.value.copy(progressMillis = positionMillis)
             }
         }
         preferenceRepository?.let { repository ->

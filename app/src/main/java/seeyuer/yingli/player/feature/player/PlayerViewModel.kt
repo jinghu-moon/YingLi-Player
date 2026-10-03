@@ -46,6 +46,7 @@ import seeyuer.yingli.player.domain.playback.FrameCounterState
 import seeyuer.yingli.player.domain.playback.SeekPrecision
 import seeyuer.yingli.player.domain.playback.SeekPrecisionControl
 import seeyuer.yingli.player.domain.playback.defaultSeekPrecision
+import seeyuer.yingli.player.domain.playback.displayPositionMillis
 import seeyuer.yingli.player.domain.playback.effectiveFrameRate
 import seeyuer.yingli.player.domain.playback.frameDurationMillisOf
 import seeyuer.yingli.player.domain.playback.frameStepTargetMillis
@@ -300,33 +301,50 @@ class PlayerViewModel(
         super.onCleared()
     }
     /**
-     * 播放位置投影。
+     * 播放状态投影。**只投影快照**：状态的跳变就是状态本身，不需要任何按时推进。
      *
-     * **为什么这里不再有 ticker**：位置只来自会话 timeline（引擎真实位置），AB 的回跳由引擎
-     * 自己完成并上报事件。旧实现每 250ms 推算一次位置、越过 B 就在这里下发 `Seek(A)` ——
-     * 那是"UI 按位置猜测"，暂停/缓冲/后台时 ticker 一停循环就失效，而且它无法区分自然抵达
-     * 与用户 seek，循环计数只能靠猜。这条路径已整条删除（见 `AbBoundaryWatcher`）。
+     * **循环回跳不在这里**：AB 的边界检测与回跳由引擎自己完成并上报事件（见 `AbBoundaryWatcher`）。
+     * 旧实现每 250ms 在这里推算一次位置、越过 B 就下发 `Seek(A)` —— 那是"UI 按位置猜测"，
+     * 暂停/缓冲/后台时 ticker 一停循环就失效，而且它无法区分自然抵达与用户 seek，计数只能靠猜。
+     * 那条路径已整条删除，本文件不得再出现任何"按位置判定后下发播放命令"的代码。
      */
-    private val projectedPlayback: Flow<Pair<PlaybackState, Long>> = sessionClient.snapshot.map { snapshot ->
-        val state = snapshot.toPlaybackState()
-        state to state.timeline.positionMillis
-    }
+    private val projectedPlayback: Flow<PlaybackState> = sessionClient.snapshot.map(PlaybackSessionSnapshot::toPlaybackState)
+
+    /**
+     * 展示层位置（契约与理由见 [displayPositionMillis]）：播放中按固定间隔读**实时位置**。
+     *
+     * 与 [projectedPlayback] 分开的理由是两层的规矩不同：状态跳变才是状态，而位置在稳定播放期间
+     * 也必须持续更新。这条流只产出位置，由 [baseState] 用 [withLiveDisplayPosition] 换进
+     * `playback.timeline` 与 [PlayerUiState.displayedPositionMillis] —— 进度条、时间读数、帧号
+     * 因此重新开始推进。
+     *
+     * **决策层不受影响**：凡"以当前位置为依据"的判定（设点、截图时间戳、上一项、相对跳转、
+     * 帧步进锚点）继续直接调用 [PlaybackSessionClient.currentPositionMillis]，不读这里。
+     */
+    private val displayPosition: Flow<Long> = displayPositionMillis(sessionClient)
+
+    /** 快照投影出的播放状态；位置在 [displayPosition] 里被展示层的位置替换。 */
+    private fun PlayerUiState.withLiveDisplayPosition(positionMillis: Long): PlayerUiState =
+        copy(
+            displayedPositionMillis = positionMillis,
+            playback = playback.withTimelinePosition(positionMillis),
+        )
 
     private val baseState = combine(
         projectedPlayback,
+        displayPosition,
         sessionClient.snapshot,
         title,
         sourceUnavailable,
-    ) { (playback, displayedPosition), snapshot, currentTitle, unavailable ->
+    ) { playback, displayPosition, snapshot, currentTitle, unavailable ->
         PlayerUiState(
             playback = playback,
             connection = snapshot.connectionState,
             title = currentTitle.ifBlank { snapshot.title.orEmpty() },
-            displayedPositionMillis = displayedPosition,
             sourceUnavailable = unavailable,
             playbackOrder = snapshot.queue?.order ?: PlaybackOrder.SEQUENCE,
             mediaInfo = snapshot.mediaInfo,
-        )
+        ).withLiveDisplayPosition(displayPosition)
     }
     private val advancedState = sessionClient.snapshot
         .let { snapshots -> snapshots.map { AdvancedState(it.audioTracks, it.subtitleTracks, it.speed, it.scaleMode) } }
@@ -1535,6 +1553,22 @@ private fun PlaybackSessionSnapshot.toPlaybackState(): PlaybackState {
         is PlaybackPhase.Ended -> request?.let { PlaybackState.Ended(it, timeline, current.next != null) } ?: PlaybackState.Idle
         is PlaybackPhase.Failed -> PlaybackState.Failed(request, timeline, current.error)
     }
+}
+
+/**
+ * 把展示层的位置换进播放状态的时间线。
+ *
+ * 只换 `positionMillis`：时长、可 seek 性、请求与动作集仍然来自会话快照 —— 它们随状态跳变，
+ * 不随播放推进。这样"状态"和"位置"各有唯一来源，UI 拿到的两半永远同源一致。
+ */
+private fun PlaybackState.withTimelinePosition(positionMillis: Long): PlaybackState = when (this) {
+    PlaybackState.Idle -> this
+    is PlaybackState.Preparing -> copy(timeline = timeline.copy(positionMillis = positionMillis))
+    is PlaybackState.Ready -> copy(timeline = timeline.copy(positionMillis = positionMillis))
+    is PlaybackState.Playing -> copy(timeline = timeline.copy(positionMillis = positionMillis))
+    is PlaybackState.Paused -> copy(timeline = timeline.copy(positionMillis = positionMillis))
+    is PlaybackState.Ended -> copy(timeline = timeline.copy(positionMillis = positionMillis))
+    is PlaybackState.Failed -> copy(timeline = timeline.copy(positionMillis = positionMillis))
 }
 
 private fun TrackChoice.toFingerprint() = seeyuer.yingli.player.domain.playback.TrackFingerprint(

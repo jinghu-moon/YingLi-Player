@@ -103,7 +103,9 @@ internal fun PlayerSettingsSheet(
                 },
             )
             FilterChip(
-                selected = state.abLoop.pointA != null,
+                // 与托盘按钮（实心）、顶栏快捷槽读**同一个判定**（[PlayerUiState.abLoopActive]）：
+                // 三处入口显示的是"循环是否生效"，不再各写一套（旧实现这里是"设过 A 就算选中"）。
+                selected = state.abLoopActive,
                 onClick = onOpenAbTool,
                 label = { Text("A-B 循环") },
             )

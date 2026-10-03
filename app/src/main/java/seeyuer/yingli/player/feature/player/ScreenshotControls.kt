@@ -111,7 +111,7 @@ internal fun ScreenshotToolCapsule(
     modifier: Modifier = Modifier,
 ) {
     val armed = state is ScreenshotUiState.Armed
-    ScreenshotCapsuleSurface(modifier.height(PlayerScreenshotCapsuleHeight)) {
+    PlayerChromeCapsuleSurface(modifier.height(PlayerScreenshotCapsuleHeight)) {
         Row(
             modifier = Modifier.padding(horizontal = ScreenshotCapsuleInnerPadding),
             horizontalArrangement = Arrangement.spacedBy(PlayerScreenshotCapsuleButtonSpacing),
@@ -177,33 +177,6 @@ private fun ScreenshotCaptureButton(
 }
 
 /**
- * 截图工具与帧数胶囊共用的容器材质：**与底栏按钮同源**——同一份
- * [PlayerChromeControlFillAlpha] 底、[PlayerChromeControlBorderWidth] /
- * [PlayerChromeControlBorderAlpha] 细描边，以及同一枚胶囊形圆角
- * [PlayerChromeCapsuleShape]。胶囊与按钮同屏出现，各写一套 alpha 必然出现色差。
- *
- * 这里用 [BorderStroke] 而不是 `border` 参数：与 `PlayerChromeIconButton` 保持同一写法，
- * 描边宽度/透明度的唯一来源就是上面那几个常量。
- */
-@Composable
-private fun ScreenshotCapsuleSurface(
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Surface(
-        modifier = modifier,
-        shape = PlayerChromeCapsuleShape,
-        color = YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlFillAlpha),
-        contentColor = YingLiTheme.player.controlPrimary,
-        border = BorderStroke(
-            PlayerChromeControlBorderWidth,
-            YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlBorderAlpha),
-        ),
-        content = content,
-    )
-}
-
-/**
  * 帧数胶囊：截图模式下显示 `当前帧 / 总帧数`，**位置在顶栏下方**（由调用方给出顶部内边距）。
  *
  * 为什么下沉而不是留在标题槽：竖屏底栏没有音轨/字幕键，这两个槽位被顶栏占着，帧数文本一长
@@ -226,7 +199,7 @@ internal fun FrameCounterCapsule(
     modifier: Modifier = Modifier,
     pending: Boolean = false,
 ) {
-    ScreenshotCapsuleSurface(modifier) {
+    PlayerChromeCapsuleSurface(modifier) {
         // 可用宽度 = 外层 widthIn 给出的上限（也是 BoxWithConstraints 的 maxWidth）。
         // 它同时封住了胶囊自身的最大宽度：字号再大也不会撑出这个宽度去压住别的控件。
         BoxWithConstraints {
@@ -263,7 +236,7 @@ internal fun FrameCounterCapsule(
 private val PlayerFrameCounterTextHorizontalPadding = 12.dp
 
 /** 帧数文本字号下限：正常机型用不到，只在极窄屏 / 最大字体下兜底。 */
-private val PlayerFrameCounterMinFontSize = 10.sp
+private val PlayerFrameCounterMinFontSize = PlayerChromeTextMinFontSize
 
 /** 表格数字每字符宽度与字号之比（Roboto tabular figures 的 advance 约为 0.95em）。 */
 private const val PlayerFrameCounterDigitAdvanceRatio = 0.95f
@@ -575,6 +548,15 @@ internal val ScreenshotCapsuleInnerPadding: Dp
     get() = (PlayerScreenshotCapsuleHeight - PlayerScreenshotCapsuleButtonSize) / 2
 
 /**
+ * 胶囊内边距（**紧凑档**，4dp）：只给 AB 胶囊在"常规档 + 可读下限"放不下三段文字时用
+ * （极窄屏 + 最大系统字号），见 [abCapsuleTextLayout]。
+ *
+ * 竖直方向的"呼吸圈"不受影响（按钮永远是 [PlayerScreenshotCapsuleButtonSize] 高、行内居中），
+ * 这里收窄的只是横向留白 —— 大字号下文字本来就占满按钮，4dp 的横向留白在观感上仍然成立。
+ */
+internal val ScreenshotCapsuleInnerPaddingCompact = 4.dp
+
+/**
  * 胶囊内按钮之间的间距（12dp）。
  *
  * 比工具托盘里同组按钮的 [PlayerShortcutSpacing]（8dp）更大：托盘按钮之间的空隙外侧还有整行的
@@ -582,6 +564,14 @@ internal val ScreenshotCapsuleInnerPadding: Dp
  * 12dp 与项目里 8/12/16 那一档间距一致，不引入新数字。
  */
 internal val PlayerScreenshotCapsuleButtonSpacing = 12.dp
+
+/**
+ * 胶囊内按钮之间的间距（**紧凑档**，4dp）：只给 AB 胶囊在"常规档 + 可读下限"放不下三段文字时用
+ * （极窄屏 + 最大系统字号）。截图胶囊永远是四枚 48dp 圆钮，宽度固定，用不到这一档。
+ *
+ * 先收留白、再缩字号：大字号下留白本来就被文字淹没了，而字号有可读下限（见 [abCapsuleTextLayout]）。
+ */
+internal val PlayerScreenshotCapsuleButtonSpacingCompact = 4.dp
 
 /**
  * 截图胶囊滑入/滑出（含淡入淡出）的时长（360ms）。

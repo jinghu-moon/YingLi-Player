@@ -28,20 +28,28 @@ class PlayerChromeLayoutMathTest {
     }
 
     @Test
-    fun `tool band is full height whenever the screenshot session holds it`() {
-        // 截图会话（含胶囊滑出的留位窗口）期间**直接取满高**：这一帧就必须是终值，
-        // 否则胶囊会跟着带子的 0→满高 动画一起从下往上滑（上一轮修掉的"竖直跳变"）。
-        assertEquals(PlayerAuxiliaryBandHeight, playerAuxiliaryBandHeight(0.dp, screenshotHold = true))
-        assertEquals(PlayerAuxiliaryBandHeight, playerAuxiliaryBandHeight(17.dp, screenshotHold = true))
+    fun `tool band is full height while a tool capsule holds it`() {
+        // 工具胶囊（截图胶囊或 AB 胶囊，含滑出的留位窗口）在场时**直接取满高**：
+        // 这一帧就必须是终值，否则胶囊会跟着带子的 0→满高 动画一起从下往上滑
+        //（上一轮修掉的"竖直跳变"）。两枚胶囊共用这一个判据。
+        assertEquals(PlayerAuxiliaryBandHeight, playerAuxiliaryBandHeight(bandHold = true, trayExpanded = false))
+        assertEquals(PlayerAuxiliaryBandHeight, playerAuxiliaryBandHeight(bandHold = true, trayExpanded = true))
     }
 
     @Test
-    fun `tool band keeps the tray height animation when no screenshot holds it`() {
-        // 普通模式：高度就是"托盘开关的动画值"，**中间值要原样透传**——
-        // 一旦在这里被取整/取满，进度行的上移就又会变成瞬移。
-        assertEquals(0.dp, playerAuxiliaryBandHeight(0.dp, screenshotHold = false))
-        assertEquals(17.dp, playerAuxiliaryBandHeight(17.dp, screenshotHold = false))
-        assertEquals(PlayerAuxiliaryBandHeight, playerAuxiliaryBandHeight(PlayerAuxiliaryBandHeight, false))
+    fun `tool band stands at the tray height when no capsule holds it`() {
+        // 没有胶囊时带子的终值只跟托盘走：托盘展开=满高，收起=0（中间过程由动画给出，见下一条）。
+        assertEquals(PlayerAuxiliaryBandHeight, playerAuxiliaryBandHeight(bandHold = false, trayExpanded = true))
+        assertEquals(0.dp, playerAuxiliaryBandHeight(bandHold = false, trayExpanded = false))
+    }
+
+    @Test
+    fun `only a capsule on screen may snap the band height`() {
+        // **瞬时**只允许一种成因：带子上挂着会跟着带子动的东西（工具胶囊）。
+        // 其余（托盘开关、胶囊滑出后的回位）一律走 240ms 动画 —— 那就是"进度行不瞬移"这条的落点。
+        assertEquals(AuxiliaryBandTransition.SNAP, auxiliaryBandTransition(bandHold = true))
+        assertEquals(AuxiliaryBandTransition.ANIMATE, auxiliaryBandTransition(bandHold = false))
+        assertEquals(TRANSPORT_SECTION_TRANSITION_MILLIS, 240)
     }
 
     @Test
@@ -67,6 +75,24 @@ class PlayerChromeLayoutMathTest {
         // 需求：胶囊内按钮的尺寸必须与工具托盘里的按钮一致（同一个常量）。
         // 这里直接钉住等值关系，任何"顺手换个尺寸"的改动都会红。
         assertEquals(PlayerChromeButtonSize, PlayerScreenshotCapsuleButtonSize)
+    }
+
+    @Test
+    fun `ab capsule reuses the screenshot capsule geometry constants`() {
+        // AB 胶囊与截图胶囊**同一格、同一套几何**（§3.3）：高度、四周呼吸圈、按钮间距、
+        // 关闭圆钮尺寸、出入场时长全部来自截图胶囊那一组常量，不引入新数字。
+        // 这里的断言是"同源"的可验证部分：一旦有人给 AB 胶囊另写一套，这些等式就会先红。
+        assertEquals(PlayerChromeButtonSize, PlayerScreenshotCapsuleButtonSize)
+        assertEquals((PlayerScreenshotCapsuleHeight - PlayerScreenshotCapsuleButtonSize) / 2, ScreenshotCapsuleInnerPadding)
+        assertEquals(12.dp, PlayerScreenshotCapsuleButtonSpacing)
+        assertEquals(360, SCREENSHOT_CAPSULE_TRANSITION_MILLIS)
+        // 文字按钮的高度就在胶囊的呼吸圈里：48 + (64-48)/2*2 = 64，正好等于胶囊高度。
+        assertEquals(
+            PlayerScreenshotCapsuleHeight,
+            PlayerChromeButtonSize + ScreenshotCapsuleInnerPadding * 2,
+        )
+        // 文字按钮的"仍算可读"下限只有一处定义（帧数胶囊也用同一个）。
+        assertEquals(10.sp, PlayerChromeTextMinFontSize)
     }
 
     @Test

@@ -2,6 +2,7 @@ package seeyuer.yingli.player.core.designsystem.icon
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import composeicons.tabler.TablerIcons
+import composeicons.tabler.outline.AB2
 import composeicons.tabler.outline.Activity
 import composeicons.tabler.outline.AlertCircle
 import composeicons.tabler.outline.DotsVertical
@@ -94,7 +95,16 @@ enum class YingLiIcon(
     CHEVRON_RIGHT(IconProvider.TABLER),
     PLAY(IconProvider.TABLER),
     PAUSE(IconProvider.TABLER),
+    /** 刷新/重播语义（`ti-refresh`）：首页卡片、重试、撤销、重新播放都在用它。 */
     REPLAY(IconProvider.TABLER),
+    /**
+     * A-B 循环入口（设计稿 §2.3 的 `ti-a-b-2`；图标库里生成的属性名是 `AB2`，已解包 aar 核对）。
+     *
+     * 它**不是** [REPLAY] 的改名：[REPLAY] 是"刷新/重播"语义（首页卡片、重试、撤销、重新播放
+     * 都在用它，映射到 `ti-refresh`），两者只是曾经共用过一个字形。AB 循环改用本节的名之后，
+     * 两条语义各有一个入口，谁也不欠谁。
+     */
+    AB2(IconProvider.TABLER),
     PLAY_MODE_SEQUENCE(IconProvider.LOCAL_VECTOR),
     ARROWS_SHUFFLE(IconProvider.TABLER),
     REPEAT(IconProvider.TABLER),
@@ -166,6 +176,7 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.PLAY -> TablerIcons.Outline.PlayerPlay
         YingLiIcon.PAUSE -> TablerIcons.Outline.PlayerPause
         YingLiIcon.REPLAY -> TablerIcons.Outline.Refresh
+        YingLiIcon.AB2 -> TablerIcons.Outline.AB2
         YingLiIcon.PLAY_MODE_SEQUENCE -> YingLiLocalIcons.PlayModeSequence
         YingLiIcon.ARROWS_SHUFFLE -> TablerIcons.Outline.ArrowsShuffle
         YingLiIcon.REPEAT -> TablerIcons.Outline.Repeat

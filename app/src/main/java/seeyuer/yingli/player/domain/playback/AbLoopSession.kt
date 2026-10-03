@@ -24,6 +24,13 @@ data class AbLoopSession(
 
     val active: Boolean get() = state.active
 
+    /**
+     * 区间两端与 [active] 的直达读口：调用方（UI）读的是"这一段会话的 AB 状态"，
+     * 不必先剥一层 `session.state`。**它们只是转发**，判定与不变式仍只在 [AbLoopState] 一处。
+     */
+    val pointA: Long? get() = state.pointA
+    val pointB: Long? get() = state.pointB
+
     companion object {
         val EMPTY = AbLoopSession()
     }

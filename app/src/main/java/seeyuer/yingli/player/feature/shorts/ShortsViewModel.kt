@@ -275,6 +275,12 @@ class ShortsViewModel(
     fun captureScreenshot() {
         val current = mutableState.value.current ?: return
         val gateway = screenshotGateway ?: return
+        // 时间戳用**实时位置**（`sessionClient.currentPositionMillis()`），不是 [ShortsUiState.progressMillis]：
+        // 后者是会话快照里的 timeline 位置，只在状态跳变时刷新，播放推进不会发布状态 —— 拿它当时间戳
+        // 会存下一个偏后的位置（截图文件名里的时间点与实际那一帧对不上）。
+        // 这条口径与常规播放页、以及 `docs/20` 阶段 1 的"决策/时间戳一律在用时拉取实时值"一致；
+        // `progressMillis` 从此只服务 UI 的进度显示，不再参与任何决策或时间戳。
+        val capturePositionMillis = sessionClient.currentPositionMillis()
         viewModelScope.launch {
             screenshotExpiryJob?.cancel()
             mutableState.value = ShortsReducer.reduce(
@@ -283,7 +289,7 @@ class ShortsViewModel(
             )
             val result = withContext(dispatchers.io) {
                 // Shorts 不复用常规播放器的画面旋转，截图始终按原始朝向保存。
-                gateway.capture(current.title, mutableState.value.progressMillis, VideoRotation.Default)
+                gateway.capture(current.title, capturePositionMillis, VideoRotation.Default)
             }
             val screenshot = when (result) {
                 is ScreenshotResult.Saved -> ScreenshotUiState.Preview(result.displayName, result.uri, result.location)

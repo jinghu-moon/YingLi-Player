@@ -510,6 +510,7 @@ fun PlayerScreen(
                 onSetPlaybackOrder = onSetPlaybackOrder,
                 onScreenshot = onScreenshot,
                 onOpenAbTool = onOpenAbTool,
+                onCloseAbTool = onCloseAbTool,
                 onToggleLock = onToggleLock,
                 onPrevious = onPrevious,
                 onNext = onNext,
@@ -535,6 +536,18 @@ fun PlayerScreen(
                         onNextFrame = onNextScreenshotFrame,
                         onClose = onCloseScreenshot,
                         modifier = Modifier.testTag(PlayerTestTags.SCREENSHOT_CAPSULE),
+                    )
+                },
+                // AB 胶囊住进**同一格**（辅助带）：几何/材质/出入场与截图胶囊同源，
+                // 因此这里同样只挂测试标记，不带任何位置修饰符（它不再是浮层）。
+                abTool = {
+                    AbLoopToolCapsule(
+                        session = state.abLoop,
+                        onSetA = { onSetAbPoint(AbPoint.A) },
+                        onSetB = { onSetAbPoint(AbPoint.B) },
+                        onClear = onClearAb,
+                        onClose = onCloseAbTool,
+                        modifier = Modifier.testTag(PlayerTestTags.AB_CAPSULE),
                     )
                 },
                 compact = !landscape,
@@ -702,18 +715,9 @@ fun PlayerScreen(
         if (state.panel == PlayerPanel.VIDEO_INFO) {
             VideoInfoDialog(state, onClosePanel)
         }
-        if (state.abToolOpen) {
-            AbLoopCapsule(
-                state = state.abLoop,
-                onSetA = { onSetAbPoint(AbPoint.A) },
-                onSetB = { onSetAbPoint(AbPoint.B) },
-                onClear = onClearAb,
-                onClose = onCloseAbTool,
-                modifier = Modifier.align(Alignment.Center)
-                    .padding(bottom = if (landscape) 96.dp else 176.dp)
-                    .testTag(PlayerTestTags.AB_CAPSULE),
-            )
-        }
+        // AB 胶囊**不再是一个独立浮层**：它作为插槽内容住进底栏的辅助带，与截图胶囊同一格
+        // （几何/材质/出入场同源）。这里原来那个 `Modifier.align(Center).padding(bottom=176.dp)`
+        // 的浮层调用连同它的位置魔法数字一起删除 —— 这正是一次"换个位置就跳一下"的来源。
     }
 }
 
@@ -789,6 +793,13 @@ object PlayerTestTags {
     const val SCREENSHOT_PREVIEW_OVERLAY = "player.screenshot.preview.overlay"
     const val FRAME_COUNTER = "player.frame_counter"
     const val AB_CAPSULE = "player.ab.capsule"
+    /** 底栏辅助带（工具托盘行与工具胶囊共用的那一格）。 */
+    const val AUXILIARY_BAND = "player.auxiliary_band"
+    /** 进度条上的 A–B 区间高亮（含两端标记）：画在进度条自己那一行上。 */
+    const val AB_RANGE = "player.ab.range"
+    /** A–B 读数行（`A 00:12` / `循环 ×12` / `B 00:37`）。 */
+    const val AB_RANGE_LABELS = "player.ab.range.labels"
+    const val AB_LOOP_COUNT = "player.ab.loop_count"
     const val GESTURE_HINT = "player.gesture_hint"
     const val LANDSCAPE_PLAYLIST = "player.playlist.landscape"
     const val PORTRAIT_PLAYLIST = "player.playlist.portrait"

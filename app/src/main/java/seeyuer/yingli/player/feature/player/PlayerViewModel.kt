@@ -68,6 +68,7 @@ import seeyuer.yingli.player.domain.playback.PlaybackSpeed
 import seeyuer.yingli.player.domain.playback.PlaybackQueue
 import seeyuer.yingli.player.domain.playback.PlaybackQueueRepository
 import seeyuer.yingli.player.domain.playback.PlaybackQueueSource
+import seeyuer.yingli.player.domain.playback.AbLoopSession
 import seeyuer.yingli.player.domain.playback.AbLoopState
 import seeyuer.yingli.player.domain.playback.AbPoint
 import seeyuer.yingli.player.domain.playback.PlayerOverlayEvent
@@ -87,6 +88,7 @@ import seeyuer.yingli.player.domain.playback.ScreenshotUiReducer
 import seeyuer.yingli.player.domain.playback.ScreenshotUiState
 import seeyuer.yingli.player.domain.playback.collapse
 import seeyuer.yingli.player.domain.playback.expand
+import seeyuer.yingli.player.domain.playback.isScreenshotCaptureResultCurrent
 import seeyuer.yingli.player.domain.playback.markDeleted
 import seeyuer.yingli.player.domain.playback.screenshotExpiredNaturally
 import seeyuer.yingli.player.domain.playback.tick
@@ -118,7 +120,14 @@ data class PlayerUiState(
     val scaleMode: VideoScaleMode = VideoScaleMode.FIT,
     val overlay: PlayerOverlayState = PlayerOverlayState(),
     val panel: PlayerPanel = PlayerPanel.NONE,
-    val abLoop: AbLoopState = AbLoopState(),
+    /**
+     * 当前 AB 会话：区间 + 循环次数**一起**投影进 UI。
+     *
+     * 为什么不只投影区间、另加一个 `abLoopCount`：区间与计数本来就同属"这一段会话"（[AbLoopSession]），
+     * 拆成两个字段就会有两个状态源、两条刷新路径，UI 上完全可能出现"区间变了计数还没变"。
+     * 它们的唯一写入者是会话 runtime，这里只是原样读回来。
+     */
+    val abLoop: AbLoopSession = AbLoopSession.EMPTY,
     val abToolOpen: Boolean = false,
     val queue: PlaybackQueue? = null,
     val preferences: PlayerPreferences = PlayerPreferences(),
@@ -227,6 +236,25 @@ class PlayerViewModel(
      */
     private val screenshotSession = MutableStateFlow<ScreenshotPreviewSession?>(null)
 
+    /**
+     * 截图捕获的 **generation**：捕获回调的"晚到"契约（docs/20 T3.6）的锚点。
+     *
+     * 任何让"在途的捕获"失去意义的动作都让它 +1：进入/结束截图会话、打开 AB 工具、
+     * 换媒体、切面板、锁屏。捕获协程只带着出发时的那个值，回来时**必须**与当前值相等
+     * 才允许发布结果。
+     *
+     * 为什么不是"就地把 state 比一遍"（旧实现的内联守卫）：状态是会被**复用**的 ——
+     * 用户"武装 → 捕获 → 关闭 → 再武装"之后，状态又回到了 `Capturing`，那时上一次的
+     * 旧结果落进来会被当成这一次的，预览卡上出现的是一张早就不对的帧。generation 单调递增，
+     * 这种"状态绕回同一格"的时序骗不过它。
+     */
+    private var screenshotCaptureGeneration = 0L
+
+    /** 作废在途的捕获回调（见 [screenshotCaptureGeneration]）。 */
+    private fun invalidateScreenshotCapture() {
+        screenshotCaptureGeneration++
+    }
+
     /** 画面旋转是视图层变换：不进播放管线，但按媒体持久化。 */
     private val rotation = MutableStateFlow(VideoRotation.Default)
     private val isFullscreen = MutableStateFlow(false)
@@ -326,9 +354,12 @@ class PlayerViewModel(
     /**
      * AB 区间与计数**只从会话快照读**：ViewModel 不再持有 `abLoop`/`abLimiter`，
      * 也不再自己判定区间合法性（旧实现三份状态之一就在这里）。
+     *
+     * 区间与计数在快照里是两个字段，但它们是同一段会话的两半（[AbLoopSession]）：
+     * 这里合成一个对象再下发，避免 UI 读到"区间已更新、计数还没更新"的中间态。
      */
     private val abLoop = sessionClient.snapshot
-        .map { it.abLoop }
+        .map { AbLoopSession(state = it.abLoop, loopCount = it.loopCount) }
         .distinctUntilChanged()
     private val overlayPanelAbAndQueue = combine(overlayAndPanel, abLoop, abToolOpen, queue) { overlayPanel, currentAb, toolOpen, currentQueue ->
         Quadruple(overlayPanel.first, overlayPanel.second, currentAb, toolOpen, currentQueue)
@@ -534,9 +565,28 @@ class PlayerViewModel(
         return PlaybackCommandResult.Accepted
     }
 
+    /**
+     * 打开 AB 工具。三条入口（托盘按钮、设置面板「工具」chip、顶栏溢出菜单）**都走这一条**，
+     * 因此三处的行为与状态源不会分叉。
+     *
+     * 与截图工具的**互斥**按截图状态分三支（docs/20 §3.2）：
+     *  - `Armed` / `Capturing` → 先结束截图会话（等价"关闭截图工具"）再打开 AB；关闭 AB **不**恢复截图工具；
+     *  - `Preview` → **保留预览卡与倒计时**（那是用户已经拿到的结果），只退出截图的**工具模式**
+     *    （"AB 占用播放页时截图工具让位"这条判定收在 `PlayerUiState.isScreenshotToolActive` 一处）；
+     *  - 其余（Idle / Failed）→ 直接打开。
+     *
+     * 两支都必须让**在途的捕获回调作废**：`Capturing` 时打开 AB 会结束会话，那次捕获的结果
+     * 晚到之后不得再弹预览卡，否则预览卡会与 AB 胶囊同时出现（[screenshotCaptureGeneration]）。
+     */
     fun openAbTool() {
         panel.value = PlayerPanel.NONE
-        closeScreenshot()
+        if (screenshot.value.isCapsuleVisible()) {
+            // Armed / Capturing：整个截图会话结束（closeScreenshot 内部同时作废在途捕获）。
+            closeScreenshot()
+        } else {
+            // Preview / Idle / Failed：会话不动，只需作废在途捕获这一次契约动作。
+            invalidateScreenshotCapture()
+        }
         abToolOpen.value = true
         registerInteraction()
     }
@@ -765,19 +815,45 @@ class PlayerViewModel(
         if (screenshotGateway == null || !state.value.playback.supportsScreenshot()) return
         panel.value = PlayerPanel.NONE
         abToolOpen.value = false
+        // 新一次截图会话：上一次在途的捕获结果不再属于任何人（generation 契约）。
+        invalidateScreenshotCapture()
         pauseForFrameStepping()
         screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.Arm)
         registerInteraction()
     }
 
+    /**
+     * 捕获当前帧。
+     *
+     * **时间戳用实时位置**（`sessionClient.currentPositionMillis()`），不是快照里的显示位置：
+     * 显示位置只在状态跳变时刷新，播放推进不会发布状态，拿它当时间戳会存下一个偏后的位置
+     * （与 `docs/20` 阶段 1 的"决策/时间戳一律在用时拉取实时值"同一条口径）。
+     *
+     * 结果回来时要过 [isScreenshotCaptureResultCurrent] 这道契约：期间只要发生过"结束/重开截图会话、
+     * 打开 AB 工具、切媒体"，这次结果就**整条丢弃**。文件已经由网关落盘（保留在相册里），
+     * 丢弃的只是"预览卡 + 保存位置提示"这条呈现路径。
+     */
     fun captureScreenshot() {
         val gateway = screenshotGateway ?: return
         if (screenshot.value != ScreenshotUiState.Armed) return
         screenshot.value = ScreenshotUiReducer.reduce(screenshot.value, ScreenshotUiEvent.CaptureStarted)
+        // 入参全部在**发起前**取好：位置是"按下这一刻"的实时位置，标题/旋转同理。
+        val captureTitle = state.value.title
+        val capturePositionMillis = sessionClient.currentPositionMillis()
+        val captureRotation = state.value.rotation
         val captureMediaId = state.value.playback.request?.mediaId
+        val captureGeneration = screenshotCaptureGeneration
         viewModelScope.launch {
-            val result = gateway.capture(state.value.title, sessionClient.currentPositionMillis(), state.value.rotation)
-            if (captureMediaId != state.value.playback.request?.mediaId || screenshot.value != ScreenshotUiState.Capturing) {
+            val result = gateway.capture(captureTitle, capturePositionMillis, captureRotation)
+            val currentMediaId = state.value.playback.request?.mediaId
+            if (!isScreenshotCaptureResultCurrent(
+                    captureGeneration = captureGeneration,
+                    currentGeneration = screenshotCaptureGeneration,
+                    captureMediaId = captureMediaId,
+                    currentMediaId = currentMediaId,
+                    state = screenshot.value,
+                )
+            ) {
                 return@launch
             }
             screenshot.value = ScreenshotUiReducer.reduce(
@@ -866,7 +942,14 @@ class PlayerViewModel(
         resumed?.let { screenshotSession.value = it }
     }
 
+    /**
+     * 关闭截图工具（胶囊的关闭、返回键、切面板、切媒体都汇到这一条）。
+     *
+     * 除了收掉卡片与倒计时，它还是**在途捕获作废**的规范入口：[invalidateScreenshotCapture]
+     * 必须在状态收掉之前发生，否则那次捕获回来时看到的可能又是 `Capturing`。
+     */
     fun closeScreenshot() {
+        invalidateScreenshotCapture()
         screenshotTimerJob?.cancel()
         screenshotTimerJob = null
         screenshotSession.value = null

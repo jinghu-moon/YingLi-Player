@@ -1,5 +1,7 @@
 package seeyuer.yingli.player.domain.playback
 
+import seeyuer.yingli.player.core.model.media.MediaItemId
+
 enum class ScreenshotFailure {
     EMPTY_FRAME,
     PERMISSION,
@@ -153,6 +155,33 @@ fun screenshotExpiredNaturally(state: ScreenshotUiState, event: ScreenshotUiEven
         !state.expanded &&
         event is ScreenshotUiEvent.TimeElapsed &&
         event.millis >= state.remainingMillis
+
+/**
+ * 一次异步捕获的结果**是否仍然属于当前会话**（docs/20 T3.6 的"异步晚到"契约）。
+ *
+ * 三个条件必须同时成立，缺一不可：
+ *  1. `captureGeneration == currentGeneration`：期间没有发生"结束/重开截图会话、打开 AB 工具、
+ *     切媒体"这类让在途捕获作废的动作；
+ *  2. 媒体没有变：结果属于按下快门那一刻的那一支视频；
+ *  3. 状态仍是 `Capturing`：会话没被别的路径提前收掉。
+ *
+ * **为什么必须是 generation 而不是"就地比一遍状态"**：状态会被复用 ——
+ * "武装 → 捕获 → 关闭 → 再武装"之后状态又回到 `Capturing`，只比状态的话，上一次的旧结果
+ * 会被当成这一次的发布出去（预览卡上出现一张早就不对的帧）。generation 单调递增，
+ * 时序绕回同一格也骗不过它。
+ *
+ * 丢弃只影响**呈现**：文件在网关侧已经落盘（`ScreenshotResult.Saved`），保留在相册里，
+ * 不弹预览卡、不提示保存位置 —— 也就不会出现"预览卡与 AB 胶囊同时在场"。
+ */
+fun isScreenshotCaptureResultCurrent(
+    captureGeneration: Long,
+    currentGeneration: Long,
+    captureMediaId: MediaItemId?,
+    currentMediaId: MediaItemId?,
+    state: ScreenshotUiState,
+): Boolean = captureGeneration == currentGeneration &&
+    captureMediaId == currentMediaId &&
+    state is ScreenshotUiState.Capturing
 
 /**
  * 画中画入口。两个时机共用**同一份参数**（宽高比 + 入场动画起点 source rect + 是否自动进入）：

@@ -3,9 +3,12 @@ package seeyuer.yingli.player.feature.player
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -24,11 +27,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.icon.imageVector
@@ -128,7 +136,7 @@ internal fun PlayerTopBar(
                     PlayerControlId.SCALE -> videoScaleModeIcon(state.scaleMode)
                     PlayerControlId.INFO -> YingLiIcon.DIAGNOSTICS
                     PlayerControlId.SCREENSHOT -> YingLiIcon.SCREENSHOT
-                    PlayerControlId.AB_LOOP -> YingLiIcon.REPLAY
+                    PlayerControlId.AB_LOOP -> YingLiIcon.AB2
                     PlayerControlId.PIP -> YingLiIcon.PICTURE_IN_PICTURE
                     PlayerControlId.LOCK -> YingLiIcon.LOCK
                     PlayerControlId.SETTINGS -> YingLiIcon.SETTINGS
@@ -136,7 +144,16 @@ internal fun PlayerTopBar(
                     PlayerControlId.NEXT -> YingLiIcon.NEXT
                     else -> YingLiIcon.SETTINGS
                 }
-                PlayerChromeIconButton(icon, id.name, action, size = PlayerChromeButtonSize)
+                // AB 循环是"开关"：生效中同样用实心表达，与托盘、设置面板 chip 读**同一个**判定
+                // （[abLoopActive]），并把该状态写进语义（读屏会念"已选中"，测试据此断言激活态）。
+                PlayerChromeIconButton(
+                    icon,
+                    id.name,
+                    action,
+                    size = PlayerChromeButtonSize,
+                    filled = id == PlayerControlId.AB_LOOP && state.abLoopActive,
+                    selectedState = if (id == PlayerControlId.AB_LOOP) state.abLoopActive else null,
+                )
             }
         Box {
             PlayerChromeIconButton(
@@ -238,10 +255,24 @@ internal fun PlayerChromeIconButton(
     filled: Boolean = false,
     /** 非空时按钮内显示这段短文本而不是图标（例如倍速数值）。 */
     valueLabel: String? = null,
+    /**
+     * **开关型**按钮的选中态（[PlayerControlId.MIRROR_HORIZONTAL] / 后台播放 / AB 循环这一族）。
+     *
+     * 为什么单独开一个参数而不是直接写 `selected = filled`：`filled` 在这里兼着两种含义 ——
+     * "开关已生效"（镜像、后台播放、AB 循环）与"这是当前最强调的动作"（中央播放键）。
+     * 后者说"已选中"是错的语义，所以只有真正的开关才传这个值（非开关一律传 null，语义树上
+     * 不会凭空多出一个 `selected`）。
+     *
+     * 有了它，"激活态"才是**可断言**的：颜色（实心）本身既读不出也测不了，读屏也需要
+     * "已选中"这句话。断言点：`assertIsSelected()` / `assertIsNotSelected()`。
+     */
+    selectedState: Boolean? = null,
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier.size(size),
+        modifier = modifier
+            .size(size)
+            .then(if (selectedState == null) Modifier else Modifier.semantics { selected = selectedState }),
         enabled = enabled,
         shape = CircleShape,
         color = if (filled) {
@@ -275,6 +306,197 @@ internal fun PlayerChromeIconButton(
             }
         }
     }
+}
+
+/**
+ * 带文字的胶囊按钮（AB 胶囊的 A / B / 清除）。
+ *
+ * **与 [PlayerChromeIconButton] 的分工**（改之前先读这段）：
+ *  - [PlayerChromeIconButton] 是**定尺寸圆钮**：宽度永远等于 [PlayerChromeButtonSize]，
+ *    内容只能是图标或"短到能塞进圆里"的值（倍速 `1.5x`）。图标按钮的宽度不携带信息。
+ *  - 本组件是**弹性宽度**的文字按钮：高度仍然钉在 [PlayerChromeButtonSize]（48dp 是**最小触控高度**，
+ *    不是固定宽度 —— 需求明确要求文字按钮宽度随内容/字号变化），宽度由文字决定。
+ *    当可用宽度不够时它**缩字号**而不是把文字省略掉：`A 00:12` 被截成 `A 00…`
+ *    就失去了"这是哪一个时间点"的信息，而字号小一点仍然完整可读。
+ *
+ * 视觉材质（底色 alpha、描边、胶囊圆角）与图标按钮、截图胶囊**同源**，全部来自上面那组常量，
+ * 不在这里写第二份 alpha。
+ *
+ * 可用宽度由调用方通过 `Modifier.weight(...)` / 约束给出；这里只负责"在给出的宽度里放下文字"。
+ */
+@Composable
+internal fun PlayerChromeTextButton(
+    label: String,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    filled: Boolean = false,
+    tint: Color = YingLiTheme.player.controlPrimary,
+    baseFontSize: TextUnit = androidx.compose.material3.MaterialTheme.typography.labelLarge.fontSize,
+    /** 左右内边距：常规档 / 紧凑档由调用方（胶囊的排版决策）给出，见 [abCapsuleTextLayout]。 */
+    horizontalPadding: Dp = PlayerChromeTextButtonHorizontalPadding,
+) {
+    val fontScale = LocalDensity.current.fontScale
+    // 局部的可用宽度（而不是整屏宽度）：按钮在自己的约束里再兜一次底 ——
+    // 调用方（胶囊）已经按整排文字算过一个统一字号并从 [baseFontSize] 传进来，
+    // 这里只负责"连单独一个标签都放不下"的极端情况。
+    BoxWithConstraints(modifier = modifier.height(PlayerChromeButtonSize)) {
+        val textWidth = maxWidth - horizontalPadding * 2
+        Surface(
+            onClick = onClick,
+            // **宽度不写死**：由文字 + 内边距决定（见上面的分工说明）。
+            modifier = Modifier.fillMaxHeight(),
+            enabled = enabled,
+            shape = PlayerChromeCapsuleShape,
+            color = if (filled) {
+                YingLiTheme.player.controlPrimary
+            } else {
+                YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlFillAlpha)
+            },
+            contentColor = if (filled) YingLiTheme.player.canvas else tint,
+            border = if (filled) {
+                null
+            } else {
+                BorderStroke(PlayerChromeControlBorderWidth, YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlBorderAlpha))
+            },
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = label,
+                    color = if (filled) YingLiTheme.player.canvas else tint,
+                    fontSize = playerChromeTextFontSizeSp(
+                        availableWidth = textWidth,
+                        labels = listOf(label),
+                        baseFontSize = baseFontSize,
+                        fontScale = fontScale,
+                    ),
+                    maxLines = 1,
+                    // 不换行、不省略：宽度由上面的字号适配保证，字号到底仍放不下时宁可整体裁掉一点，
+                    // 也不产出 `A 00…` 这种"看起来是别的意思"的省略号文案。
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier
+                        .padding(horizontal = horizontalPadding)
+                        .semantics { this.contentDescription = contentDescription },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 文字按钮左右内边距（常规档）：它同时也是算"文字可用宽度"时要扣掉的那部分（唯一一份）。
+ */
+internal val PlayerChromeTextButtonHorizontalPadding = 12.dp
+
+/**
+ * 文字按钮左右内边距（**紧凑档**）：只在"常规档 + 可读下限"仍然放不下三段文字时启用
+ * （极窄屏 + 最大系统字号），见 [abCapsuleTextLayout]。
+ *
+ * 为什么是"收窄内边距"而不是继续缩字号：字号有可读下限，再往下缩就是拿可读性换排版；
+ * 而大字号下文字本身就占了按钮的绝大部分，4dp 的横向内边距在视觉上仍然是"文字外面有一圈边"。
+ */
+internal val PlayerChromeTextButtonCompactHorizontalPadding = 4.dp
+
+/**
+ * 文字按钮/文字胶囊的字号下限：正常机型用不到，只在极窄屏 / 最大系统字号下兜底。
+ * 与帧数胶囊的兜底同一档（10sp），全项目只有这一个"仍算可读"的下限。
+ */
+internal val PlayerChromeTextMinFontSize = 10.sp
+
+/**
+ * 窄字符（拉丁字母、数字、空格、`×`、`:`）的宽度占字号的比例。
+ * Roboto 数字/字母的实测 advance ≈ 0.555em（真机测量：12.78sp 下 `A 00:12` 共 49.67dp），取 0.55。
+ */
+private const val PlayerChromeTextNarrowAdvanceEm = 0.55f
+
+/**
+ * 宽字符（CJK、全角标点）的宽度占字号的比例。
+ *
+ * **1.1 而不是 1.0**：中文字形在真机上实测约 1.095em（2 倍系统字号下 `清除` 占 43.8dp / 20sp），
+ * 按 1.0 估算会少算将近 10% —— 那 10% 正是"关不掉的溢出"：模型说放得下，实际把关闭圆钮挤成 0 宽。
+ */
+private const val PlayerChromeTextWideAdvanceEm = 1.1f
+
+/**
+ * 估算宽度的**安全余量**：真机取整与字形微差可能让实际宽度比模型多一两个 dp，
+ * 而"算出来刚好等于可用宽度"正是最容易被裁的位置。留 3%。
+ */
+private const val PlayerChromeTextWidthSafetyFactor = 1.03f
+
+/** 一个字符的估算宽度（em）。CJK 统一表意文字起点 U+2E80 起按全角算。 */
+private fun playerChromeTextAdvanceEm(character: Char): Float =
+    if (character.code >= 0x2E80) PlayerChromeTextWideAdvanceEm else PlayerChromeTextNarrowAdvanceEm
+
+/** [labels] 在**1sp**字号下的估算总宽度（em 之和）。 */
+private fun playerChromeTextAdvanceSum(labels: List<String>): Float =
+    labels.sumOf { label -> label.fold(0f) { acc, character -> acc + playerChromeTextAdvanceEm(character) }.toDouble() }.toFloat()
+
+/** [labels] 在 **1sp / fontScale=1** 下的估算宽度（dp，含 [PlayerChromeTextWidthSafetyFactor]）。 */
+private fun playerChromeTextUnitWidthDp(labels: List<String>, fontScale: Float): Float =
+    playerChromeTextAdvanceSum(labels) * fontScale.coerceAtLeast(0.01f) * PlayerChromeTextWidthSafetyFactor
+
+/**
+ * [labels] 在 [fontSize]（sp）与 [fontScale] 下的**估算总宽度**（dp）。
+ *
+ * `fontSize.value` 是 sp 数值，落到屏幕上还要乘系统字号缩放 [fontScale] —— 这一项漏掉的话，
+ * "系统字号放大"这一档就会算出一个放不下的字号（实测：2 倍字号下三枚按钮把关闭键挤成 0 宽）。
+ *
+ * 它和 [playerChromeTextFontSizeSp] 是同一个模型的两种用法（共用 [playerChromeTextUnitWidthDp]）：
+ * 前者算"这么宽放得下多大字号"，它算"这个字号要占多宽"。因此"算出来的字号一定放得下"这件事
+ * 可以在测试里直接断言（`estimated(labels, fitted) <= available`），而不是靠肉眼看截图。
+ */
+internal fun playerChromeTextEstimatedWidthDp(
+    labels: List<String>,
+    fontSize: TextUnit,
+    fontScale: Float = 1f,
+): Dp = (playerChromeTextUnitWidthDp(labels, fontScale) * fontSize.value).dp
+
+/**
+ * 让 [labels] **全部完整放下**的统一字号（sp）：上限 [baseFontSize]（正常机型就是它），
+ * 下限 [PlayerChromeTextMinFontSize]。
+ *
+ * 依据：每个字符约占 `k × 字号 × 系统字号缩放`（[playerChromeTextAdvanceEm]，宽/窄两档），
+ * 因此 `字号 ≤ 可用宽度 / (Σk × fontScale)`。取整个标签集合一起算，是为了让同一排文字
+ * **只有一个字号** —— 每个按钮各算各的会出现"A 12sp、清除 10sp"这种高低不齐。
+ *
+ * 纯函数（不读主题/密度）以便直接做单元测试：主题字号与系统字号缩放都由调用方传进来。
+ */
+internal fun playerChromeTextFontSizeSp(
+    availableWidth: Dp,
+    labels: List<String>,
+    baseFontSize: TextUnit,
+    fontScale: Float = 1f,
+): TextUnit {
+    val unitWidth = playerChromeTextUnitWidthDp(labels, fontScale)
+    if (unitWidth <= 0f || availableWidth <= 0.dp) return baseFontSize
+    return (availableWidth.value / unitWidth)
+        .coerceIn(PlayerChromeTextMinFontSize.value, baseFontSize.value)
+        .sp
+}
+
+/**
+ * 与底栏按钮同源的胶囊容器：截图胶囊与 AB 胶囊**共用这一份材质**
+ * （[PlayerChromeControlFillAlpha] 底 + [PlayerChromeControlBorderWidth]/[PlayerChromeControlBorderAlpha]
+ * 描边 + [PlayerChromeCapsuleShape] 圆角）。两枚胶囊会同屏出现在同一格里，各写一套 alpha 必然出现色差。
+ */
+@Composable
+internal fun PlayerChromeCapsuleSurface(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        shape = PlayerChromeCapsuleShape,
+        color = YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlFillAlpha),
+        contentColor = YingLiTheme.player.controlPrimary,
+        border = BorderStroke(
+            PlayerChromeControlBorderWidth,
+            YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlBorderAlpha),
+        ),
+        content = content,
+    )
 }
 
 @Composable
@@ -335,12 +557,29 @@ private fun MenuItem(
  *
  * 这三段的界面差别只是胶囊内容，对「底栏三段要不要收起让位、帧数胶囊要不要在场」而言是同一件事，
  * 所以判定集中在这里，避免各调用点各写一遍状态枚举、日后新增状态时漏改一处。
+ *
+ * **AB 工具打开时截图工具让位**（docs/20 §3.2 的互斥，`Preview` 分支）：AB 与截图是二选一的
+ * 浮层工具，AB 胶囊要占的正是截图工具占着的那条辅助带。让位只影响"谁占着播放页 chrome"，
+ * **不动截图状态本身** —— `Preview` 的预览卡与倒计时因此照常在（那是用户已经拿到的结果），
+ * 只是截图工具模式（底栏让位 + 帧数胶囊）退出；关闭 AB 后它自然回来。`Armed` / `Capturing`
+ * 不走这条路（打开 AB 时那个会话已经被整个结束），所以这里不必区分。
  */
-internal fun PlayerUiState.isScreenshotToolActive(): Boolean = when (screenshot) {
+internal fun PlayerUiState.isScreenshotToolActive(): Boolean = !abToolOpen && when (screenshot) {
     ScreenshotUiState.Armed, ScreenshotUiState.Capturing -> true
     is ScreenshotUiState.Preview -> true
     else -> false
 }
+
+/**
+ * AB 循环是否**生效中** —— 托盘按钮（实心选中态）、顶栏快捷槽、设置面板「工具」chip
+ * 以及进度行的区间/计数**共用这一个判定**。
+ *
+ * 唯一依据是会话侧的 [AbLoopSession.active]：只要 A、B 都设好了就算生效，
+ * **与 AB 胶囊是否打开无关**（D3：关闭胶囊 ≠ 取消循环）。视图层不许再写第二套判定
+ * （例如"设过 A 就算选中"），否则同一个循环在三个入口上会显示成三种状态。
+ */
+internal val PlayerUiState.abLoopActive: Boolean
+    get() = abLoop.active
 
 private fun PlayerUiState.playerSubtitle(): String? {
     val info = mediaInfo ?: return null

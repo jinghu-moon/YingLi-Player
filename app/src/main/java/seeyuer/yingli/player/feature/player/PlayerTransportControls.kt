@@ -1,7 +1,7 @@
 package seeyuer.yingli.player.feature.player
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -42,11 +42,13 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
@@ -59,6 +61,7 @@ import seeyuer.yingli.player.domain.playback.PlaybackSpeed
 import seeyuer.yingli.player.domain.playback.PlayerControlId
 import seeyuer.yingli.player.domain.playback.PlayerControlSurface
 import seeyuer.yingli.player.domain.playback.PlaybackOrder
+import seeyuer.yingli.player.domain.playback.ScreenshotUiState
 import seeyuer.yingli.player.domain.playback.VideoScaleMode
 
 /** 同一组内相邻快捷按钮的间距。 */
@@ -99,11 +102,12 @@ internal val PlayerPortraitControlsSpacing = 16.dp
  *
  * 三条硬约束（改这一段之前请先读完）：
  *   1. 只要胶囊在场——**包含它滑出屏幕的那 [SCREENSHOT_CAPSULE_TRANSITION_MILLIS]ms**——
- *      辅助带就必须是满高，而且必须**瞬时**到位（见 [playerAuxiliaryBandHeight]）；
- *      带子若晚一帧或跟着动画走，胶囊就会在滑入/滑出时被带着上下跳。
- *   2. 普通模式下的托盘开关**必须走高度动画**：进度行的"上移/回位"就是这个高度在变，
- *      不许退回 `if (toolsExpanded) 满高 else 0.dp` 那种瞬时切换——那正是用户实测到的
- *      "进度条突然上移、突然回到原位"。
+ *      辅助带就必须是满高，而且必须**瞬时**到位（见 [playerAuxiliaryBandHeight] 与
+ *      [auxiliaryBandTransition]）；带子若晚一帧或跟着动画走，胶囊就会在滑入/滑出时被带着上下跳。
+ *   2. 普通模式下的托盘开关（**没有胶囊在场**时）**必须走高度动画**：进度行的"上移/回位"就是
+ *      这个高度在变，不许退回 `if (toolsExpanded) 满高 else 0.dp` 那种瞬时切换——那正是用户实测到的
+ *      "进度条突然上移、突然回到原位"。胶囊滑出之后的回位也走同一条动画（此时三段已经可见，
+ *      瞬时塌掉同样会看到进度行瞬移）。
  *   3. 托盘行/胶囊都必须按 [PlayerAuxiliaryBandHeight] 固定自身高度再参与裁剪，
  *      不能让它们被动画中途的带子高度挤小（见托盘行的 `requiredHeight`）。
  *
@@ -126,19 +130,48 @@ private val PlayerToolRowTopInset: Dp
     get() = PlayerScreenshotCapsuleHeight - PlayerChromeButtonSize
 
 /**
- * 辅助带的最终高度：截图会话（含胶囊滑出的留位窗口）期间**直接取满高、瞬时到位**；
- * 其余情况透传"托盘开关的高度动画值"。
+ * 辅助带的**目标高度**：工具胶囊在场（[bandHold]）或托盘展开时取满高，否则为 0。
  *
- * 为什么不做成"一个 `animateDpAsState` 打天下"：进入截图会话的那一帧，带子必须已经是终值。
- * 若让胶囊出现时带子还在做 0→满高 的动画，胶囊会跟着带子一起从下往上滑，
- * 那就是上一轮修掉的"胶囊竖直跳变"（commit 01ebdfa）。所以两条路径必须分开：
- * **普通模式的托盘开关 → 高度做动画；截图会话 → 立即满高。**
+ * 注意它只回答"终值是多少"，**不回答"怎么过去"**：方式由 [auxiliaryBandTransition] 给出。
+ * 把两者分开是这一条几何的核心 —— 曾经它们混在一条路径里（动画值 + 硬覆盖），
+ * 于是"胶囊出现"和"托盘开关"这两种成因互相污染，先后出过"胶囊竖直跳变"与"进度行瞬移"。
  */
-internal fun playerAuxiliaryBandHeight(trayAnimatedHeight: Dp, screenshotHold: Boolean): Dp =
-    if (screenshotHold) PlayerAuxiliaryBandHeight else trayAnimatedHeight
+internal fun playerAuxiliaryBandHeight(bandHold: Boolean, trayExpanded: Boolean): Dp =
+    if (bandHold || trayExpanded) PlayerAuxiliaryBandHeight else 0.dp
+
+/** 辅助带高度的变化方式。 */
+internal enum class AuxiliaryBandTransition {
+    /**
+     * **瞬时**到位：带子上有工具胶囊（或它正在滑出）。这一帧带子就必须是终值，
+     * 否则胶囊会跟着带子的 0→满高 动画一起从下往上滑（上一轮修掉的"胶囊竖直跳变"，commit 01ebdfa）。
+     */
+    SNAP,
+
+    /**
+     * 走 [TRANSPORT_SECTION_TRANSITION_MILLIS] 的高度动画：托盘开关，以及胶囊滑出后的回位。
+     * 这三段里底栏内容都是可见的，瞬时变高变矮就是用户实测到的"进度条突然上移/突然回到原位"。
+     */
+    ANIMATE,
+}
+
+/**
+ * 辅助带高度该怎么变（判据与 [playerAuxiliaryBandHeight] 配对使用，两者都是纯函数、有单测）。
+ *
+ * **只有"胶囊在场"这一种成因允许瞬时**：它是唯一一种"带子上挂着会跟着带子动的东西"的情况。
+ */
+internal fun auxiliaryBandTransition(bandHold: Boolean): AuxiliaryBandTransition =
+    if (bandHold) AuxiliaryBandTransition.SNAP else AuxiliaryBandTransition.ANIMATE
 
 /** 时间文本最小宽度，保证播放中进度条长度不随时长位数跳动。 */
 private val PlayerTimeLabelMinWidth = 42.dp
+
+/**
+ * AB 区间读数行里三段文字之间的间距。
+ *
+ * 取 8dp（比胶囊内的 12dp 紧一档）：这一行只是"读数"，字号适配之后要紧挨在一起才像一句话。
+ * 它同时会从"可用宽度"里扣掉（见读数行的字号适配），否则在 2 倍字号下三段文字会互相压住。
+ */
+private val AbReadoutGap = 8.dp
 
 /**
  * 拖动进度条时实时 seek 的**最小间隔**。
@@ -247,6 +280,8 @@ internal fun BottomPlaybackControls(
     onSetPlaybackOrder: (PlaybackOrder) -> Unit = {},
     onScreenshot: () -> Unit = {},
     onOpenAbTool: () -> Unit = {},
+    /** 关闭 AB 胶囊（只收 UI，**不**取消循环）：托盘要展开时 AB 胶囊让位用得到它。 */
+    onCloseAbTool: () -> Unit = {},
     onToggleLock: () -> Unit = {},
     onPrevious: () -> Unit = {},
     onNext: () -> Unit = {},
@@ -267,12 +302,21 @@ internal fun BottomPlaybackControls(
      * 默认空实现：不传插槽时这一行什么都不渲染，托盘行照常收起。
      */
     screenshotTool: @Composable () -> Unit = {},
+    /**
+     * AB 工具胶囊插槽：与 [screenshotTool] **同一个槽位**（辅助带那一格），
+     * 由 `auxiliaryToolCapsule` 决定这一帧画哪一枚。几何/材质/出入场全部同源，
+     * 所以这里传进来的胶囊不要再自带位置修饰符。
+     */
+    abTool: @Composable () -> Unit = {},
     modifier: Modifier,
     compact: Boolean = false,
 ) {
     val duration = state.playback.timeline.durationMillis
     val abStart = state.abLoop.pointA
     val abEnd = state.abLoop.pointB
+    // 循环次数**只从会话快照读**（`AbLoopSession.loopCount`，唯一写入者是会话 runtime）：
+    // 视图层不累计、不推算，也不在关闭胶囊时清零（D3：关闭 ≠ 取消）。
+    val abLoopCount = state.abLoop.loopCount
     var dragging by remember(state.playback.request?.mediaId) { mutableStateOf(false) }
     var previewPositionMillis by remember(state.playback.request?.mediaId) {
         // Long：用 mutableLongStateOf 避免每次拖动预览都装箱（lint 的 AutoboxingStateCreation）。
@@ -310,6 +354,14 @@ internal fun BottomPlaybackControls(
     ) {
         // "更多"托盘展开状态：纯 UI 状态，不进 ViewModel；声明在托盘与按钮行共同的父作用域里。
         var toolsExpanded by remember { mutableStateOf(false) }
+        // 托盘与工具胶囊是**同一格**的两个占用者，所以"点更多"就是一次让位：
+        // 展开托盘时先收起 AB 胶囊（关闭 ≠ 取消循环，D3：区间与计数都留着），否则
+        // 胶囊在场时托盘行会被压住不显示，用户会觉得这个按钮点不动。
+        val toggleTools = {
+            val expand = !toolsExpanded
+            if (expand) onCloseAbTool()
+            toolsExpanded = expand
+        }
         // ── 底栏竖直几何：改这一段之前请先读完 ────────────────────────────────────────
         // 底栏是**底对齐**的 Column：某一段的竖直位置只由"它下方所有兄弟槽位的高度"决定，
         // 与它自己上方有几段、Column 总高多少都无关。胶囊住在辅助带里、辅助带下方只有按钮行，
@@ -334,15 +386,26 @@ internal fun BottomPlaybackControls(
         // 这样胶囊的整个生命期都被覆盖；反过来用胶囊判据留位的话，Capturing → Preview 的那一帧
         // 带子会跟着塌掉，胶囊的滑出就没有落脚点了。
         val screenshotSession = state.isScreenshotToolActive()
-        val capsuleVisible = state.screenshot.isCapsuleVisible()
+        // 辅助带那一格的占用者：截图胶囊与 AB 胶囊**共用一个槽位**（§3.3 的"同一格"），
+        // 因此必须由**一个**判定决定画哪一枚，而不是两处各画一个、靠状态互斥去保证不重叠。
+        val toolCapsule = auxiliaryToolCapsule(abToolOpen = state.abToolOpen, screenshot = state.screenshot)
+        val toolCapsuleVisible = toolCapsule != AuxiliaryToolCapsule.NONE
+        // AB 胶囊与截图胶囊的区别：它**住在底栏里**（三段必须同时在场，区间高亮与"循环 ×N"都在进度行上），
+        // 而截图胶囊是"接管播放页"的工具（三段让位）。下面是这个差别的唯一落点。
+        val abCapsuleVisible = toolCapsule == AuxiliaryToolCapsule.AB_LOOP
         // 辅助带的"退出留位窗口"：胶囊滑出需要 SCREENSHOT_CAPSULE_TRANSITION_MILLIS，
         // 这段里带子必须继续满高，否则内容会被挤成 0 高（滑出动画等于被吃掉）。
         // 进入不看这个标志（约束 1），所以它只负责"晚一点撤"，不参与"什么时候出现"。
         // 延长到胶囊自己的时长：胶囊滑出比底栏三段的 240ms 慢，留位窗口必须跟着它走，
         // 否则带子会在胶囊还在滑的时候提前塌掉。
-        var capsuleBandHeld by remember { mutableStateOf(false) }
-        LaunchedEffect(capsuleVisible) {
-            if (capsuleVisible) {
+        //
+        // 初值取"这一帧是否已经有胶囊"，与下面 Animatable 的初值同源：底栏会因为控件自动隐藏
+        // 整体离开组合再回来（用户单击画面收起、再单击唤出），回来时若从 0 高开始演，
+        // 胶囊会先在 0 高的带子里被裁掉一帧 —— 那正是"胶囊竖直跳变"的一帧版本。
+        val bandHoldAtFirstFrame = screenshotSession || toolCapsuleVisible
+        var capsuleBandHeld by remember { mutableStateOf(toolCapsuleVisible) }
+        LaunchedEffect(toolCapsuleVisible) {
+            if (toolCapsuleVisible) {
                 capsuleBandHeld = true
             } else if (capsuleBandHeld) {
                 delay(SCREENSHOT_CAPSULE_TRANSITION_MILLIS.toLong())
@@ -350,30 +413,57 @@ internal fun BottomPlaybackControls(
             }
         }
         // 三段（进度行 / 工具托盘行 / 按钮行）共用一个可见性判据：截图会话结束就回来。
-        // 唯一的例外不是"判据不同"，而是"回来的时机"：辅助带只是为胶囊留位、且托盘没开时，
-        // 带子稍后要塌回 0（胶囊滑完），三段必须等它塌完再淡入——否则它们会在带子
-        // 塌掉的那一帧整体下移一个带高。托盘本来就开着时带子不塌，三段立刻回来。
-        val sectionsVisible = !screenshotSession && !(capsuleBandHeld && !toolsExpanded)
-        // 辅助带是否被截图会话（或它的留位窗口）钉在满高：这一条走**瞬时**路径。
-        val screenshotHold = screenshotSession || capsuleBandHeld
-        // 托盘开关的高度动画：**进度行上移/回位的唯一驱动**，与三段淡入淡出同拍（240ms）。
-        // 它只跟 toolsExpanded 走；截图会话那一路由 playerAuxiliaryBandHeight 直接取满高覆盖，
-        // 两者相加才等于带子的最终高度（这条分工就是"托盘有动画、胶囊竖直带固定"的落点）。
-        val trayBandHeight by animateDpAsState(
-            targetValue = if (toolsExpanded) PlayerAuxiliaryBandHeight else 0.dp,
-            animationSpec = tween(TRANSPORT_SECTION_TRANSITION_MILLIS),
-            label = "transport-auxiliary-band",
-        )
-        val auxiliaryBandHeight = playerAuxiliaryBandHeight(trayBandHeight, screenshotHold)
-        // 进度区是固定槽位（高度 = 进度行高度 + AB 行的预留）：截图模式下只淡出内容，
+        // 唯一的例外不是"判据不同"，而是"回来的时机"：辅助带只是为**截图**胶囊留位、且托盘没开时，
+        // 带子稍后要塌回 0，三段必须等它塌完再淡入——否则它们会在带子塌掉的那一帧整体下移一个带高。
+        // **AB 胶囊不适用这条等待**：它不接管播放页，三段本来就该在场并一直留在组合里。
+        val sectionsVisible = !screenshotSession && !(capsuleBandHeld && !toolsExpanded && !abCapsuleVisible)
+        // 辅助带是否被"胶囊在场（含滑出留位窗口）"或"截图会话"钉在满高：这一条走**瞬时**路径。
+        val bandHold = screenshotSession || capsuleBandHeld
+        // 带子高度**只有一个驱动**：终端值来自 playerAuxiliaryBandHeight，变化方式来自
+        // auxiliaryBandTransition（胶囊在场 → 瞬时；托盘开关 / 胶囊滑出后回位 → 240ms 动画）。
+        // 旧实现是"托盘动画值 + 截图会话硬覆盖"两条路叠加，胶囊滑出后的回位只能靠硬塌，
+        // 而 AB 胶囊打开时三段是可见的——那样就会看到进度行瞬移。合成一个 Animatable 之后，
+        // 两种成因各自拿到自己的变化方式，谁也不会污染谁。
+        //
+        // 初值 = 首次组合那一刻的终值：胶囊本来就在场时（底栏被自动隐藏收起又唤出）第一帧
+        // 就必须是满高，不能等下面那个 effect 跑起来再补。
+        val auxiliaryBand = remember {
+            Animatable(if (bandHoldAtFirstFrame) PlayerAuxiliaryBandHeight.value else 0f)
+        }
+        LaunchedEffect(bandHold, toolsExpanded) {
+            val target = playerAuxiliaryBandHeight(bandHold, toolsExpanded).value
+            when (auxiliaryBandTransition(bandHold)) {
+                AuxiliaryBandTransition.SNAP -> auxiliaryBand.snapTo(target)
+                AuxiliaryBandTransition.ANIMATE ->
+                    auxiliaryBand.animateTo(target, tween(TRANSPORT_SECTION_TRANSITION_MILLIS))
+            }
+        }
+        val auxiliaryBandHeight = auxiliaryBand.value.dp
+        // 进度区是固定槽位（高度 = 进度行高度 + AB 读数行的预留）：截图模式下只淡出内容，
         // 槽位高度不变。**这里若用 shrink/expand，底对齐的整个 Column 会在截图模式切换时
         // 重新定位**，胶囊虽然住在辅助带里不受这一段影响，但三段一起变高变矮仍然会让底栏
         // 在动画中途整体抽动，所以三段一律固定槽位。
+        //
+        // AB 读数行的预留高度取**主题行高**（labelLarge 的 lineHeight）而不是写死的 16dp：
+        // 行高跟着 sp 走，系统字号放大时它自动变高（2 倍 → 32dp），读数行才不会被压成半行
+        //（真机 2 倍字号截图证实过：16dp 的槽位把 `A 00:12 / 循环 ×12 / B 00:37` 切掉了一半）。
+        // 1 倍字号下 labelLarge 的行高恰好也是 16dp，因此**常规机型的几何完全不变**。
+        val abReadoutLineHeight = MaterialTheme.typography.labelLarge.lineHeight
+        val abReadoutSlotHeight = if (abReadoutLineHeight != TextUnit.Unspecified) {
+            with(LocalDensity.current) { abReadoutLineHeight.toDp() }
+        } else {
+            PlayerPortraitControlsSpacing
+        }
         val hasAbMarkers = abStart != null || abEnd != null
+        val abReadoutReservedHeight = if (hasAbMarkers) {
+            maxOf(PlayerPortraitControlsSpacing, abReadoutSlotHeight)
+        } else {
+            0.dp
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(PlayerChromeButtonSize + if (hasAbMarkers) PlayerPortraitControlsSpacing else 0.dp),
+                .height(PlayerChromeButtonSize + abReadoutReservedHeight),
         ) {
             androidx.compose.animation.AnimatedVisibility(
                 visible = sectionsVisible,
@@ -394,7 +484,14 @@ internal fun BottomPlaybackControls(
                 Box(Modifier.weight(1f)) {
                     if (duration != null && duration > 0 && abStart != null) {
                         val markerColor = YingLiTheme.colors.selectionStructural
-                        Canvas(Modifier.matchParentSize().padding(horizontal = 10.dp)) {
+                        // A–B 区间高亮 + 两端标记：画在**进度条自己那一行**上（不是另起一行），
+                        // 与滑杆共用同一段水平几何（`padding(horizontal = 10.dp)` 对齐滑杆轨道）。
+                        // 单独挂 testTag：区间高亮是"AB 生效"最直观的读数，instrumented 要能断言它在场。
+                        Canvas(
+                            Modifier.matchParentSize()
+                                .padding(horizontal = 10.dp)
+                                .testTag(PlayerTestTags.AB_RANGE),
+                        ) {
                             val startX = size.width * (abStart.toFloat() / duration).coerceIn(0f, 1f)
                             val endX = abEnd?.let { size.width * (it.toFloat() / duration).coerceIn(0f, 1f) }
                             if (endX != null) {
@@ -414,9 +511,9 @@ internal fun BottomPlaybackControls(
                         value = displayedPositionMillis.toFloat().coerceAtMost((duration ?: 1).toFloat()),
                         onValueChange = {
                             dragging = true
-                            previewPositionMillis = it.toLong().let { candidate ->
-                                if (abStart != null && abEnd != null) candidate.coerceIn(abStart, abEnd) else candidate
-                            }
+                            // **不把拖动钳进 [A,B]**：D8-A（阶段 0 裁决保留）允许循环期间拖到区间外，
+                            // 旧实现在这里 `coerceIn(abStart, abEnd)`，属于被删掉的旧语义。
+                            previewPositionMillis = it.toLong()
                             // 只记录最新目标；真正投放由上面的 gate 决定（就绪即投放），因此不会排队。
                             pendingSeekMillis = previewPositionMillis
                         },
@@ -447,12 +544,64 @@ internal fun BottomPlaybackControls(
                 )
                     }
                     if (hasAbMarkers) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                        // 区间读数行：左端 A、中间"循环 ×N"、右端 B。
+                        // 计数只在**区间完整**（A、B 都设了）时出现：只设了 A 时循环还没开始，
+                        // 显示 `循环 ×0` 会让人以为"已经在循环但一次没跑"。
+                        //
+                        // 字号走与 AB 胶囊**同一套适配**（playerChromeTextFontSizeSp）：
+                        // 系统字号放大 / 窄屏下三段文字会比整屏还宽，硬排在 SpaceBetween 里
+                        // 会互相压住、两端被裁（2 倍字号的真机截图证实过）。这里按可用宽度统一缩字号，
+                        // 并保留可读下限 —— 与胶囊里的按钮同一条口径。
+                        val abReadoutA = abStart?.let { "A ${formatDuration(it)}" }.orEmpty()
+                        val abReadoutCount = if (abStart != null && abEnd != null) {
+                            stringResource(R.string.player_ab_loop_count, abLoopCount)
+                        } else {
+                            ""
+                        }
+                        val abReadoutB = abEnd?.let { "B ${formatDuration(it)}" }.orEmpty()
+                        val abReadoutTexts = listOf(abReadoutA, abReadoutCount, abReadoutB).filter { it.isNotEmpty() }
+                        BoxWithConstraints(
+                            modifier = Modifier.fillMaxWidth().testTag(PlayerTestTags.AB_RANGE_LABELS),
                         ) {
-                            Text("A ${formatDuration(abStart)}", color = YingLiTheme.player.controlPrimary)
-                            Text("B ${formatDuration(abEnd)}", color = YingLiTheme.player.controlPrimary)
+                            val abReadoutFontSize = playerChromeTextFontSizeSp(
+                                availableWidth = maxWidth - AbReadoutGap * (abReadoutTexts.size - 1).coerceAtLeast(0),
+                                labels = abReadoutTexts,
+                                baseFontSize = MaterialTheme.typography.labelLarge.fontSize,
+                                fontScale = LocalDensity.current.fontScale,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(AbReadoutGap, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = abReadoutA,
+                                    color = YingLiTheme.player.controlPrimary,
+                                    style = playerTimeTextStyle(),
+                                    fontSize = abReadoutFontSize,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                )
+                                if (abReadoutCount.isNotEmpty()) {
+                                    Text(
+                                        text = abReadoutCount,
+                                        color = YingLiTheme.player.controlSecondary,
+                                        style = playerTimeTextStyle(),
+                                        fontSize = abReadoutFontSize,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.testTag(PlayerTestTags.AB_LOOP_COUNT),
+                                    )
+                                }
+                                Text(
+                                    text = abReadoutB,
+                                    color = YingLiTheme.player.controlPrimary,
+                                    style = playerTimeTextStyle(),
+                                    fontSize = abReadoutFontSize,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                )
+                            }
                         }
                     }
                 }
@@ -484,13 +633,19 @@ internal fun BottomPlaybackControls(
         Box(
             modifier = Modifier.fillMaxWidth()
                 .height(auxiliaryBandHeight)
-                .clipToBounds(),
+                .clipToBounds()
+                // 辅助带的**唯一**标记：它的宽度就是工具胶囊用于排版决策的可用宽度，
+                // instrumented 用它断言"胶囊确实住在带子里"以及"排版用的是同一处宽度"。
+                .testTag(PlayerTestTags.AUXILIARY_BAND),
         ) {
             // 外层的 contentAlignment 显式写 TopStart：托盘行按满高测量（requiredHeight），动画中途
             // 比带子高，**必须**从带子顶边往下摆，否则托盘会随着带子高度在格子里上下浮动。
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = toolsExpanded && sectionsVisible,
+                    // 托盘行让位给**任何**一枚工具胶囊：两者住在同一个槽位里，
+                    // 同时可见就是两套控件叠在一起（截图胶囊那条路以前靠 sectionsVisible 顺带挡住，
+                    // AB 胶囊打开时三段是可见的，所以这里必须显式排除）。
+                    visible = toolsExpanded && sectionsVisible && !toolCapsuleVisible,
                     enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
                     exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
                 ) {
@@ -528,7 +683,7 @@ internal fun BottomPlaybackControls(
                                 onToggleLock = onToggleLock,
                                 onPrevious = onPrevious,
                                 onNext = onNext,
-                                onToggleTools = { toolsExpanded = !toolsExpanded },
+                                onToggleTools = toggleTools,
                                 onOpenVideoInfo = onOpenVideoInfo,
                                 onSelectAudioTrack = onSelectAudioTrack,
                                 onSelectSubtitleTrack = onSelectSubtitleTrack,
@@ -542,9 +697,10 @@ internal fun BottomPlaybackControls(
                     }
                 }
             }
-            ScreenshotToolAnimatedSlot(
-                visible = capsuleVisible,
+            AuxiliaryToolCapsuleSlot(
+                tool = toolCapsule,
                 screenshotTool = screenshotTool,
+                abTool = abTool,
             )
         }
         // 按钮行槽位：**恒为 PlayerChromeButtonSize，永远是 Column 的最后一个子项**。
@@ -633,7 +789,7 @@ internal fun BottomPlaybackControls(
                                         onToggleLock = onToggleLock,
                                         onPrevious = onPrevious,
                                         onNext = onNext,
-                                        onToggleTools = { toolsExpanded = !toolsExpanded },
+                                        onToggleTools = toggleTools,
                                         onOpenVideoInfo = onOpenVideoInfo,
                                         onSelectAudioTrack = onSelectAudioTrack,
                                         onSelectSubtitleTrack = onSelectSubtitleTrack,
@@ -674,23 +830,58 @@ internal fun BottomPlaybackControls(
 }
 
 /**
- * 截图胶囊在辅助带里的叠放槽：从右向左滑入/滑出 + 淡入淡出，时长取胶囊自己的
+ * 底栏辅助带那一格里当前该渲染哪一枚工具胶囊。
+ *
+ * 截图工具与 AB 工具**共用同一格**（§3.3），所以"谁在里面"必须是**一个**判定的结果：
+ * 两处各画一个、再靠状态互斥去保证不重叠，一旦某个时序漏掉就会出现两枚胶囊叠在一起。
+ */
+internal enum class AuxiliaryToolCapsule { NONE, SCREENSHOT, AB_LOOP }
+
+/**
+ * 解析辅助带的占用者。
+ *
+ * **AB 优先**：打开 AB 工具的动作本身就会结束截图会话（`Armed` / `Capturing`）或让截图工具让位
+ * （`Preview`，保留预览卡），因此两者同时为真是"同一帧内的中间态"，此时渲染 AB ——
+ * 用户刚才点的就是 AB，先出现的应该是它。
+ */
+internal fun auxiliaryToolCapsule(
+    abToolOpen: Boolean,
+    screenshot: ScreenshotUiState,
+): AuxiliaryToolCapsule = when {
+    abToolOpen -> AuxiliaryToolCapsule.AB_LOOP
+    screenshot.isCapsuleVisible() -> AuxiliaryToolCapsule.SCREENSHOT
+    else -> AuxiliaryToolCapsule.NONE
+}
+
+/**
+ * 工具胶囊在辅助带里的叠放槽：从右向左滑入/滑出 + 淡入淡出，时长取胶囊自己的
  * [SCREENSHOT_CAPSULE_TRANSITION_MILLIS]（比底栏三段的 240ms 慢，理由见该常量）。
+ *
+ * 截图胶囊与 AB 胶囊**渲染在这里的同一个槽**里（[AuxiliaryToolCapsule] 只选一枚），
+ * 于是两枚胶囊的竖直带、水平起点、时序完全同源 —— 这正是 §3.3 要求的"位置/几何/材质同源"。
  *
  * 内层 Box 的高度固定为 [PlayerScreenshotCapsuleHeight]：胶囊在带子里的竖直位置只由"带子顶边"
  * 决定，槽位高度不参与测量，避免胶囊被动画中途的带子高度压扁。
+ *
+ * 滑出期间要继续画**刚才那一枚**胶囊的内容：AnimatedVisibility 在退场期间会保留自身，
+ * 若内容跟着这次状态一起变成 `NONE`，用户看到的就是"一个空框滑出去"。
  */
 @Composable
-private fun ScreenshotToolAnimatedSlot(
-    visible: Boolean,
+private fun AuxiliaryToolCapsuleSlot(
+    tool: AuxiliaryToolCapsule,
     screenshotTool: @Composable () -> Unit,
+    abTool: @Composable () -> Unit,
 ) {
+    // 记住最后一次真正在屏幕上的那一枚（只依赖入参，写自己的 state 不会引入环）。
+    var lastShownTool by remember { mutableStateOf(AuxiliaryToolCapsule.NONE) }
+    if (tool != AuxiliaryToolCapsule.NONE) lastShownTool = tool
+    val shownTool = if (tool == AuxiliaryToolCapsule.NONE) lastShownTool else tool
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
         AnimatedVisibility(
-            visible = visible,
+            visible = tool != AuxiliaryToolCapsule.NONE,
             enter = slideInHorizontally(
                 initialOffsetX = { it },
                 animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS),
@@ -704,7 +895,11 @@ private fun ScreenshotToolAnimatedSlot(
                 modifier = Modifier.fillMaxWidth().requiredHeight(PlayerScreenshotCapsuleHeight),
                 contentAlignment = Alignment.TopCenter,
             ) {
-                screenshotTool()
+                when (shownTool) {
+                    AuxiliaryToolCapsule.SCREENSHOT -> screenshotTool()
+                    AuxiliaryToolCapsule.AB_LOOP -> abTool()
+                    AuxiliaryToolCapsule.NONE -> Unit
+                }
             }
         }
     }
@@ -792,7 +987,7 @@ private fun PlayerShortcut(
         PlayerControlId.SUBTITLE -> YingLiIcon.SUBTITLES
         PlayerControlId.SCALE -> videoScaleModeIcon(state.scaleMode)
         PlayerControlId.SCREENSHOT -> YingLiIcon.SCREENSHOT
-        PlayerControlId.AB_LOOP -> YingLiIcon.REPLAY
+        PlayerControlId.AB_LOOP -> YingLiIcon.AB2
         PlayerControlId.MIRROR_HORIZONTAL -> YingLiIcon.FLIP_HORIZONTAL
         PlayerControlId.MIRROR_VERTICAL -> YingLiIcon.FLIP_VERTICAL
         // 后台播放是"声音继续、画面不可见"，用耳机字形表达比用齿轮/扬声器更直观。
@@ -843,18 +1038,25 @@ private fun PlayerShortcut(
             if (state.isFullscreen) R.string.player_fullscreen_exit else R.string.player_fullscreen,
         )
     }
+    // 托盘按钮的"生效中"：镜像、后台播放、AB 循环都是**开关**而非动作，生效时实心。
+    // AB 循环的判定来自 [PlayerUiState.abLoopActive]（会话侧区间是否完整），与顶栏快捷槽、
+    // 设置面板 chip 读的是同一个值 —— 三处不允许各写一套判定。
+    val toggleOn = when (id) {
+        PlayerControlId.MIRROR_HORIZONTAL -> mirror.horizontal
+        PlayerControlId.MIRROR_VERTICAL -> mirror.vertical
+        PlayerControlId.BACKGROUND_PLAYBACK -> backgroundPlaybackEnabled
+        PlayerControlId.AB_LOOP -> state.abLoopActive
+        else -> null
+    }
     PlayerChromeIconButton(
         icon = icon,
         contentDescription = label,
         onClick = action,
         size = PlayerChromeButtonSize,
-        // 镜像与后台播放都是"开关"而非"动作"，生效时用选中态表达；其余按钮保持原有外观。
-        filled = when (id) {
-            PlayerControlId.MIRROR_HORIZONTAL -> mirror.horizontal
-            PlayerControlId.MIRROR_VERTICAL -> mirror.vertical
-            PlayerControlId.BACKGROUND_PLAYBACK -> backgroundPlaybackEnabled
-            else -> false
-        },
+        filled = toggleOn == true,
+        // 开关型按钮把选中态同时写进语义（读屏念"已选中"，测试据此断言激活态）；
+        // 其余按钮传 null，语义树里不会凭空多出一个 selected。
+        selectedState = toggleOn,
         valueLabel = valueLabel,
     )
 }
@@ -879,7 +1081,14 @@ internal fun videoScaleModeIcon(mode: VideoScaleMode): YingLiIcon = when (mode) 
     VideoScaleMode.ORIGINAL -> YingLiIcon.STRETCH
 }
 
-private fun formatDuration(durationMillis: Long?): String {
+/**
+ * 播放页各处时间读数的**唯一格式**（进度行两端、AB 区间读数行、AB 胶囊的设置点按钮）。
+ *
+ * `internal` 而不是 `private`：AB 胶囊必须显示与进度条**完全一样**的时间字符串，
+ * 两处各写一份格式化就会漂移（旧胶囊用的是 `m:ss`，与进度条的 `mm:ss` 并排出现时像两个时间点）。
+ * 超过一小时不进位成 `hh:mm:ss`，与进度条既有行为一致。
+ */
+internal fun formatDuration(durationMillis: Long?): String {
     if (durationMillis == null) return "--:--"
     val totalSeconds = durationMillis.coerceAtLeast(0) / 1_000
     return "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)

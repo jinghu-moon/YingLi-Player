@@ -1199,6 +1199,220 @@ class PlayerViewModelTest {
         stateCollector.cancel()
     }
 
+    /**
+     * 阶段 3 / 互斥三分支之一（`Armed` / `Capturing`）：打开 AB 工具结束截图会话，
+     * 并且**晚到的捕获结果必须被丢弃**（T3.6）—— 否则预览卡会与 AB 胶囊同时出现。
+     *
+     * 这条时序在真机上是真实存在的：用户按下快门后立刻去点 AB。
+     */
+    @Test
+    fun `opening the ab tool ends an armed screenshot session and discards its late capture`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(0, 10_000)))
+        val gateway = GatedScreenshotGateway()
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = gateway,
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        runCurrent()
+        assertEquals(ScreenshotUiState.Armed, viewModel.state.value.screenshot)
+        viewModel.captureScreenshot()
+        runCurrent()
+        assertEquals(ScreenshotUiState.Capturing, viewModel.state.value.screenshot)
+
+        // 捕获还在途中，用户打开了 AB 工具：整个截图会话就此结束。
+        viewModel.openAbTool()
+        runCurrent()
+        assertTrue(viewModel.state.value.abToolOpen)
+        assertEquals(ScreenshotUiState.Idle, viewModel.state.value.screenshot)
+
+        // 现在那次捕获才回来：文件已经在网关侧落盘，但**不得**进入 Preview。
+        gateway.complete(ScreenshotResult.Saved("frame.jpg", "content://media/1", "Pictures/YingLi/frame.jpg"))
+        advanceUntilIdle()
+        assertEquals(ScreenshotUiState.Idle, viewModel.state.value.screenshot)
+        assertTrue("AB 工具仍开着", viewModel.state.value.abToolOpen)
+        stateCollector.cancel()
+    }
+
+    /**
+     * 异步晚到的**加强版**时序（旧实现挡不住的那一种）：`武装 → 捕获 → 关闭 → 再武装`，
+     * 状态又回到了 `Capturing`。只比状态的话，上一次的旧结果会被当成这一次的发布出去。
+     */
+    @Test
+    fun `a late capture result never lands in a re-armed screenshot session`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(0, 10_000)))
+        val gateway = GatedScreenshotGateway()
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = gateway,
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        runCurrent()
+        viewModel.captureScreenshot()
+        runCurrent()
+        viewModel.closeScreenshot()
+        runCurrent()
+        viewModel.armScreenshot()
+        runCurrent()
+        assertEquals(ScreenshotUiState.Armed, viewModel.state.value.screenshot)
+
+        gateway.complete(ScreenshotResult.Saved("frame.jpg", "content://media/1", "Pictures/YingLi/frame.jpg"))
+        advanceUntilIdle()
+        assertEquals("旧会话的结果不得落进新的截图会话", ScreenshotUiState.Armed, viewModel.state.value.screenshot)
+        stateCollector.cancel()
+    }
+
+    /**
+     * 互斥三分支之二（`Preview`）：打开 AB 工具**不动**预览卡与倒计时，
+     * 只是让截图工具模式退出（判定见 `PlayerUiState.isScreenshotToolActive`）。
+     */
+    @Test
+    fun `opening the ab tool keeps the screenshot preview card and its countdown`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(
+                ScreenshotResult.Saved("frame.jpg", "content://media/1", "Pictures/YingLi/frame.jpg"),
+            ),
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        runCurrent()
+        viewModel.captureScreenshot()
+        runCurrent()
+        val before = (viewModel.state.value.screenshot as ScreenshotUiState.Preview)
+        assertEquals("Pictures/YingLi/frame.jpg", before.location)
+
+        viewModel.openAbTool()
+        runCurrent()
+        assertTrue(viewModel.state.value.abToolOpen)
+        // 截图结果原样保留：卡片、位置、读条都还在。
+        val kept = (viewModel.state.value.screenshot as ScreenshotUiState.Preview)
+        assertEquals(before.location, kept.location)
+        assertEquals(before.uri, kept.uri)
+        // 截图工具模式让位（底栏不再为它收起），但**倒计时照走**。
+        assertFalse(viewModel.state.value.isScreenshotToolActive())
+        advanceTimeBy(1_000)
+        val midway = (viewModel.state.value.screenshot as ScreenshotUiState.Preview)
+        assertTrue("倒计时必须继续：${midway.remainingMillis}", midway.remainingMillis < before.remainingMillis)
+        stateCollector.cancel()
+    }
+
+    /**
+     * 互斥三分支之三（无截图会话）：直接打开，不产生任何副作用。
+     */
+    @Test
+    fun `opening the ab tool with no screenshot session just opens the tool`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg")),
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.openAbTool()
+        runCurrent()
+        assertTrue(viewModel.state.value.abToolOpen)
+        assertEquals(ScreenshotUiState.Idle, viewModel.state.value.screenshot)
+        stateCollector.cancel()
+    }
+
+    /**
+     * D3：**关闭 ≠ 取消**。关闭 AB 工具只收起胶囊，区间与计数都留在会话侧，
+     * 因此托盘按钮继续实心、进度行的区间与 `循环 ×N` 继续显示（它们都读同一个 `abLoop`）。
+     */
+    @Test
+    fun `closing the ab tool keeps the loop active and the count intact`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(2_000, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        controller.publishAbLoop(
+            seeyuer.yingli.player.domain.playback.AbLoopSession(
+                state = seeyuer.yingli.player.domain.playback.AbLoopState(2_000, 6_000),
+                loopCount = 12,
+            ),
+        )
+        advanceUntilIdle()
+        viewModel.openAbTool()
+        runCurrent()
+        viewModel.closeAbTool()
+        runCurrent()
+
+        assertFalse(viewModel.state.value.abToolOpen)
+        // 循环继续生效：托盘按钮的实心态、chip 的选中态、进度行的区间与计数都读这一份状态。
+        assertTrue(viewModel.state.value.abLoopActive)
+        assertEquals(12L, viewModel.state.value.abLoop.loopCount)
+        assertEquals(2_000L, viewModel.state.value.abLoop.pointA)
+        assertEquals(6_000L, viewModel.state.value.abLoop.pointB)
+        stateCollector.cancel()
+    }
+
+    /**
+     * 截图时间戳必须取**实时位置**：快照的 timeline 位置只在状态跳变时刷新，
+     * 播放推进不会发布状态（这是阶段 1 收口过的同一类"陈旧位置"）。
+     */
+    @Test
+    fun `the screenshot timestamp uses the live position rather than the stale snapshot`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, seeyuer.yingli.player.domain.playback.PlaybackTimeline(2_000, 10_000)))
+        // 播放已经推进到 7.5 秒，而快照还停在 2 秒。
+        controller.setPosition(7_500)
+        val gateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg"))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers),
+            dispatchers,
+            screenshotGateway = gateway,
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+
+        viewModel.armScreenshot()
+        runCurrent()
+        viewModel.captureScreenshot()
+        runCurrent()
+
+        assertEquals(listOf(7_500L), gateway.capturedPositions)
+        stateCollector.cancel()
+    }
+
     @Test
     fun `previous restarts current media after five seconds`() = runTest {
         val controller = FakePlaybackController()
@@ -1751,18 +1965,44 @@ class PlayerViewModelTest {
         val deletedUris = mutableListOf<String>()
         val capturedRotations = mutableListOf<VideoRotation>()
 
+        /** 每次捕获传进来的时间戳：用来断言"截的是哪一帧"。 */
+        val capturedPositions = mutableListOf<Long>()
+
         override suspend fun capture(
             videoTitle: String,
             positionMillis: Long,
             rotation: VideoRotation,
         ): ScreenshotResult {
             capturedRotations += rotation
+            capturedPositions += positionMillis
             return captureResult
         }
 
         override suspend fun delete(uri: String): Result<Unit> {
             deletedUris += uri
             return deleteResult
+        }
+    }
+
+    /**
+     * 捕获结果由测试**显式放行**的网关：用来构造"用户按下快门后立刻打开 AB 工具，
+     * 结果才晚到"这一时序（结果放行前 `capture` 一直挂起）。
+     */
+    private class GatedScreenshotGateway : ScreenshotGateway {
+        private val gate = CompletableDeferred<ScreenshotResult>()
+        val capturedPositions = mutableListOf<Long>()
+
+        fun complete(result: ScreenshotResult) {
+            gate.complete(result)
+        }
+
+        override suspend fun capture(
+            videoTitle: String,
+            positionMillis: Long,
+            rotation: VideoRotation,
+        ): ScreenshotResult {
+            capturedPositions += positionMillis
+            return gate.await()
         }
     }
 

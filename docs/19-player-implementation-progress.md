@@ -709,3 +709,314 @@ spike 取证材料（全部在 gitignore 的 `build/` 下，不进入提交；`b
 
 设备侧已清理：`adb shell cmd appops set seeyuer.yingli.player 10021 ignore`（恢复为 `ignore`）、
 删除 `/data/local/tmp/spike_land.m4v` 与 app 私有目录 `files/spike/`、`files/spike_land.m4v`。
+
+## A-B 循环方案 C（拼接媒体源）的验证：`ConcatenatingMediaSource`（2026-10-03，真机 spike）
+
+对应 `docs/20-ab-loop-refactor-plan.md` §1.1 / §4.3 的"方案 C"。与上一节同样是**临时 spike**：
+结束时 spike 源码（app 主源码钩子 + androidTest 用例）已全部删除，`git status` 干净（见本节末尾"回退证据"）。
+
+### 被测形态与环境
+
+```kotlin
+ConcatenatingMediaSource(
+    ClippingMediaSource(base, 0, A),                            // 前缀：A 之前正常播放
+    LoopingMediaSource(ClippingMediaSource(base, A, B), loop),  // 循环段
+)
+```
+
+| 项目 | 取值 |
+| --- | --- |
+| 设备 | Xiaomi 25102RKBEC（`f3ba305a`）/ HyperOS V816 / Android 16 / API 36 |
+| Media3 | 1.10.1（与 app 一致） |
+| 素材 | `prototypes/views/assets/横屏.m4v`，H.264 720×480 **25fps** + AAC，95.36 s（**一帧 = 40 ms**） |
+| 区间 | A = 20 000 ms，B = 22 000 ms（与上一节 T0.2 完全一致，便于横向对比） |
+| 循环次数 | 主测 `Integer.MAX_VALUE`；对照 `3` / `10 000` |
+| 跳转精度 | `SeekParameters.EXACT` |
+| 观测 | ① 每帧 `VideoFrameMetadataListener` 的绝对媒体 PTS；② `Player.Listener` 的 `STATE_BUFFERING` / `onIsLoadingChanged` / `onPositionDiscontinuity` / `onMediaItemTransition`；③ `AnalyticsListener` 的音频回调与 `onRenderedFirstFrame`；④ 同一时刻读 `Timeline.Window` / `Period` 字段 |
+
+跑测入口：instrumentation 用例 `AbLoopSpikeCTest`（c1b/c2/c3/c5）、app 主源码钩子
+`AbLoopSpikeEngineHook` + `AbLoopSpikeReceiver`（真进程音频/通知）。原始证据在 `build/spike/`。
+
+### 结论一（决定性）：无限循环次数会让播放器**主线程卡死**，不是"需要映射"而是"跑不起来"
+
+在**真 app 进程**（真 `YingLiPlaybackService` + 真 `MediaController` + 真音频渲染器）里用
+`Integer.MAX_VALUE` 打开后，app 被 ANR 并随后被杀。从 `adb shell dumpsys dropbox --print`
+取到的主线程栈（`build/spike/dropbox_anr.txt`）：
+
+```text
+"main" prio=5 tid=1 Runnable                    <-- 一直占着 CPU（schedstat utm=1525 stm=15）
+  at androidx.media3.exoplayer.source.ForwardingTimeline.getNextWindowIndex(ForwardingTimeline.java:51)
+  at androidx.media3.exoplayer.source.LoopingMediaSource$InfinitelyLoopingTimeline.getNextWindowIndex(LoopingMediaSource.java:210)
+  at androidx.media3.exoplayer.source.ForwardingTimeline.getNextWindowIndex(ForwardingTimeline.java:51)
+  at androidx.media3.exoplayer.AbstractConcatenatedTimeline.getNextWindowIndex(AbstractConcatenatedTimeline.java:95)
+  at androidx.media3.exoplayer.source.ForwardingTimeline.getNextWindowIndex(ForwardingTimeline.java:51)
+  at androidx.media3.exoplayer.AbstractConcatenatedTimeline.getNextWindowIndex(AbstractConcatenatedTimeline.java:95)
+  at androidx.media3.common.Timeline.equals(Timeline.java:1405)        <-- 关键
+  at androidx.media3.exoplayer.ExoPlayerImpl.updatePlaybackInfo(ExoPlayerImpl.java:2275)
+  at androidx.media3.exoplayer.ExoPlayerImpl.handlePlaybackInfo(ExoPlayerImpl.java:2247)
+  at android.os.Handler.handleCallback / Looper.loopOnce
+```
+
+ANR 报告头（同一文件）：
+
+```text
+Subject: Input dispatching timed out (... seeyuer.yingli.player/.app.MainActivity is not responding ...)
+13% 25967/seeyuer.yingli.player: 12% user + 0.6% kernel / faults: 112103 minor 43 major
+```
+
+字节码侧印证（`javap -c androidx.media3.common.Timeline`，`build/spike/timeline_bytecode.txt`）：
+`Timeline.equals` 在比较完 window/period 之后，还要"沿窗口链把两个时间轴各走一遍"——
+
+```text
+203: iload 7                      // 当前 window index
+205: iload 8                      // lastWindowIndex
+207: if_icmpeq 242                // 相等即结束
+210: aload_0 ; getNextWindowIndex(0, true)     // this
+220: aload_2 ; getNextWindowIndex(0, true)     // other
+230: if_icmpeq 235 ; goto 203
+```
+
+即 **`equals` 的复杂度 ∝ 窗口数**。而 `LoopingMediaSource$InfinitelyLoopingTimeline.getWindowCount()`
+给出 `178956970`（≈`Integer.MAX_VALUE/12`），再被包在 `ConcatenatingMediaSource` 的
+`AbstractConcatenatedTimeline` 里（栈上那层递归），于是 `ExoPlayerImpl.updatePlaybackInfo` 每次做
+`timeline.equals(...)` 都要走 **约 10^8 × 嵌套深度** 次 `getNextWindowIndex`，主线程永远出不来。
+
+**这说明：拼接源的"时长语义"问题不是"进度条显示失真"这种可映射问题，而是无限时间轴会让播放器自己的主线程不可用。**
+
+### 结论二：循环边界仍有 5.8–6.5 帧的画面空洞（50/50），与循环次数无关
+
+`LoopingMediaSource` 回绕处"相邻两帧的墙钟差"（instrumentation，逐帧 PTS，50 次循环，c1b）：
+
+| 指标 | 实测 | 名义一帧 40 ms | §3.4 阈值 |
+| --- | --- | --- | --- |
+| 空洞 min | **232 ms** | 5.8 帧 | ≤1 帧 |
+| 空洞 median | **245.5 ms** | 6.1 帧 | — |
+| 空洞 max | **260 ms** | 6.5 帧 | — |
+| 空洞 **P95** | **257 ms** | 6.4 帧 | — |
+| >60 ms（1.5 帧）的次数 | **50/50** | — | 不通过 |
+
+逐次 50 个值（ms）：
+
+```text
+247,253,251,239,253,248,244,237,245,246,241,246,237,240,240,242,246,236,247,251,245,247,255,
+245,242,246,237,240,248,258,257,260,233,237,239,241,240,237,250,255,232,247,254,245,248,245,
+252,244,253,247
+```
+
+同一现象在**有限循环次数**下同样存在（c5，`loops=10000`，跨越一次回绕）：
+
+```text
+... 33860 21800000 | 33901 21840000 gap=41ms | 34136 20000000 gap=235ms ptsdelta=-1840000us | 34141 20040000 gap=1ms
+```
+
+且每次回绕的 PTS 从 `21 840 000 µs` 跳回 `20 000 000/20 040 000 µs`：
+**素材尾部约 1.84 s（≈46 帧）被直接跳过**，用户永远看不到 `[21.84s, 22s]` 这段。
+
+与方案 A 的关键差别：方案 A 的空洞是**每次循环 1 帧**；方案 C 是**每次回绕 5.8–6.5 帧**（约 6 倍）。
+
+### 结论三：边界**不产生** `STATE_BUFFERING`，但会重新加载视频输出（`onIsLoadingChanged(true)` 每次一次）
+
+- `STATE_BUFFERING`：**0 次**（c5 有限循环、以及 c2 运行期间在循环段的多次回绕都没观测到；
+  c1b 的 `REBUFFER` 计数同样为 0）。→ 按 §3.4"重缓冲计数 = 0"这一条，方案 C **不因重缓冲而失败**
+  （这一点优于方案 A 的 50/50 次 `STATE_BUFFERING`）。
+- `onIsLoadingChanged(true)`：**每次回绕都有**（c5 `loops=3` 时 `isLoadingTrueCount=3`，`loops=10000` 时 `=6`），
+  与 `RENDERED_FIRST_FRAME` 的复位同步（c2 运行里 `RENDERED_FIRST_FRAME` 的 `gapMs` 稳定出现 1993–2006 ms）——
+  即**每次回绕都要重建一次视频输出**，这正是那 245 ms 空洞的来源。
+
+### 结论四：timeline 是"多个 window"，`player.duration` 变成**当前 window 的时长**
+
+`c2_timeline.json` 里的原始字段（拼接源刚打开、READY）：
+
+```text
+windowCount=2  currentMediaItemIndex=0  durationMs=20000  seekable=true  dynamic=false
+w0{durationUs=20000000, positionInFirstPeriodUs=0,        isSeekable=true, isDynamic=false, isLive=false, periods=0..0, periodDurationUs=20000000, periodPositionInWindowUs=0}
+w1{durationUs=2000000,  positionInFirstPeriodUs=20000000, isSeekable=true, isDynamic=false, isLive=false, periods=1..1, periodDurationUs=22000000, periodPositionInWindowUs=-20000000}
+```
+
+要点：
+
+1. **不是"无限时长"**：`windowCount=2`，`w1.durationUs=2000000`（循环段一次迭代的长度），
+   `isDynamic=false`、`isLive=false` —— 也就是说**时间轴看起来是一个 22 s 的普通两段播放列表**，
+   循环完全由 `LoopingMediaSource` 内部重复 `w1` 实现（`windowCount` 是 2 还是 10001 取决于循环次数：
+   `loops=10000` 时 `windowCount=10001`）。
+2. **`player.duration` 报的是当前 window 的时长**：前缀段 `durationMs=20000`，进入循环段后 `durationMs=2000`。
+   → 进度条/通知/`MediaSession` 的分母会在跨过 A 的瞬间从 20 s 变成 2 s；
+   同一素材在未包装时 `player.duration = 95458`。这不是"要不要统一映射"的取舍问题，
+   而是**必须**映射（否则进度条分母直接错），且拼接后还要再映射一层"window 索引 + 窗口内位置 → 绝对位置"。
+3. `w1.periodPositionInWindowUs = -20000000`（即 −A）、`periodDurationUs = 22000000` ——
+   与上一节 T0.1-U9 的坐标系现象一致：**位置/seek 用窗口坐标，`Window`/`Period` 元数据用媒体时间坐标**。
+
+### 结论五：seek 映射"半可控"——窗口内精确，但**越不过 A/B 边界**
+
+`c3_seekmap.json` 逐次 seek（每次 seek 后 700 ms 采样）：
+
+| 请求 seek 到 | 实际落点 | 所在 window | `newDiscontinuities` | 能继续播吗 |
+| --- | --- | --- | --- | --- |
+| 10 000 ms | 10 000 | w0（前缀） | `SEEK: 0:6 -> 0:10000` | — |
+| 15 000 ms | 15 000 | w0 | `SEEK: 0:10000 -> 0:15000` | 推进 0 ms/1.5 s（停在 BUFFERING，见下） |
+| 19 800 ms | 19 800 | w0 | `SEEK: 0:15000 -> 0:19800` | — |
+| 19 999 ms | 19 999 | w0 | `SEEK: 0:19800 -> 0:19999` | — |
+| 20 000 ms | **19 999** | w0 | 无新 discontinuity | 越过 A 被钳回 |
+| 20 001 ms | **19 999** | w0 | 无新 discontinuity | 越过 A 被钳回 |
+| 21 000 ms | **19 999** | w0 | 无新 discontinuity | 越过 A 被钳回 |
+| 21 900 / 21 999 / 22 001 / 23 000 / 25 000 / 30 000 / 60 000 / 90 000 ms | **全部 19 999** | w0 | 无新 discontinuity | 全部被钳回 |
+
+- **窗口内 seek 是精确的**（10 000/15 000/19 800 都逐毫秒命中），这一点比单一裁剪源好
+  （裁剪源上 `seekTo` 是片段相对坐标，见上一节 U9）。
+- **但一切 ≥A 的目标都被钳在 `w0` 的末尾（19 999）**，**不会**跨到循环段 `w1`；
+  只有自然播放到 A 才会触发 `DISCONTINUITY(AUTO_TRANSITION): 0:20000 -> 1:0` + `MEDIA_ITEM_TRANSITION`。
+  → 用户"拖进度条拖进循环段"这条路在方案 C 下**也是失败的**（落点在 A 前最后一毫秒，然后又要自然播过 A 才进循环）。
+- 采样时刻 `state=BUFFERING`、`isPlaying=false`：每次 seek 后的 700 ms 观测窗都还在重新缓冲，
+  与"每次 seek 都要重建输出"一致（这与方案 A 循环点的 `STATE_BUFFERING` 是两回事，后者发生在**自然**回绕）。
+
+### 与方案 A 的逐项对比（同一素材、同一区间、同一台设备、同一套阈值）
+
+| §3.4 项 | 通过条件 | 方案 A（手动 seek + EXACT） | 方案 C（拼接媒体源） |
+| --- | --- | --- | --- |
+| 循环落点误差 | ≤1 帧（40 ms） | ✅ 50/50 = **0 µs**（帧精确） | ✅ 回绕后首帧对 A 的偏差只有 `{0, 40 000} µs`（0 或 1 帧） |
+| 无累积漂移（50 次） | 首末同量级 | ✅ 全程恒 0 | ✅ 50 次回绕后首帧 PTS 只有两种取值，无漂移 |
+| 不得重新缓冲 | 计数 = 0 | ❌ 50/50 次 `STATE_BUFFERING`（27–45 ms，均值 37.3） | ✅ `STATE_BUFFERING` **0 次**；但 `onIsLoadingChanged(true)` 每次回绕 1 次（视频输出重建） |
+| 音视频间断 | 无丢帧、音频静音 ≤1 帧 | ❌ 循环点每次 **1 帧**空洞；音频未验证 | ❌ 每次回绕 **232–260 ms（5.8–6.5 帧，P95=257 ms）**；且丢掉素材尾部 ≈1.84 s |
+| timeline / 时长正确 | 绝对时长、进度条正确 | ✅ 仍是单一绝对时间轴（95.458 s） | ❌ 变成 2 个 window，`player.duration` 变成"当前 window 时长"（20000 → 2000），**必须**额外映射层 |
+| A 之前能否正常播放 | 可以 | ✅ 可以（未裁剪源） | ✅ 可以（前缀段） |
+| 进入循环是否不用 UI 轮询 | 是 | ❌ 靠 UI/位置越过 B 再 seek | ✅ 由 period `AUTO_TRANSITION` 完成 |
+| 越界 seek | 拖出区间可用 | ⚠️ 需手动 seek（本方案就是 seek） | ❌ 一切 ≥A 的目标都被钳回 19 999（进不去循环段） |
+| 无限循环可用性 | — | ✅ | ❌ **`Integer.MAX_VALUE` 会让主线程卡死在 `Timeline.equals` → ANR** |
+| 实现复杂度 | 低 | 低（现实现即可） | 高（拼接 + 两层坐标映射 + 有限循环次数的追赶策略） |
+
+### 对 `docs/20` 的修正建议（只报告，本轮未改文档结构）
+
+1. **§1.1 / §4.3 应补一条新的 P0 阻断项**：`LoopingMediaSource(..., Integer.MAX_VALUE)` 在 Media3 1.10.1 上
+   与 `ConcatenatingMediaSource` 组合会让播放器主线程卡在 `Timeline.equals → getNextWindowIndex`
+   （证据见本节结论一）。方案 C 若要用，**必须先解决"无限时间轴的比较代价"**，
+   例如改成有限循环次数 + 在接近末尾时追加一段循环源（追赶式续接）。这是本轮新增的、比坐标系更硬的阻断。
+2. **"坐标系问题"应精确表述为**：**位置/seek 使用窗口坐标，`Window`/`Period` 元数据使用媒体时间坐标**；
+   它要求统一映射，但**映射无法解决切源的 104 ms 空洞与 `ENDED`**，故**不能当作方案 B 的充分条件**。
+   本轮又补一条同族证据：拼接源上"位置"还多了一层 **window 索引**（`currentMediaItemIndex` 0/1），
+   映射层要处理的是"window 索引 + 窗口内位置 → 绝对媒体位置"。
+3. **§3.4 的"音视频间断"这一条对方案 C 是硬失败**：232–260 ms 的空洞（P95 257 ms）不是"抖动"，
+   是每次回绕都重建视频输出；同时素材尾部 1.84 s 永远播不到。这两条都来自 `LoopingMediaSource`
+   在**每个新 period** 上重新准备渲染器，属于结构性质，不是参数问题。
+4. **§4.1 的"重建后位置续接：重建前记录绝对位置，重建后 seek 回"在方案 C 下需要改写**：
+   由于越界 seek 会被钳回前缀段末尾（结论五），"续接"必须换算成"window 索引 + 窗口内位置"，
+   且**不能**用绝对位置直接 seek。
+5. **需要记录的 API 事实**：Media3 1.10.1 已把 `ConcatenatingMediaSource`、`LoopingMediaSource`、
+   `ClippingMediaSource` 标为 `@Deprecated`（`javap -v` 可见 `Deprecated: true` + `RuntimeVisibleAnnotations`），
+   替代品 `ConcatenatingMediaSource2` **没有循环原语**；`DefaultMediaSourceFactory` 另有
+   `setEnableClippingInMediaPeriod(true)` + `MediaItem.ClippingConfiguration` 这条**未弃用**的裁剪路径
+   （本轮未验证其与循环的组合，属于后续候选）。
+
+### 判定
+
+| 阈值项 | 方案 C |
+| --- | --- |
+| 落点误差 ≤1 帧 | ✅ 通过 |
+| 50 次无累积漂移 | ✅ 通过 |
+| 循环点最多一次短暂 rebuffer 且 ≤1 帧 | ⚠️ 无 `STATE_BUFFERING`（形式上通过），但每次回绕都有一次视频输出重建 + 245 ms 空洞 |
+| 音频静音 ≤1 帧 | ❌ **未能验证**（见"未能覆盖"） |
+| 帧空洞 | ❌ **不通过**（232–260 ms = 5.8–6.5 帧，P95 257 ms） |
+| timeline / 时长正确 | ❌ **不通过**（多 window + duration 变成窗口时长；无限循环还直接 ANR） |
+| 越界 seek 可用 | ❌ **不通过**（≥A 一律钳回 19 999） |
+
+**明确判定：方案 C 未通过阈值，且包含一条原理性障碍。** 分类：
+
+- **原理性障碍（不可通过"更小心地实现"绕过）**：
+  ①无限循环次数 + 拼接 → `Timeline.equals` 不可判定 → 主线程 ANR（结论一）；
+  ②每次回绕的视频输出重建 → 232–260 ms 帧空洞 + 丢掉素材尾部 1.84 s（结论二/三）。
+  这两条来自 Media3 的两个 media source 实现本身，不是本项目代码的问题。
+- **可修问题**：`player.duration` 变成窗口时长（需要映射层）；越界 seek 被钳回（需要把"拖进循环段"
+  改成"换算成窗口内坐标后 seek 到 w1"）；实现复杂度高。
+- **与方案 A 的关系**：方案 C 唯一优于方案 A 的地方是"不产生 `STATE_BUFFERING`"和"进循环不需要 UI 轮询"；
+  但它把方案 A 的 1 帧空洞放大到 6 帧、额外丢掉 1.84 s 素材、并且引入了"无限时间轴卡死"这个新阻断。
+  **因此按 §3.4 口径，方案 C 不构成对方案 A 的改进。**
+
+### 未能覆盖 / 风险
+
+1. **音频连续性未能验证（本轮最大缺口）**。两条路都断了：
+   - instrumentation 进程：与 `docs/19` T0.1 的既有结论一致，**音频渲染器仍然起不来**
+     （只初始化 video codec，播放器停在 `BUFFERING`；c4 用例 25 s 超时未 READY）；
+   - 真 app 进程：走真 Service/真音频渲染器这条路时，`Integer.MAX_VALUE` 的拼接源让主线程
+     ANR（结论一），播放器根本没进 READY，因此**没有拿到**"循环点是否 `onAudioUnderrun`、
+     音频位置是否连续、是否有静音段"的任何证据。
+   - 已尝试的替代证据（app 进程里 `AudioTrack` 确实起过：`set(sessionId=4257, sampleRate 44100,
+     channelMask 0x3, frameCount 14144)`、`onAudioDeviceUpdate AUDIO_DEVICE_OUT_SPEAKER`）
+     **不能**替代"循环边界音频是否连续"这一项——它只证明音频通路可用。
+2. **通知栏 / `MediaSession` 的 duration 展示未能端到端截图**。app 进程那次 `dumpsys media_session`
+   拿到的是未进入播放的会话（`state=PlaybackState {state=NONE(0), position=0, ...}`，
+   `metadata: null`），因为 spike 的 open 请求没有穿过 runtime 的源注册表（`mediaId` 需要先在
+   `SourceHandleRegistry` 注册），而 ANR 又发生在更早的阶段。**字段级证据是有的**：
+   `player.duration` 在前缀段 = 20 000、循环段 = 2 000（结论四），而
+   `MediaSessionPlayerAdapter`/`ServicePlaybackEngine` 直接发布 `player.duration`，
+   所以通知/进度的分母必然随之变化；但"通知栏实际显示成什么样"本轮**没有截到图**。
+3. **只覆盖一种素材、一台设备、一个区间**：720×480 25fps H.264+AAC、A=20 s/B=22 s、
+   `SeekParameters.EXACT`。未覆盖 VFR、长 GOP 以外的编码、4K/高帧率、纯音频素材。
+4. **未做**：U2（可靠循环事件与用户 seek 的区分）、U3（重建代价）、U5/U6（后台/锁屏/PiP 持续）、
+   U11（可变裁剪是否可行）——按任务要求留给后续批次。
+5. **未验证的候选改进**：`loops` 取有限大值（例如 10 000）+ 在播放接近末尾时再追加一段循环源、
+   或 `DefaultMediaSourceFactory.setEnableClippingInMediaPeriod(true)` + `ClippingConfiguration`
+   的组合。前者能把 ANR 换成"可用的有限时间轴"（`windowCount=10001` 这个量级本身也需要评估内存/比较代价），
+   但**帧空洞与丢尾巴两条不会因此消失**。
+6. **一个本可以拆得更细的变量**：本轮没有单独测"`LoopingMediaSource(未裁剪源)` 单独使用"（不套
+   `ConcatenatingMediaSource`）时回绕处的帧空洞。因此"245 ms 空洞"目前只能说**在这套拼接形态下 50/50 成立**，
+   还不能精确归因到"拼接"还是"循环段自己的 period 切换"；不过按结论三（每次回绕都重建视频输出）
+   与 T0.2（方案 A 的裁剪源循环只丢 1 帧）的对照，更像是**循环段每个 period 重建渲染器**这一条在起作用，
+   而这一条在单独循环时同样存在。若后续要重开方案 C，这一个对照应当先补。
+
+### 回退证据
+
+spike 只新增/临时修改了这些文件，全部已还原：
+
+| 改动 | 类型 |
+| --- | --- |
+| `app/src/androidTest/java/seeyuer/yingli/player/spike/AbLoopSpikeCTest.kt` | 新增（已删除） |
+| `app/src/main/java/seeyuer/yingli/player/spike/AbLoopSpikeEngineHook.kt` | 新增（已删除） |
+| `app/src/main/java/seeyuer/yingli/player/spike/AbLoopSpikeReceiver.kt` | 新增（已删除） |
+| `app/src/main/AndroidManifest.xml` | 临时加 receiver 声明（已 `git checkout` 还原） |
+| `app/src/main/java/.../app/playback/ServicePlaybackEngine.kt` | 临时加 `spikeDataSourceFactory` 参数与一次钩子调用（已还原） |
+| `app/src/main/java/.../app/playback/YingLiPlaybackService.kt` | 临时把 `dataSourceFactory` 传进引擎（已还原） |
+
+**删除 spike 源码、还原三处主源码改动之后、写入本节之前**：
+
+```text
+$ git status --porcelain
+（空）
+$ git status --porcelain --untracked-files=all
+（空）
+$ git diff --stat
+（空）
+```
+
+随后用**回退后的源码**重新构建，确认设备/构建链未被污染：
+
+```text
+$ .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
+BUILD SUCCESSFUL
+```
+
+本节落笔后（即最终状态）只剩本证据章节这一处文档改动：
+
+```text
+$ git status --porcelain
+ M docs/19-player-implementation-progress.md
+```
+
+spike 取证材料（全部在 gitignore 的 `build/` 下，不进入提交；`build/spike/`）：
+
+| 文件 | 内容 |
+| --- | --- |
+| `AbLoopSpikeCTest.kt.spike` | 方案 C 的 instrumentation spike 源码快照（c1b/c2/c3/c4/c5 五个用例 + harness） |
+| `AbLoopSpikeEngineHook.kt.spike` | app 主源码钩子快照（拼接源构造 + 无限/有限循环次数开关 + 音频/状态证据） |
+| `AbLoopSpikeReceiver.kt.spike` | 调试入口快照（`MediaController` 驱动真 Service 播放） |
+| `analyze_c.py` | 方案 C 的分析脚本（逐次重缓冲时长 + max/P95、逐帧墙钟空洞、PTS 跳变、逐轮统计） |
+| `json/c1b_frameholes.json` | 50 次回绕的逐帧 PTS + 逐次空洞（结论二） |
+| `json/c2_timeline.json` | timeline/`durationUs`/`isSeekable`/`isDynamic` 原始字段（结论四） |
+| `json/c3_seekmap.json` | 15 次越界/界内 seek 的落点与 discontinuity（结论五） |
+| `json/c5_loops3.json`、`json/c5_loops10000.json` | 有限循环次数对照（结论一/二/三） |
+| `dropbox_anr.txt` | **ANR 主线程栈**（结论一，决定性证据） |
+| `timeline_bytecode.txt` | `javap -c Timeline`，`equals` 的 `getNextWindowIndex` 循环（结论一的机制） |
+| `c1b-155535-logcat.txt`、`c2-155439-logcat.txt`、`c3-164326-logcat.txt`、`c5-164140-logcat.txt` | 方案 C 的逐帧/事件 logcat 原始落盘 |
+| `appc-161706-logcat.txt`、`eng-163931-*.txt` | 真 app 进程（真音频/真通知栏）那两次的 logcat 与 dumpsys |
+
+设备侧收尾：`adb shell cmd appops set seeyuer.yingli.player 10021 ignore`（恢复 `ignore`）、
+删除 `/data/local/tmp/spike_land.m4v` 与 app 私有目录 `files/spike/`、`files/spike_land.m4v`，
+并用 `adb install -r -d` 重装**回退后**的 debug APK（设备上不留 spike 版本）。

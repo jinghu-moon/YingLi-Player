@@ -480,10 +480,20 @@ internal fun playerChromeTextFontSizeSp(
  * 与底栏按钮同源的胶囊容器：截图胶囊与 AB 胶囊**共用这一份材质**
  * （[PlayerChromeControlFillAlpha] 底 + [PlayerChromeControlBorderWidth]/[PlayerChromeControlBorderAlpha]
  * 描边 + [PlayerChromeCapsuleShape] 圆角）。两枚胶囊会同屏出现在同一格里，各写一套 alpha 必然出现色差。
+ *
+ * [verticalAlignment] 只管**竖直**位置，默认 `Top`（与 `Box` 默认一致；帧数胶囊按文本自身的内边距摆放，
+ * 不需要居中）。**装着一排按钮的胶囊必须传 [Alignment.CenterVertically]**：胶囊比里面的按钮高一圈
+ *（[PlayerScreenshotCapsuleHeight] vs [PlayerChromeButtonSize]，四周是 [ScreenshotCapsuleInnerPadding]
+ * 的呼吸圈），行内那点 `verticalAlignment` 只管"按钮彼此对齐"，管不到"这一行摆在胶囊的什么位置"。
+ * 不传就会出现"按钮贴在胶囊顶边、下面空一圈"——真机实测反馈的"按钮没有垂直居中"就是它。
+ *
+ * 只暴露竖直对齐（而不是完整的 [Alignment]）：水平方向必须继续由内容自己决定，
+ * 否则在胶囊里写死水平居中会把带内边距的排版决策一起改掉。
  */
 @Composable
 internal fun PlayerChromeCapsuleSurface(
     modifier: Modifier = Modifier,
+    verticalAlignment: Alignment.Vertical = Alignment.Top,
     content: @Composable () -> Unit,
 ) {
     Surface(
@@ -495,8 +505,11 @@ internal fun PlayerChromeCapsuleSurface(
             PlayerChromeControlBorderWidth,
             YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlBorderAlpha),
         ),
-        content = content,
-    )
+    ) {
+        // 水平方向一律 `Start`：内容的左右位置由它自己的内边距决定（见 [abCapsuleTextLayout]），
+        // 这里只接管竖直方向。
+        Box(contentAlignment = verticalAlignment + Alignment.Start, content = { content() })
+    }
 }
 
 @Composable

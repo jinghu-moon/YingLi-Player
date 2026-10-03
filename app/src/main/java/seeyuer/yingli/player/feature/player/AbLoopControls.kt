@@ -40,7 +40,13 @@ internal fun AbLoopToolCapsule(
     modifier: Modifier = Modifier,
 ) {
     val fontScale = LocalDensity.current.fontScale
-    PlayerChromeCapsuleSurface(modifier.height(PlayerScreenshotCapsuleHeight)) {
+    PlayerChromeCapsuleSurface(
+        modifier = modifier.height(PlayerScreenshotCapsuleHeight),
+        // 一排按钮必须**整行**在胶囊里居中：胶囊比按钮高一圈（四周 [ScreenshotCapsuleInnerPadding]），
+        // 这一行贴顶就会变成"按钮在上、下面空一圈"（真机实测反馈的"没有垂直居中"）。
+        // 行自己的 `verticalAlignment` 只负责按钮彼此对齐，管不到整行在胶囊里的位置。
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         val clearLabel = stringResource(R.string.player_ab_clear)
         val labels = listOf(
             abPointLabel("A", session.pointA, stringResource(R.string.player_ab_point_unset)),

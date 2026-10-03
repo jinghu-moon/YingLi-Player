@@ -111,7 +111,12 @@ internal fun ScreenshotToolCapsule(
     modifier: Modifier = Modifier,
 ) {
     val armed = state is ScreenshotUiState.Armed
-    PlayerChromeCapsuleSurface(modifier.height(PlayerScreenshotCapsuleHeight)) {
+    PlayerChromeCapsuleSurface(
+        modifier = modifier.height(PlayerScreenshotCapsuleHeight),
+        // 与 AB 胶囊**同一条规则**：装着一排按钮的胶囊，整行必须在胶囊里居中，
+        // 否则按钮贴顶、下面空一圈（两枚胶囊住在同一格，位置差一像素都会看出来）。
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Row(
             modifier = Modifier.padding(horizontal = ScreenshotCapsuleInnerPadding),
             horizontalArrangement = Arrangement.spacedBy(PlayerScreenshotCapsuleButtonSpacing),

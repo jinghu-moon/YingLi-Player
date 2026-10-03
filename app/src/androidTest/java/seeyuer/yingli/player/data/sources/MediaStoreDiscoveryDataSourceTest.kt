@@ -78,7 +78,12 @@ class MediaStoreDiscoveryDataSourceTest {
         val events = dataSource(provider, reader).discover(SOURCE.copy(includeHidden = true)).toList()
 
         val evidence = (events.single() as MediaDiscoveryEvent.Candidate).value.evidence
-        assertEquals(12_000, evidence.durationMillis)
+        // 期望值必须写成 Long 字面量：`MediaEvidence.durationMillis` 自模型落地起就是 `Long?`
+        // （`VideoMetadata.durationMillis` 同样是 `Long?`，因为 MediaStore 的 duration 列就是 64 位）。
+        // 这里原来写的是 Int 字面量 `12_000`，`assertEquals` 会解析到 `assertEquals(Object, Object)`，
+        // 于是比较的是 `Integer(12000)` 与 `Long(12000)` 的**类型**而不是数值，必然失败。
+        // 改用 `12_000L` 后走 `assertEquals(long, long)`，断言的仍是同一个精确数值，强度不变。
+        assertEquals(12_000L, evidence.durationMillis)
         assertEquals(1_280, evidence.width)
         assertEquals(720, evidence.height)
     }

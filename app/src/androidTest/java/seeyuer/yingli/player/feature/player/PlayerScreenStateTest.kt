@@ -128,7 +128,9 @@ class PlayerScreenStateTest {
             }
         }
 
-        composeRule.onNodeWithContentDescription("解锁控制").assertIsDisplayed()
+        // 读屏文案按规格 §5.13「锁定界面」的「图标跟状态、文案跟动作」：锁定态按钮的读屏文案
+        // 是「解锁屏幕」（`R.string.player_unlock`），不是旧实现里的「解锁控制」。
+        composeRule.onNodeWithContentDescription("解锁屏幕").assertIsDisplayed()
         composeRule.onAllNodesWithContentDescription("返回").assertCountEquals(0)
     }
 

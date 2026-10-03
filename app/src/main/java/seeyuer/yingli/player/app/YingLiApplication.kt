@@ -37,7 +37,8 @@ class YingLiApplication : Application() {
     }
 
     override fun onTerminate() {
-        mediaContainer.processingLifecycle.close()
+        // 容器持有的是跨宿主单例（校准作用域、处理调度器），只能由容器自己按顺序收尾。
+        mediaContainer.shutdown()
         playbackController.close()
         playbackSessionClient.close()
         super.onTerminate()

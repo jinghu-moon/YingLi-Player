@@ -85,6 +85,56 @@ class FrameCalibrationTest {
         assertEquals(LocalMediaUriKind.REMOTE, localMediaUriKind("https://example.com/a.mp4"))
     }
 
+    @Test
+    fun `cost model reproduces every measured device scan`() {
+        // 真机实测点（Android 16 / MIUI；表见 docs/19）。模型系数就是从这些点拟合出来的，
+        // 所以这条测试的作用是：任何人调系数都必须重新解释这些数字，不能悄悄改坏。
+        val measured = listOf(
+            MeasuredScan(durationMillis = 6_400, frameRate = 29f, fileSizeBytes = 3_757_807, elapsedMillis = 21),
+            MeasuredScan(durationMillis = 41_000, frameRate = 30f, fileSizeBytes = 68_627_617, elapsedMillis = 104),
+            MeasuredScan(durationMillis = 1_230_000, frameRate = 30f, fileSizeBytes = 1_961_021_547, elapsedMillis = 2_633),
+            MeasuredScan(durationMillis = 1_192_000, frameRate = 30f, fileSizeBytes = 2_345_040_134, elapsedMillis = 2_751),
+            MeasuredScan(durationMillis = 1_345_000, frameRate = 30f, fileSizeBytes = 2_645_424_630, elapsedMillis = 3_132),
+        )
+
+        measured.forEach { scan ->
+            val predicted = estimatedFrameCalibrationMillis(scan.durationMillis, scan.frameRate, scan.fileSizeBytes)
+            requireNotNull(predicted)
+            val ratio = predicted.toDouble() / scan.elapsedMillis
+            assertTrue(
+                "模型预测 ${predicted}ms 与实测 ${scan.elapsedMillis}ms 偏差过大（比值 $ratio）",
+                ratio in 0.65..1.35,
+            )
+        }
+
+        // 自造容器那个反例：0.65 MiB 按带宽只要 1ms，实测 102ms —— 所以模型必须保留"按样本数"的那一项。
+        val synthetic = estimatedFrameCalibrationMillis(durationMillis = 166_665, frameRate = 30f, fileSizeBytes = 680_829)
+        assertEquals(105L, synthetic)
+    }
+
+    @Test
+    fun `only scans long enough to be noticed ask for a calibration hint`() {
+        // 66 MiB / 41s：实测 104ms，比胶囊入场动画（360ms）还快 → 不提示。
+        assertFalse(frameCalibrationNoticeRequired(durationMillis = 41_000, frameRate = 30f, fileSizeBytes = 68_627_617))
+        // 2.46 GiB / 22:25：实测 3.1s，用户确实在等 → 提示。
+        assertTrue(frameCalibrationNoticeRequired(durationMillis = 1_345_000, frameRate = 30f, fileSizeBytes = 2_645_424_630))
+        // 只看体积会漏掉的形态：容器不大但样本极多（40 分钟 60fps ≈ 14.4 万样本）。
+        // 模型给出 15 + 2592 + 300 ≈ 2.9s，属于"必须提示"。
+        assertTrue(frameCalibrationNoticeRequired(durationMillis = 2_400_000, frameRate = 60f, fileSizeBytes = 300L * 1024 * 1024))
+        // 反方向：样本少但字节多（高码率低帧率），同样由字节项兜住。
+        assertTrue(frameCalibrationNoticeRequired(durationMillis = null, frameRate = null, fileSizeBytes = 1L * 1024 * 1024 * 1024))
+        // 什么都拿不到：不猜、不打扰，校准完成后照样是精确值。
+        assertFalse(frameCalibrationNoticeRequired(durationMillis = null, frameRate = null, fileSizeBytes = null))
+        assertFalse(frameCalibrationNoticeRequired(durationMillis = 0L, frameRate = 0f, fileSizeBytes = null))
+    }
+
+    private data class MeasuredScan(
+        val durationMillis: Long,
+        val frameRate: Float,
+        val fileSizeBytes: Long,
+        val elapsedMillis: Long,
+    )
+
     private fun timelineOf(
         frameCount: Long,
         firstMicros: Long,

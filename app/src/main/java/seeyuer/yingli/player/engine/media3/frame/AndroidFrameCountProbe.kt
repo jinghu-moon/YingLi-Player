@@ -5,19 +5,34 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import androidx.media3.common.util.UnstableApi
+import java.io.File
 import java.io.IOException
 import seeyuer.yingli.player.domain.playback.ContainerSampleSource
 import seeyuer.yingli.player.domain.playback.FrameCountProbe
-import seeyuer.yingli.player.domain.playback.FrameScanCancellation
-import seeyuer.yingli.player.domain.playback.VideoSampleTimeline
+import seeyuer.yingli.player.domain.playback.FrameScanLifecycle
+import seeyuer.yingli.player.domain.playback.FrameScanReport
 import seeyuer.yingli.player.domain.playback.countVideoFrames
 
 /**
- * `MediaExtractor` 版本的帧数探针：**只读容器、不解码**，因此比全解码铺一遍快得多。
+ * `MediaExtractor` 版本的帧数探针：**只读容器、不解码**。
  *
- * 代价只有一遍顺序读：sample 计数不需要 `readSampleData`（不把样本拷进 ByteBuffer），
- * 只需 `advance()` 让提取器在文件里前进。实际耗时随文件大小与 IO 带宽线性增长
- * （报告里给出量级），所以调用方必须放在 IO 线程并能取消。
+ * 计数本身不需要 `readSampleData`（不把样本拷进 ByteBuffer），只需 `advance()` 让提取器在容器里前进；
+ * 真实耗时/吞吐以真机实测为准（见 `docs/19` 的记录与 `LocalMediaFrameCounter` 里的事件码），
+ * 不在这里臆测"随文件大小线性增长"。
+ *
+ * ## 取消：真中断 + 唯一的释放者
+ *
+ * API 36 的 `MediaExtractor` 没有 `setCancellationSignal`，`advance()` 也没有可中断的重载，
+ * 所以"打断正在执行的 `advance()`"只能靠**从另一个线程释放容器**：`release()` 把 native 对象换掉，
+ * 阻塞中的调用会以异常/`false` 退出。
+ *
+ * 但 `MediaExtractor` **非线程安全**，所以并发约束必须写死（由 [FrameScanLifecycle] 保证）：
+ * 1. 打断动作（就是这里的 `source.close()`）在 [FrameScanLifecycle.attachInterrupt] 时登记一次；
+ * 2. **谁赢得状态机终态，谁负责 `close()`**：扫描线程正常跑完走 [FrameScanLifecycle.finish] 释放；
+ *    被取消则 [FrameScanLifecycle.cancel] 的赢家在取消线程上释放。两者互斥，因此不存在重复释放；
+ * 3. 取消之后扫描线程不得再碰容器：它在每次 native 调用前读取消标记，
+ *    即使赢的是取消方，它也已经退出循环（最多走完一个正在跑的 native 调用）；
+ * 4. 释放之后的结果一律作废：见 [FrameScanLifecycle.canPublishResult]。
  */
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 class AndroidFrameCountProbe(
@@ -26,12 +41,24 @@ class AndroidFrameCountProbe(
 ) : FrameCountProbe {
     private val applicationContext = context.applicationContext
 
-    override fun probe(uri: String, cancellation: FrameScanCancellation): VideoSampleTimeline? {
+    override fun probe(uri: String, lifecycle: FrameScanLifecycle): FrameScanReport? {
         val source = openSampleSource(uri, applicationContext) ?: return null
+        // 先登记打断动作，再判断是否已经取消：取消可能早于资源打开到达（任务还排在 IO 队列里），
+        // 那种情况下 attachInterrupt 会当场执行释放，因此不会出现"没人释放"。
+        //
+        // 释放是**尽力而为**的收尾：它可能在取消线程（生产的取消路径就是主线程）上执行，
+        // 容器的 teardown 失败绝不能把调用方带崩——这与既有 finally 里的 close() 同一口径。
+        lifecycle.attachInterrupt { runCatching { source.close() } }
+        if (lifecycle.isCancelled) {
+            // 已经取消：容器刚被释放，接下来任何一个调用都可能落在已释放的对象上，一次都不许碰。
+            return FrameScanReport(timeline = null, scannedSamples = 0L, cancelled = true, byteSize = source.byteSize)
+        }
         return try {
-            countVideoFrames(source, cancellation)
+            countVideoFrames(source, lifecycle)
         } finally {
-            runCatching { source.close() }
+            // finish() 赢得终态 => 扫描线程负责释放；输给取消 => 取消方已经/即将释放，这里绝不能重复 close()。
+            // 释放失败不改变扫描结论（MediaExtractor.release() 不返回错误，这里只是防御性兜底）。
+            if (lifecycle.finish()) runCatching { source.close() }
         }
     }
 }
@@ -47,7 +74,7 @@ internal fun openMediaExtractorSource(uri: String, context: Context): ContainerS
         } else {
             extractor.setDataSource(context, parsed, null)
         }
-        MediaExtractorSampleSource(extractor)
+        MediaExtractorSampleSource(extractor, containerByteSize(parsed, uri, context))
     } catch (_: IOException) {
         runCatching { extractor.release() }
         null
@@ -62,10 +89,30 @@ internal fun openMediaExtractorSource(uri: String, context: Context): ContainerS
     }
 }
 
+/**
+ * 取容器字节数，只用于耗时/吞吐日志。
+ * 拿不到（流式源、读不到 stat、无权限）就返回 null —— 少一个日志字段，不能让整次探测失败。
+ */
+private fun containerByteSize(parsed: Uri, uri: String, context: Context): Long? = try {
+    when (parsed.scheme) {
+        null, "file" -> File(parsed.path ?: uri).length().takeIf { it > 0L }
+        else -> context.contentResolver.openAssetFileDescriptor(parsed, "r")?.use { descriptor ->
+            descriptor.length.takeIf { it > 0L }
+        }
+    }
+} catch (_: IOException) {
+    null
+} catch (_: SecurityException) {
+    null
+} catch (_: RuntimeException) {
+    null
+}
+
 /** 把 `MediaExtractor` 收窄成 [ContainerSampleSource]（只暴露计数需要的读取面）。 */
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 internal class MediaExtractorSampleSource(
     private val extractor: MediaExtractor,
+    override val byteSize: Long?,
 ) : ContainerSampleSource {
     override val trackCount: Int get() = extractor.trackCount
 

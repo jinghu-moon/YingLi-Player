@@ -219,6 +219,7 @@
     <string name="player_screenshot_delete_failed">删除截图失败</string>
     <string name="player_screenshot_expand">放大预览截图</string>
     <string name="player_screenshot_collapse">关闭放大预览</string>
+    <string name="player_frame_counter_approximate">≈ %1$s</string>
     <string name="player_previous_frame">上一帧</string>
     <string name="player_next_frame">下一帧</string>
     <string name="player_ab_clear">清除 AB</string>

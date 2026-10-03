@@ -44,6 +44,7 @@ import seeyuer.yingli.player.domain.catalog.MediaSourceRepository
 import seeyuer.yingli.player.domain.thumbnail.ThumbnailLoader
 import seeyuer.yingli.player.domain.playback.PlaybackProgressRepository
 import seeyuer.yingli.player.domain.playback.PlaybackSourceRepository
+import seeyuer.yingli.player.domain.playback.ElapsedTimeSource
 import seeyuer.yingli.player.domain.playback.FrameCalibrationControl
 import seeyuer.yingli.player.domain.playback.MutableSeekPrecisionControl
 import seeyuer.yingli.player.domain.playback.SeekPrecisionControl
@@ -140,7 +141,20 @@ data class MediaContainer(
     val seekPrecisionControl: SeekPrecisionControl,
     /** 帧号后台校准组件（MediaExtractor 统计视频 sample 数）；也同样要跨宿主共享。 */
     val frameCalibrationControl: FrameCalibrationControl,
-)
+) {
+    /**
+     * 容器级回收：进程/应用结束（`YingLiApplication.onTerminate`）或测试收尾时调用。
+     *
+     * 为什么由容器负责：这里的组件都是**跨宿主单例**（Activity 与 Service 共享同一个实例），
+     * 它们的作用域不属于任何单个页面，页面销毁时不能收，只能由容器自己的生命周期收尾。
+     */
+    fun shutdown() {
+        // 校准：取消在跑的扫描并回收它自己的作用域（在跑的 MediaExtractor 会被释放）。
+        frameCalibrationControl.shutdown()
+        // 处理队列调度器：停止观察任务并取消在跑的执行。
+        processingLifecycle.close()
+    }
+}
 
 object ProductionMediaContainerFactory {
     @OptIn(DelicateCoilApi::class)
@@ -312,12 +326,14 @@ object ProductionMediaContainerFactory {
             memory = MemoryThumbnailCache(),
             disk = DiskThumbnailCache(context.cacheDir.resolve(ThumbnailStorage.DIRECTORY_NAME)),
         )
-        val playbackScope = CoroutineScope(SupervisorJob() + foundation.dispatchers.main)
-        // 帧数校准：MediaExtractor 只读容器、不解码（样本计数），所以它不该和缩略图/转码抢同一个作用域。
+        // 帧数校准：MediaExtractor 只读容器、不解码（样本计数）。
+        // **不传作用域**：组件自己持有并回收它（见 LocalMediaFrameCounter.shutdown），
+        // 这样"谁持有、谁回收"没有歧义——容器关掉它，它关掉自己的作用域。
         val frameCalibrationControl = LocalMediaFrameCounter(
             probe = AndroidFrameCountProbe(context),
             dispatchers = foundation.dispatchers,
-            scope = playbackScope,
+            logger = foundation.logger,
+            elapsedTime = ElapsedTimeSource(android.os.SystemClock::elapsedRealtime),
         )
         return MediaContainer(
             sourceRepository,

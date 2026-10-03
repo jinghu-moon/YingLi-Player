@@ -1366,6 +1366,79 @@ class PlayerViewModelTest {
         stateCollector.cancel()
     }
 
+    @Test
+    fun `long calibration marks the estimated frame counter until the exact value arrives`() = runTest {
+        // 大文件（估算耗时远超阈值）实测要等 2.5s 以上：校准期间必须把"估算值"标出来；
+        // 校准一完成就把标记摘掉（此时显示的是精确值）。
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(0, 10_000)))
+        controller.setMediaInfo(
+            PlaybackMediaInfo(
+                title = "影片",
+                durationMillis = 10_000,
+                frameRate = 30f,
+                // 10 秒 1080p 的文件不会这么大，但这里要的是"估算耗时超过阈值"这一条路径：
+                // 体积项本身就能把它顶到阈值之上（模型与阈值依据见 frameCalibrationNoticeRequired）。
+                fileSizeBytes = 2L * 1024 * 1024 * 1024,
+            ),
+        )
+        val calibration = MutableFrameCalibrationControlFake()
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers, frameCalibrationControl = calibration),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg")),
+            seekPrecisionControl = MutableSeekPrecisionControl(),
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        viewModel.armScreenshot()
+        runCurrent()
+
+        calibration.emit(FrameCalibrationResult.Calibrating)
+        runCurrent()
+        assertEquals(FrameCounterState(1, 300), viewModel.state.value.frameCounter)
+        assertTrue("大文件校准中必须标出估算值", viewModel.state.value.frameCounterPending)
+
+        calibration.emit(FrameCalibrationResult.Calibrated(FrameCalibration(frameCount = 301, measuredFrameRate = 29.97f)))
+        runCurrent()
+        assertEquals(FrameCounterState(1, 301), viewModel.state.value.frameCounter)
+        assertFalse("精确值就位后不许再标估算", viewModel.state.value.frameCounterPending)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `short calibration never marks the frame counter as estimated`() = runTest {
+        // 小文件实测只有 100ms 级（比胶囊入场动画还快）：标出来只会在屏幕上闪一下，比不标更糟。
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(0, 10_000)))
+        controller.setMediaInfo(
+            PlaybackMediaInfo(title = "影片", durationMillis = 10_000, frameRate = 30f, fileSizeBytes = 64L * 1024 * 1024),
+        )
+        val calibration = MutableFrameCalibrationControlFake()
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
+        val viewModel = PlayerViewModel(
+            PlaybackSessionClientBridge(controller, sourceRepository, dispatchers, frameCalibrationControl = calibration),
+            dispatchers,
+            screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg")),
+            seekPrecisionControl = MutableSeekPrecisionControl(),
+        )
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        viewModel.armScreenshot()
+        runCurrent()
+
+        calibration.emit(FrameCalibrationResult.Calibrating)
+        runCurrent()
+
+        assertFalse("小文件不该出现估算标记", viewModel.state.value.frameCounterPending)
+        stateCollector.cancel()
+    }
+
     /** 可注入的校准结果源：用来驱动"估算 → 精确"的升级路径。 */
     private class MutableFrameCalibrationControlFake : FrameCalibrationControl {
         private val mutableResult = MutableStateFlow<FrameCalibrationResult?>(null)
@@ -1384,6 +1457,10 @@ class PlayerViewModelTest {
         override fun close() {
             closeCalls++
             mutableResult.value = null
+        }
+
+        override fun shutdown() {
+            close()
         }
     }
 

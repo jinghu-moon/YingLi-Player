@@ -204,3 +204,75 @@ Phase 0、Phase 1 和 Phase 2 的本地门禁均有真实结果；设备级安�
 - Added persistent Shorts preferences and blocked-media storage through `DataStoreShortsPreferenceRepository`; favorites use `OrganizeRepository` and deletion uses the existing library trash gateway.
 - Implemented playback projection, auto-next/repeat-current, portrait navigation, horizontal 5-second seek gestures, fit-mode and speed controls, info dialog, share action, favorite/block actions, delete confirmation, and progress metadata.
 - Historical verification: `:app:testDebugUnitTest` 226/226; Debug/Release Lint and builds passed; direct instrumentation completed `OK (80 tests)` before the latest Shorts and Runtime changes. Media-format matrix and Service destroy/recreate lifecycle tests remain uncovered; current status is tracked above.
+
+## 帧号后台校准：真机实测、可中断取消与策略（2026-10-03）
+
+本节的数字全部来自真机（Xiaomi 25102RKBEC / Android 16 / API 36），不是估算或桌面推算。
+
+### 触发与取证方式（可复现）
+
+1. 装包：`adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`（不要用 `install2device.ps1`）。
+2. 取日志：`adb logcat -c` 后 `adb logcat -s YingLi:V`（校准计时走项目既有的 `AppLogger` → `AndroidLogSink`，TAG 是 `YingLi`，日志统一带事件码与脱敏）。
+3. 触发路径：进播放页 → 打开底部工具托盘（「更多」）→ 点「进入截图模式」。这一刻 `PlayerViewModel.applyFrameCaptureSession(true)` 会调 `PlaybackSessionClient.calibrateFrames()`。
+
+### 实测数字
+
+事件码 `FRAME_CALIBRATION_SCANNED`（`bytes` / `samples` / `elapsedMs` / `throughputMiBPerSecond` 都是事件字段）：
+
+| 文件 | 大小 | 规格 | 视频轨 sample 数 | 耗时 | 派生吞吐 |
+| --- | --- | --- | --- | --- | --- |
+| `VID_20260506_112001.mp4` | 3,757,807 B（3.6 MiB） | 00:06 / 1280×720 / HEVC | 191 | 21 ms | 170.7 MiB/s |
+| `VID_20260430_142408.mp4` | 68,627,617 B（65.4 MiB） | 00:41 / 1920×1080 / HEVC | 1,249 | 104 ms、108 ms（重测） | 606–629 MiB/s |
+| `VID_20260406_141914.mp4` | 1,961,021,547 B（1.83 GiB） | 20:30 / 1920×1080 | 36,917 | 2,633 ms | 710.3 MiB/s |
+| `VID_20260329_154124.mp4` | 2,345,040,134 B（2.19 GiB） | 19:52 / 1920×1080 | 35,794 | 2,751 ms | 812.9 MiB/s |
+| `VID_20260329_161226.mp4` | 2,645,424,630 B（2.46 GiB） | 22:25 / 1920×1080 | 40,370 | 3,132 ms | 805.5 MiB/s |
+| 自造 MP4（`AndroidFrameCountProbeTest`） | 680,829 B（0.65 MiB） | 5,000 样本 × 128 B | 5,000 | 95 / 98 / 102 ms（三轮） | 6.4 MiB/s |
+
+### 数字 → 结论 → 策略
+
+- **结论一：耗时不是单纯由体积决定。** 0.65 MiB 的自造容器按带宽算只要 1 ms，实测 95–102 ms —— 因为它有 5,000 个样本。真实 1080p 素材约 60 KiB/样本，两项都会出场。
+- **结论二：拟合出的模型是** `耗时 ≈ 15 ms（打开容器）+ 样本数 × 18 µs + 容器 MiB × 1.0`（≈1 GiB/s 顺序读）。上表五个真机点的预测误差都在 ±6% 以内，这条拟合被 JVM 测试 `FrameCalibrationTest.cost model reproduces every measured device scan` 钉住。
+- **结论三：小文件无感，大文件确实要等。** 66 MiB 只要 104 ms；1.83 GiB 以上是 2.6–3.1 s，已越过"超过 3–5 秒就要有策略"的门槛。
+- **采用的策略**：仍是**静默后台校准**（不阻塞 UI、不弹进度条），但当模型估算耗时 ≥ `FRAME_CALIBRATION_NOTICE_THRESHOLD_MILLIS`（600 ms）时，帧数胶囊给整段数字加 `≈`（`player_frame_counter_approximate`），把"这几秒显示的是估算值、随后会换成精确值"告诉用户。
+  - 阈值取 600 ms 的理由：帧数胶囊的入场动画本身有 360 ms（`SCREENSHOT_CAPSULE_TRANSITION_MILLIS`），比动画还快的扫描根本来不及被看见，给它加提示只会制造噪声；而 1.83 GiB 以上实测 2.6–3.1 s，用户确实在等。
+  - 为什么用**估算耗时**而不是"体积阈值"：字节数只是两个因子之一，只看体积会漏掉"容器不大但样本极多"（40 分钟 60fps ≈ 14.4 万样本 → 约 2.9 s）的形态；估算耗时同时覆盖两项，且时长/帧率/体积缺项时能优雅退化。
+  - 为什么不做"允许用户取消"：校准是后台只读任务，用户没有可取消的对象；而跳过校准会让最需要精确帧号的长视频失去精确值。
+
+### 真可中断取消的设备级验证
+
+- 机制：`MediaExtractor` 在 API 36 上没有 `setCancellationSignal`，因此取消分两层——扫描循环每样本自查标记，真正打断阻塞中的 `advance()` 靠**从取消线程 `release()` 容器**（`FrameScanLifecycle` 保证只有一个赢家负责释放，见该文件注释）。
+- 用例：`AndroidFrameCountProbeTest`（`app/src/androidTest/java/seeyuer/yingli/player/engine/media3/frame/AndroidFrameCountProbeTest.kt`），自造 200,000 样本 / 27.2 MB 的 MP4，扫到第 2/4/6/8 万样本时从测试线程取消。
+- 实测（`FRAME_SCAN_TEST_MEASURED`，两轮运行结果一致）：`cancelReturnMillis=0/0/0/0`，`scanExitMillis=0–2`（两轮分别为 `0/1/1/2` 与 `1/1/1/2`），`interruptedBy=flag/flag/flag/flag`，`cancelled=true`。即：`release()` 在被扫线程处于 native 调用期间**返回耗时 0 ms**（不会阻塞调用者），扫描线程在 ≤2 ms 内退出；整份容器扫完需要约 4 s（19–20 µs/样本），所以这是"没跑完就退出"，不是"跑完了才发现要取消"。
+- 诚实边界：这 4 轮里**退出都是被"每样本自查"拦下的**（`interruptedBy=flag`），没有一轮走到"`release()` 让 native 调用抛异常"那条路——因为每样本自查本身就足够快。`release()` 的不可替代价值在于它能打破"单次 `advance()` 长时间不返回"（卡住的 IO）这种情形，而"它不会等着 native 调用返回"这一点已被上面的 0 ms 实测证实。
+- 并发安全：4 轮并发 `release()` + `advance()` 与 3 个用例全部通过（两轮运行都是 `Starting 3 tests … Finished 3 tests … 0 failed`），进程没有 native 崩溃。
+
+## 本机 instrumented 测试环境（MIUI/HyperOS）
+
+### 现象
+
+`connectedDebugAndroidTest` 报 `Process crashed`，只跑 1 个用例就卡住，`adb logcat -b crash` 为空。
+
+### 真因
+
+Compose 测试宿主 `androidx.activity.ComponentActivity` 的启动被 MIUI 拒绝：logcat 里是 `MIUILOG- Permission Denied Activity` + `result code=102 = START_ABORTED`，于是 `ActivityScenario.launch` 永久挂起；进程最终被最近任务 `SwipeUpClean` force-stop，UTP 这时才报 `crashed`。参考 android-test#1875。
+
+### 解决
+
+给 **app 包**（不是 `.test` 包）打开"后台弹出界面"：
+
+```
+adb shell cmd appops set seeyuer.yingli.player 10021 allow
+adb shell cmd appops get seeyuer.yingli.player 10021   # 应输出 MIUIOP(10021): allow
+```
+
+### 配套
+
+- UTP 默认跑完卸载 APK，会清空该授权；建议加 `-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true` 保留安装，避免下一轮又要重新授权。
+- 完整命令示例（只跑相关类）：
+  `.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=seeyuer.yingli.player.engine.media3.frame.AndroidFrameCountProbeTest" "-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true"`
+
+### 取证注意
+
+- 该 ROM logcat 刷得极快（`-t 4000` 仅覆盖约 3 秒），要**边跑边落盘**（`adb logcat -s YingLi:V` 常驻），事后翻缓冲区往往已经滚掉。
+- 机器上装有 LSPosed 模块会 hook `ActivityStarter`，排查启动被拒时要把它算进变量。
+- Gradle 安装/卸载会重置 `MIUIOP(10021)`；`MANAGE_EXTERNAL_STORAGE` 的 appop 目前是 allow（本机媒体库能直接按路径读文件，instrumented 用例也依赖这一点）。

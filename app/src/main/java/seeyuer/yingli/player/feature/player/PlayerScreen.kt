@@ -573,7 +573,9 @@ fun PlayerScreen(
         ) {
             // 帧率与时长都不可用、也没有校准值时 state.frameCounter 恒为 null → 整个胶囊不出现：
             // 宁可不出这个胶囊，也不显示编造的帧号（口径与逐帧步进一致）。
-            state.frameCounter?.let { counter -> FrameCounterCapsule(counter) }
+            state.frameCounter?.let { counter ->
+                FrameCounterCapsule(counter, pending = state.frameCounterPending)
+            }
         }
         (state.screenshot as? ScreenshotUiState.Preview)?.let { preview ->
             if (preview.expanded) {

@@ -99,6 +99,7 @@ import seeyuer.yingli.player.domain.playback.VideoZoom
 import seeyuer.yingli.player.domain.playback.VideoRotation
 import seeyuer.yingli.player.domain.playback.FullscreenPolicy
 import seeyuer.yingli.player.domain.playback.PlaybackAction
+import seeyuer.yingli.player.domain.playback.frameCalibrationNoticeRequired
 import seeyuer.yingli.player.domain.playback.frameCounterStateOf
 import seeyuer.yingli.player.domain.playback.RequestedOrientation
 import seeyuer.yingli.player.domain.playback.WindowPlaybackGateway
@@ -144,6 +145,14 @@ data class PlayerUiState(
     val frameCounter: FrameCounterState? = null,
     /** 帧号校准状态（截图模式）：Calibrating 时显示估算值，Calibrated 后切换为精确值。 */
     val frameCalibration: FrameCalibrationResult? = null,
+    /**
+     * 大文件校准进行中：胶囊上的帧号是估算值，需要显式标出来。
+     *
+     * 判定见 [frameCalibrationNoticeRequired]（阈值带实测依据）。小文件不标记，
+     * 因为它们的校准是 100ms 级、标记只会闪一下；大文件实测要等 1.3s 起步，
+     * 那几秒里总数还可能整体变化，必须让用户看得出来这是估算值。
+     */
+    val frameCounterPending: Boolean = false,
     /**
      * 已校准的实测帧率。**步进与帧号都必须用它**（优先于容器 `Format.frameRate`）：
      * 它是从真实样本时间轴派生的，和帧号同源，否则帧号与步长会互相漂移。
@@ -392,6 +401,15 @@ class PlayerViewModel(
                 frameRate = next.mediaInfo?.frameRate,
                 calibration = calibration,
             ),
+            // 只有"正在校准 + 估算耗时超过阈值"才标记：小文件的扫描比胶囊入场动画还快，
+            // 标出来只会闪一下。校准失败/跳过也不会留下永久标记（那属于"没有精确值"，
+            // 不是"正在校准"，两者的提示口径不该混为一谈）。
+            frameCounterPending = calibrationResult is FrameCalibrationResult.Calibrating &&
+                frameCalibrationNoticeRequired(
+                    durationMillis = next.playback.timeline.durationMillis ?: next.mediaInfo?.durationMillis,
+                    frameRate = next.mediaInfo?.frameRate,
+                    fileSizeBytes = next.mediaInfo?.fileSizeBytes,
+                ),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), PlayerUiState())
 

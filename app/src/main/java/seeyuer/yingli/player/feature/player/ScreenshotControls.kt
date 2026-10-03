@@ -211,6 +211,10 @@ private fun ScreenshotCapsuleSurface(
  * 下沉到顶栏下方后，它与顶栏所有按钮在**视觉与点击区域**上都彻底分开：不再共享任何一条
  * 水平带，也就不会再有"字越长越容易压住按钮"这种随位数变化的隐患。
  *
+ * [pending] 为 true 时给整段数字加 `≈`：大文件（见 `frameCalibrationNoticeRequired`）的校准
+ * 实测要等 1.3s 起步，这几秒里显示的是"时长 × 帧率"的估算值；不标出来，用户会把一个稍后
+ * 会变的数字当成精确值。小文件不标（那只会在 100ms 内闪一下）。
+ *
  * 宽度约束只是**兜底**：调用方会先给出 `widthIn(max = ...)`（整屏宽度的一个比例）作为上限，
  * 极窄屏 / 最大字体下这里再按可用宽度反推字号（等宽数字，不换行、不省略），
  * 保证数字依旧完整可读；正常机型上推出来的字号就是基础字号，不做缩放。
@@ -218,13 +222,17 @@ private fun ScreenshotCapsuleSurface(
 @Composable
 internal fun FrameCounterCapsule(
     counter: FrameCounterState,
+    // modifier 必须排在所有可选参数之前（Compose 的 ModifierParameter 规则）。
     modifier: Modifier = Modifier,
+    pending: Boolean = false,
 ) {
     ScreenshotCapsuleSurface(modifier) {
         // 可用宽度 = 外层 widthIn 给出的上限（也是 BoxWithConstraints 的 maxWidth）。
         // 它同时封住了胶囊自身的最大宽度：字号再大也不会撑出这个宽度去压住别的控件。
         BoxWithConstraints {
-            val text = "${counter.currentFrame} / ${counter.totalFrames}"
+            val numbers = "${counter.currentFrame} / ${counter.totalFrames}"
+            // 估算标记走字符串资源：它是用户可见文本，和"已保存到 %1$s"这类文案同一口径。
+            val text = if (pending) stringResource(R.string.player_frame_counter_approximate, numbers) else numbers
             val maxContentWidth = maxWidth - PlayerFrameCounterTextHorizontalPadding * 2
             Text(
                 text = text,

@@ -547,17 +547,21 @@ fun PlayerScreen(
         // 下沉之后它与顶栏所有按钮既不共享水平带、也不再共享点击区域，从根上避开重叠；
         // 顶栏标题因此不必再为它让位。
         //
-        // 顶部内边距 = 状态栏 inset（胶囊自己的 `windowInsetsPadding(safeDrawing)` 已经加过一次）
-        // + 顶栏自身高度（PlayerTopBar 的上下内边距 + 按钮圆径）
+        // 顶部内边距 = 顶栏自身高度（PlayerTopBar 的上下内边距 + 按钮圆径）
         // + PlayerFrameCounterTopGap（顶栏底边到胶囊的间距）。
+        //
+        // **状态栏 inset 由这一行下面的 `windowInsetsPadding(safeDrawing)` 独家负责**，这里不许再算一遍：
+        // 顶栏自己也是叠在同一个画布上的浮层、同样用 `windowInsetsPadding(safeDrawing)` 顶开状态栏，
+        // 所以"顶栏底边"在屏幕坐标里本来就是 `safeDrawing.top + 顶栏高度`；
+        // 若在这个 padding 里再加一次 `safeDrawing.getTop()`，胶囊会被推下去整整一条状态栏
+        //（真机实测：胶囊顶边距屏幕顶 2×状态栏 + 顶栏 + 间距，见 docs/19 的像素记录）。
+        // 谁负责 inset：**inset 只由窗口内边距修饰符负责，偏移量只负责"浮层之间的相对距离"**。
+        //
         // 横竖屏用的是同一个公式：顶栏高度只由按钮尺寸与内边距决定，与方向无关，
         // 所以横屏下取到的值完全相同（区别只是状态栏 inset 通常为 0）。
         // 它跟截图胶囊一样不受控件自动隐藏影响：截图工具本身就是浮层，隐藏控件不应把工具一起藏掉。
         val screenshotActive = state.isScreenshotToolActive()
-        val density = LocalDensity.current
-        val frameCounterTopPadding = PlayerTopBarContentHeight +
-            with(density) { WindowInsets.safeDrawing.getTop(density).toDp() } +
-            PlayerFrameCounterTopGap
+        val frameCounterTopPadding = PlayerTopBarContentHeight + PlayerFrameCounterTopGap
         AnimatedVisibility(
             // 可见性只由「截图工具是否打开」决定：三段收起与它同步，自动隐藏不参与。
             visible = screenshotActive,

@@ -255,7 +255,11 @@ private const val CALIBRATION_SAMPLE_RATE_REFERENCE = 5_000.0
 private const val CALIBRATION_GROWTH_TRUSTED_MILLIS = 1_000.0
 
 /**
- * 逐样本推进的耗时（毫秒）：`样本数 × 18µs × (样本数/5000)^0.72`。
+ * 逐样本推进的耗时（毫秒）：`样本数 × CALIBRATION_MILLIS_PER_SAMPLE × (样本数/参考样本数)^幂指数`。
+ *
+ * 指数与参考样本数都不在这里写死，而是引用 [CALIBRATION_SAMPLE_GROWTH_EXPONENT] /
+ * [CALIBRATION_SAMPLE_RATE_REFERENCE]：这两个数字是实测拟合出来的，注释里再抄一份
+ * 迟早会和常量漂移（本行此前就抄着旧指数 `0.72`，而常量已经调到 `0.75`）。
  *
  * 抽成独立函数是为了让"样本数这一项怎么长"有一个可单测的点位：幂律是实测拟合，
  * 任何人改指数都必须先解释 `docs/19` 里那张表。

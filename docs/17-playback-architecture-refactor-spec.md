@@ -875,6 +875,15 @@ interface WindowPlaybackGateway {
     fun enterPictureInPicture(): Result<Unit>
 }
 
+/** 画中画参数（宽高比 + source rect + 是否自动进入）的唯一下发入口，见 `16` §5.12。 */
+interface PictureInPictureGateway {
+    fun isAvailable(): Boolean
+    /** 提前把"系统自动进入"下发给系统；进入 PiP 期间不下发（会污染退出动画起点）。 */
+    fun applyAutoEnter(enabled: Boolean)
+    /** 用户主动点画中画时的手动进入。 */
+    fun enter(): Boolean
+}
+
 interface ScreenshotPreviewController {
     val state: StateFlow<ScreenshotPreviewState>
     fun arm()
@@ -906,7 +915,7 @@ interface ScreenshotPreviewController {
 | 截图胶囊 | `FrameStepControl` + `SnapshotControl` | Ready/Paused/Playing 都可；不以“未播放”作为失败条件。激活期间跳转精度一律 `FRAME_ACCURATE`（见 §9.4），逐帧步进为 `±1000/实测帧率` 并夹在 `[0, duration]`（几何与锚点见 `16` §5.10） |
 | 截图预览 | `ScreenshotPreviewState`（当前实现：`ScreenshotUiState.Preview` + `ScreenshotPreviewSession`） | 420ms 飞入（起点 = 视频画面区域右下角、终点 = 屏幕左上角，见 `16` §5.10）、3 秒倒计时、点击暂停、删除按钮 200ms 弹入；删除走 `ScreenshotFileGateway` **真删文件**，删除过的会话不再提示保存路径 |
 | AB 循环 | `SetAbPoint/ClearAb` | A/B marker 是时间线投影；B 到达由 Runtime 回跳 A；拖动重新定义范围 |
-| PiP | `WindowPlaybackGateway.enterPictureInPicture` | 系统确认后更新状态；Vault/无能力时禁用；MediaSession 不停止 |
+| PiP | `WindowPlaybackGateway.enterPictureInPicture`（手动） + `PictureInPictureGateway.applyAutoEnter`（自动进入的参数镜像） | 系统确认后更新状态；Vault/无能力时禁用；MediaSession 不停止。自动进入的合法性只由域层 `shouldAutoEnterPictureInPicture` 判定，参数（宽高比 + source rect + autoEnter）只有 `ActivityPictureInPictureGateway` 一个构造点、由 `MainActivity` 的一个收集器在"策略输入变化 / 画面几何变化 / 回到前台 / 配置变化"时下发；系统在切后台瞬间执行，不再有 `onUserLeaveHint` 手动兜底（`16` §5.12 给出依据） |
 | 画面旋转 | 视图层 `VideoRotation` + 按媒体偏好 | 四态 0/90/180/270，视图层 `graphicsLayer` 变换并带过渡动画；不进播放管线，不请求系统方向 |
 | 旋转 | `requestOrientation` | Activity 请求系统方向，真实配置变化回流；失败不改变已确认状态 |
 | 全屏 | `setFullscreen` + `requestOrientation` | WindowInsets/system bars 的真实状态；全屏语义由 `FullscreenPolicy` 决定（竖屏横版→横屏全屏，竖屏竖版→填满，横屏→沉浸），失败不乐观更新；不使用浏览器 Fullscreen API |

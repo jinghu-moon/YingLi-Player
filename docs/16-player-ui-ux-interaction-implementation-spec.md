@@ -22,7 +22,7 @@ YLShorts 是特殊的沉浸式短视频浏览产品，计划作为与首页、�
 | 播放器所有者是 Service，Activity/Compose 不创建 Player | `docs/architecture/phase-4-playback-contract.md` | 当前通过 Controller 连接；目标由 `PlaybackSessionClient` 作为页面命令边界 |
 | Controller 已支持播放、暂停、Seek、速度、音轨、字幕、比例、重试 | [Media3PlaybackController.kt:54](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/engine/media3/Media3PlaybackController.kt:54) | UI 必须根据 `PlaybackCommandResult` 处理拒绝，不允许只改视觉 |
 | 截图已使用 Surface/Texture + PixelCopy，并写入 MediaStore | [Media3ScreenshotGateway.kt:23](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/engine/media3/Media3ScreenshotGateway.kt:23) | UI 截图预览是临时状态，不能把截图失败归因于“未播放” |
-| PiP 已有 Activity gateway；自动 PiP 由用户偏好控制 | [ActivityPictureInPictureGateway.kt:8](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/app/playback/ActivityPictureInPictureGateway.kt:8)、[MainActivity.kt:181](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/app/MainActivity.kt:181) | 正式实现必须尊重设备能力和安全内容限制 |
+| PiP 已有 Activity gateway；自动 PiP 由用户偏好控制，并在参数镜像里与安全内容、是否有媒体一起下发 | [ActivityPictureInPictureGateway.kt:1](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/app/playback/ActivityPictureInPictureGateway.kt:1)、[AutoPictureInPicturePolicy.kt:1](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/domain/playback/AutoPictureInPicturePolicy.kt:1) | 正式实现必须尊重设备能力和安全内容限制（§5.12） |
 | 常规队列当前在 `MediaContainer` 使用内存仓储，且 `PlayerViewModel` 没有队列命令 | [MediaContainer.kt:316](/D:/100_Projects/110_Daily/YingLi-Player/app/src/main/java/seeyuer/yingli/player/app/MediaContainer.kt:316) | 播放顺序和上一项/下一项需要补充真实队列用例，不得把 Demo 数组复制到 App |
 | Demo 的音轨、字幕、解码器、后台播放、睡眠定时部分含 Toast 或视觉占位 | [04-player-demo.html:524](/D:/100_Projects/110_Daily/YingLi-Player/prototypes/views/04-player-demo.html:524) | 占位能力必须明确禁用、转为真实实现或删除，不得伪完成 |
 
@@ -426,7 +426,25 @@ Off -> SetA -> SetB(active) -> DragA/DragB
 
 - 不支持设备、Vault 安全内容或没有活动媒体时禁用。
 - 进入 PiP 不停止 MediaSession；退出后恢复 Overlay 和 Insets。
-- 自动 PiP 仅在偏好开启、非安全内容、有当前请求时触发。
+- 自动 PiP 仅在偏好开启、非安全内容、有当前请求时触发。**该判定只有一份**：域层纯函数
+  `shouldAutoEnterPictureInPicture(偏好, 安全内容, 是否有媒体)`。
+- **自动进入由系统在切后台瞬间执行**（`PictureInPictureParams.setAutoEnterEnabled(true)`），
+  不再走 `onUserLeaveHint` 手动进入：参数必须在用户离开**之前**下发，而"该不该自动进入"由上面三个
+  运行期输入决定，因此这三个输入收成一条流、由 `MainActivity` 的收集器驱动唯一的下发入口
+  `ActivityPictureInPictureGateway.applyAutoEnter(...)`（参数镜像）。
+  依据：采用 auto-enter 时 AOSP 在 auto-enter 路径上不会下发带 `userLeaving` 的 pause
+  （`TaskFragment.startPausing` → 直接进入 PiP，进入后以 `userLeaving=false` 补排 pause），
+  所以 `onUserLeaveHint` 不会被回调；即使某个 ROM 仍回调它，客户端在 PAUSING 状态下的进入请求也会被
+  `ActivityTaskManagerService.enterPictureInPictureMode` 以 `fromClient && PAUSING && isAutoEnterEnabled()`
+  早退拒绝。两条合起来 = 手动路径既不会跑、跑了也无效，所以直接删除，不留"看起来在兜底"的死代码。
+- **source rect（入场/退出动画起点）是快照**：它取视频输出视图在窗口里的真实矩形，
+  必须在几何**量完之后**再下发一次，否则拿到的是"刚挂上、还是整窗大小"的矩形（等于没有起点提示）。
+  因此除了策略输入变化，视频输出视图的布局变化也会触发重新下发
+  （`Media3PlaybackController.videoSurfaceBounds`）；旋转/进出全屏/回到前台另有 `onConfigurationChanged`/
+  `onResume` 兜底。**处于 PiP 期间一律不下发**：那一刻量到的是浮窗大小，写进去会污染退出动画的起点。
+- 行为边界（有意如此，非缺陷）：概览（recents）/助手等 transient 场景系统不会自动进入 PiP
+  （`Task.enableEnterPipOnTaskSwitch` 会把 `supportsEnterPipOnTaskSwitch` 置为 false），
+  此时按 Home 之外的路径离开不会产生浮窗。
 - 增加 `onPictureInPictureModeChanged` 状态回传，UI 不在点击后假设成功。
 
 ### 5.13 锁定界面

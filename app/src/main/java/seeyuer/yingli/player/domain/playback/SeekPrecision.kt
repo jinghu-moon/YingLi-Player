@@ -8,9 +8,15 @@ import kotlinx.coroutines.flow.asStateFlow
  * 跳转精度策略（域层口径，不依赖任何播放引擎类型）。
  *
  * 为什么要有这个枚举而不是直接把引擎的 `SeekParameters` 传到调用方：
- * 兼容层在 **Activity 进程**，真正执行 seek 的播放在 **service 进程的引擎**里，
- * 两边只能靠业务口径通信。引擎自己把口径翻译成 `SeekParameters`，
- * 纯规则（见 [seekPrecisionFor]）留在域层就能被 JVM 单测覆盖。
+ * `SeekParameters` 是 Media3 的类型，域层不能依赖它；把口径收敛成业务枚举之后，
+ * 引擎自己把口径翻译成 `SeekParameters`，纯规则（见 [seekPrecisionFor]）留在域层
+ * 就能被 JVM 单测覆盖。
+ *
+ * **前提：兼容层与播放引擎跑在同一个进程里。** `YingLiPlaybackService` 与 `MainActivity`
+ * 同进程（Manifest 没有给任何组件声明 `android:process`），所以这里可以直接共享一个
+ * 进程内状态（见 [MutableSeekPrecisionControl]）：改口径不需要跨进程通信、不需要接管
+ * MediaSession 的连接，也不会打断正在播放的媒体。如果哪一天把播放拆到独立进程，
+ * 这个设计就不成立了——那时必须改成显式的跨进程命令（这是本设计成立的前提，不是实现细节）。
  */
 enum class SeekPrecision {
     /** 落在请求位置：从目标前的关键帧解码到目标点。逐帧步进必须用它，代价是可能等待解码。 */

@@ -154,8 +154,31 @@ fun screenshotExpiredNaturally(state: ScreenshotUiState, event: ScreenshotUiEven
         event is ScreenshotUiEvent.TimeElapsed &&
         event.millis >= state.remainingMillis
 
+/**
+ * 画中画入口。两个时机共用**同一份参数**（宽高比 + 入场动画起点 source rect + 是否自动进入）：
+ * - **自动进入**：用户要求「按 Home 键自动进入」时，必须在用户离开应用**之前**把
+ *   `setAutoEnterEnabled(true)` 下发给系统（见 [applyAutoEnter]），由系统在切后台那一刻执行；
+ * - **手动进入**：[enter]，用户点了画中画按钮时走它。
+ *
+ * 参数由实现自己构造，调用方只能"改变它的状态"，不能拼装参数——一份参数只能有一个构造点，
+ * 否则某条路径忘了带某一项（例如忘了带 source rect）时，只有真机上才看得出来。
+ */
 interface PictureInPictureGateway {
     fun isAvailable(): Boolean
+
+    /**
+     * 下发 / 撤销「系统自动进入画中画」这一项参数（**唯一入口**，幂等）。
+     *
+     * 必须在用户离开应用**之前**调用：系统在离开的那一刻直接用最近一次下发的这份快照，
+     * 之后再补发就来不及了（这也是它与 [enter] 的本质区别）。
+     * [enabled] = false 时必须真的撤销：关掉偏好、或进入保险库播放之后，
+     * 系统不能再自作主张把画面弹进浮窗。
+     *
+     * 合法性判定（偏好 + 安全内容 + 是否有媒体）由域层的
+     * [shouldAutoEnterPictureInPicture] 给出，这里只负责下发。
+     */
+    fun applyAutoEnter(enabled: Boolean)
+
     fun enter(): Boolean
 }
 

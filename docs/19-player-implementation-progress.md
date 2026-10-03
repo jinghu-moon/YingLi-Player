@@ -196,7 +196,9 @@ Phase 0、Phase 1 和 Phase 2 的本地门禁均有真实结果；设备级安�
 | `adb shell am instrument ...PlayerScreenStateTest` | Android 16 / API 36 真机，11/11 通过 |
 | `:app:connectedDebugAndroidTest --rerun-tasks` | Android 16 / API 36 真机，80/80 通过，0 失败 |
 
-> **更正（2026-10-03）：上表两条 `:app:lintDebug` 的"0 error"已经不是当前事实。** 本批开始前实测 `.\gradlew.bat :app:lintDebug` → **FAILED，25 errors**（`ServicePlaybackEngine` 6 条 `UnsafeOptInUsageError`、`strings.xml` 11 条 `UnusedResources`、`AndroidManifest` 1 条 `PictureInPictureIssue`、`YingLiControls` 2、`Media3VideoSurface` 2、`LibraryScreen`/`PlayerTopBar`/`PlaylistPanel` 各 1），全部在这些旧结论之后、本批之前就存在。这 25 条已于 2026-10-03 逐条处理（修根因优先，仅 1 条 `PictureInPictureIssue` 有理由抑制，理由写在 `AndroidManifest.xml` 的注释里），当前真实状态是 **`lintDebug` 通过：0 errors / 0 warnings / 4 hints**；4 条 hint 均为 `AutoboxingStateCreation`（`LibraryScreen` 2、`PlayerTransportControls` 2），不阻断构建，留作后续单独处理。引用本文件时不要再用旧结论声称"lint 一直通过"。
+> **更正（2026-10-03）：上表两条 `:app:lintDebug` 的"0 error"已经不是当前事实。** 本批开始前实测 `.\gradlew.bat :app:lintDebug` → **FAILED，25 errors**（`ServicePlaybackEngine` 6 条 `UnsafeOptInUsageError`、`strings.xml` 11 条 `UnusedResources`、`AndroidManifest` 1 条 `PictureInPictureIssue`、`YingLiControls` 2、`Media3VideoSurface` 2、`LibraryScreen`/`PlayerTopBar`/`PlaylistPanel` 各 1），全部在这些旧结论之后、本批之前就存在。这 25 条已于 2026-10-03 逐条处理（修根因优先）。
+>
+> **再次更正（同日，画中画参数镜像那一批）：那唯一一条 `PictureInPictureIssue` 抑制已经删除。** 当时是"只实现了 `setSourceRectHint`、`setAutoEnterEnabled` 有意不用"所以写了 `tools:ignore` 并附理由；本批把自动进入改成真正的参数镜像（见下文"画中画自动进入的参数镜像"一节），lint 要求的两项都已真实下发，抑制与理由注释一并删除。当前真实状态是 **`.\gradlew.bat :app:lintDebug` → `No issues found.`（0 errors / 0 warnings / 0 hints）**——上一条更正里写的 4 条 `AutoboxingStateCreation` hint 也已经不在报告里。引用本文件时不要再用更旧的结论。
 
 真机验证需要在 Xiaomi/MIUI 设备测试期间临时允许 `MIUIOP(10021)`，Gradle 安装会重置该模式。常规播放器此前已完成 80/80；YLShorts 改动后的本轮重跑在 Windows 结果文件被占用时中止，未获得新的设备级完整结果。媒体格式兼容性矩阵、Service 销毁重建专门生命周期用例仍未覆盖。
 # YLShorts implementation
@@ -374,3 +376,65 @@ adb shell cmd appops get seeyuer.yingli.player 10021   # 应输出 MIUIOP(10021)
 - 该 ROM logcat 刷得极快（`-t 4000` 仅覆盖约 3 秒），要**边跑边落盘**（`adb logcat -s YingLi:V` 常驻），事后翻缓冲区往往已经滚掉。
 - 机器上装有 LSPosed 模块会 hook `ActivityStarter`，排查启动被拒时要把它算进变量。
 - Gradle 安装/卸载会重置 `MIUIOP(10021)`；`MANAGE_EXTERNAL_STORAGE` 的 appop 目前是 allow（本机媒体库能直接按路径读文件，instrumented 用例也依赖这一点）。
+
+## 画中画自动进入的参数镜像（2026-10-03，真机验证）
+
+本节所有数字都来自真机（Xiaomi 25102RKBEC / Android 16 / API 36，1200×2608 物理像素、480dpi＝3px/dp、
+状态栏 144px），不是推算。
+
+### 为什么去掉 `onUserLeaveHint` 手动进入
+
+AOSP 依据（源码行为，不是感觉）：
+
+1. `TaskFragment.startPausing(...)`：当 `supportsEnterPipOnTaskSwitch && userLeaving && resumingOccludesParent
+   && checkEnterPictureInPictureState(...) && pictureInPictureArgs.isAutoEnterEnabled()` 全部成立时，
+   直接调用 `ActivityTaskManagerService.enterPictureInPictureMode(..., fromClient=false)`，**不再排带
+   `userLeaving` 的 pause**；进入后由 `ActivityTaskManagerService.enterPictureInPictureMode` 尾部
+   （`r.isState(PAUSING) && r.mPauseSchedulePendingForPip`）以 `userLeaving=false` 补排 pause。
+2. `ActivityThread.handlePauseActivity(..., userLeaving, autoEnteringPip, ...)`：只有 `userLeaving` 为真才
+   调用 `performUserLeavingActivity`（`onPictureInPictureRequested` + `onUserLeaveHint`）。
+3. `ActivityTaskManagerService.enterPictureInPictureMode`：`if (fromClient && r.isState(PAUSING) &&
+   params.isAutoEnterEnabled())` 直接返回 false，日志是
+   `Skip client enterPictureInPictureMode request while pausing, auto-enter-pip is enabled`。
+
+结论：武装 auto-enter 之后，`onUserLeaveHint` 那条手动路径**既不会被回调、回调了也会被系统拒绝**，
+所以直接删除（本批 `MainActivity` 不再覆写 `onUserLeaveHint`），只保留用户点击画中画按钮的手动进入。
+
+### 参数镜像与下发时机
+
+- 合法性只由 `shouldAutoEnterPictureInPicture(偏好, 安全内容, 是否有媒体)` 判定（JVM 单测 4 例）。
+- 下发唯一入口：`ActivityPictureInPictureGateway.applyAutoEnter(...)`（内部 `pushParams()` 是唯一的
+  `setPictureInPictureParams` 调用点，参数三项——宽高比、source rect、autoEnter——同在一个构造点）。
+- 触发时机：`MainActivity` 一个收集器订阅策略输入；另有 `videoSurfaceBounds` 布局信号、
+  `onResume`、`onConfigurationChanged` 触发"用同一份镜像值重发一次"；**处于 PiP 期间一律不下发**。
+- 单实例：`ActivityPictureInPictureGateway` 现在由 `MainActivity` 创建一次、播放页/短视频页/窗口网关共用
+  （系统侧的参数是一份快照，多实例各自拼参数会互相覆盖）。
+
+### 真机实测
+
+| 项目 | 命令/取证 | 结果 |
+| --- | --- | --- |
+| 偏好开启后镜像是否真的下发到系统 | `adb shell dumpsys activity activities \| grep autoEnterPipEnabled` | `autoEnterPipEnabled: true` |
+| 偏好关闭 | 同上 | `autoEnterPipEnabled: false`（显式撤销，不是"从没下发"） |
+| 偏好开启 + 播放中按 Home | `adb shell input keyevent KEYCODE_HOME` | 自动进入 PiP：`mWindowingMode=pinned`、`mBounds=Rect(484,144-1182,537)`（16:9，与下发的宽高比一致）、`mLastReportedPictureInPictureMode=true`，前台是 `com.miui.home` |
+| 偏好关闭 + 播放中按 Home | 同上 | **不进入** PiP：`mLastReportedPictureInPictureMode=false`、无 pinned 窗口 |
+| 是否双重进入 | `adb logcat` 里搜 `Skip client enterPictureInPictureMode`（该日志只在"客户端在 PAUSING 阶段请求进入"时打印） | **无该日志** = 本次离开全程没有客户端进入请求，只有系统一次进入 |
+| source rect 是否在新一次下发里刷新 | 临时观测日志（验证后已删除）打 `pushParams()` 实参 | 修前：仅一次 `autoEnter=true rect=Rect(0,0-1200,2608)`（视频尺寸未知时输出视图还是整窗大小，等于没有起点提示）；补上"输出视图布局变化"这个触发后：`rect=Rect(0, 966-1200, 1641)`，与截图里量到的 letterbox 画面区（y 966..1641）逐像素一致 |
+
+未在真机上覆盖：保险库/应用锁（`secureContent=true`）分支（需要先启用应用锁并放私密文件，本轮未做；
+该分支与"偏好关闭"共用同一条下发路径，只是输入取值不同）、概览/助手等 transient 场景、
+低版本行为（minSdk=31，`setAutoEnterEnabled` 自 API 31 起存在，不存在"低版本回落"这件事）。
+
+## 帧数胶囊的顶部 inset 双计（2026-10-03，真机像素取证）
+
+`PlayerScreen` 的帧数胶囊曾经同时用了两种 inset 处理：`windowInsetsPadding(safeDrawing)` 与把
+`safeDrawing.getTop()` 加进 `frameCounterTopPadding`。真机取证（1920×1080 视频、进入截图模式）：
+
+| 状态 | 胶囊文本节点 bounds（uiautomator，屏幕像素） | 胶囊顶边（截图像素扫描，x∈[400,800]） | 期望值 |
+| --- | --- | --- | --- |
+| 修复前 | `[462,534]-[738,590]` | **y=516** | 状态栏 144 + 顶栏 192 + 间距 36 = 372 |
+| 修复后 | `[462,390]-[738,446]` | **y=372** | 372 |
+
+516 = 2×144 + 192 + 36，正好多算了一条状态栏；修复后正好落回 372，位移 144px。结论：**确实是双计**，
+根因是 inset 的所有权不清；现在规定"inset 只由窗口内边距修饰符负责，偏移量只负责浮层之间的相对距离"，
+并把这条写进了 `PlayerScreen` 的注释。

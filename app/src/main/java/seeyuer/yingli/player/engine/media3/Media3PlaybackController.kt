@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -84,6 +85,27 @@ class Media3PlaybackController(
     override val scaleMode: StateFlow<VideoScaleMode> = mutableScaleMode.asStateFlow()
     private val mutableMediaInfo = MutableStateFlow<PlaybackMediaInfo?>(null)
     override val mediaInfo: StateFlow<PlaybackMediaInfo?> = mutableMediaInfo.asStateFlow()
+
+    private val mutableVideoSurfaceBounds = MutableStateFlow<Rect?>(null)
+
+    /**
+     * 视频输出视图在窗口里的矩形**变化信号**（null = 当前没有输出或已脱离窗口）。
+     *
+     * 为什么需要一条流而不是只留 [videoSurfaceBoundsInWindow] 这个读接口：
+     * 画中画参数里的 `setSourceRectHint` 是一份**快照**，必须在用户离开应用之前下发，
+     * 而画面矩形要等 PlayerView 里的输出视图量完（甚至要等视频尺寸已知、letterbox 定下来）
+     * 才是最终值 —— 只在"开始播放/回到前台"时下发会正好卡在"视图刚挂上、还是整窗大小"那一拍，
+     * 于是入场动画实际拿到的是整窗矩形（等于没有起点提示）。
+     * 这里把布局变化本身变成信号，调用方据此重新下发参数。
+     */
+    val videoSurfaceBounds: StateFlow<Rect?> = mutableVideoSurfaceBounds.asStateFlow()
+
+    private var observedVideoSurfaceView: View? = null
+
+    private val videoSurfaceLayoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        publishVideoSurfaceBounds()
+    }
+
     private var controller: MediaController? = null
     private var playerViewReference = WeakReference<PlayerView>(null)
     private val playerViewLeaseGuard = SurfaceLeaseGuard()
@@ -393,7 +415,9 @@ class Media3PlaybackController(
             "player-view-${System.identityHashCode(view)}",
         )
         playerViewReference = WeakReference(view)
+        observeVideoSurfaceLayout(view)
         setVideoOutputEnabled(true)
+        publishVideoSurfaceBounds()
         return lease
     }
 
@@ -401,12 +425,39 @@ class Media3PlaybackController(
         if (playerViewReference.get() === view && playerViewLeaseGuard.release(lease)) {
             playerViewReference = WeakReference(null)
             view.player = null
+            stopObservingVideoSurfaceLayout()
+            publishVideoSurfaceBounds()
             Result.success(Unit)
         } else {
             Result.failure(IllegalStateException("STALE_SURFACE_LEASE"))
         }
 
     fun attachedPlayerView(): PlayerView? = playerViewReference.get()
+
+    /**
+     * 监听输出视图的布局变化：画中画参数里的 source rect 需要在它量完之后再下发一次。
+     *
+     * `PlayerView.getVideoSurfaceView()` 标着 `@UnstableApi`：它是拿到"真实输出视图"的唯一入口，
+     * 所以就近 opt-in（与 [videoSurfaceBoundsInWindow] 同一处理）。
+     */
+    @OptIn(UnstableApi::class)
+    private fun observeVideoSurfaceLayout(view: PlayerView) {
+        val surfaceView = view.videoSurfaceView
+        if (observedVideoSurfaceView === surfaceView) return
+        observedVideoSurfaceView?.removeOnLayoutChangeListener(videoSurfaceLayoutListener)
+        observedVideoSurfaceView = surfaceView
+        surfaceView?.addOnLayoutChangeListener(videoSurfaceLayoutListener)
+    }
+
+    private fun stopObservingVideoSurfaceLayout() {
+        observedVideoSurfaceView?.removeOnLayoutChangeListener(videoSurfaceLayoutListener)
+        observedVideoSurfaceView = null
+    }
+
+    private fun publishVideoSurfaceBounds() {
+        val bounds = videoSurfaceBoundsInWindow()
+        if (bounds != mutableVideoSurfaceBounds.value) mutableVideoSurfaceBounds.value = bounds
+    }
 
     /**
      * 视频输出视图在**窗口坐标系**里的矩形；画中画入场动画用它做 `setSourceRectHint`，
@@ -439,6 +490,8 @@ class Media3PlaybackController(
         controller?.removeListener(playerListener)
         controller = null
         playerViewLeaseGuard.clear()
+        stopObservingVideoSurfaceLayout()
+        publishVideoSurfaceBounds()
         releaseControllerFuture?.invoke()
         releaseControllerFuture = null
         scope.cancel()

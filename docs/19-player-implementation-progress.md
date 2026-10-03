@@ -438,3 +438,274 @@ AOSP 依据（源码行为，不是感觉）：
 516 = 2×144 + 192 + 36，正好多算了一条状态栏；修复后正好落回 372，位移 144px。结论：**确实是双计**，
 根因是 inset 的所有权不清；现在规定"inset 只由窗口内边距修饰符负责，偏移量只负责浮层之间的相对距离"，
 并把这条写进了 `PlayerScreen` 的注释。
+
+## A-B 循环方案阶段 0 的 P0 验证：T0.1（U7–U10）与 T0.2（2026-10-03，真机 spike）
+
+对应 `docs/20-ab-loop-refactor-plan.md` §5 阶段 0 的 **T0.1（U7–U10）** 与 **T0.2**。本研究用的是
+**临时 spike（不在主线）**：结束已把 spike 源码删除，`git status` 干净（见本节末尾"回退证据"）。
+
+### 环境与方法
+
+| 项目 | 取值 |
+| --- | --- |
+| 设备 | Xiaomi 25102RKBEC（`f3ba305a`）/ HyperOS V816 / Android 16 / API 36 |
+| Media3 | 1.10.1（与 app 一致） |
+| 素材 | `prototypes/views/assets/横屏.m4v`，SHA-256 `491368B2…3873A3`，MP4/MOV H.264 720×480 **25fps** + AAC，95.36 s（**一帧 = 40 ms**） |
+| 区间 | A = 20 000 ms，B = 22 000 ms（`ClippingMediaSource(A, B)`）；U10 另用 [60 000, 62 000] 交叉验证 |
+| 跳转精度 | `SeekParameters.EXACT`（与 `docs/20` §4.2"AB 胶囊打开期间强制 EXACT"一致） |
+| 观测手段 | ① 每帧 `VideoFrameMetadataListener` 的**绝对媒体 PTS**（微秒）；② 100 ms 位置/状态采样；③ `Player.Listener` 状态与 `onPositionDiscontinuity`；④ `AnalyticsListener` 的 `onRenderedFirstFrame` / `onVideoFrameProcessingOffset` / `onDroppedVideoFrames`；⑤ 同一时刻读 `Window` / `Period` 字段做坐标系对照 |
+
+**必须先说明的三条 spike 环境事实**（都踩过、都有日志，不是推断）：
+
+1. **播放器必须跑在 app 主 Looper 上。** 用自定义 `HandlerThread` 作 `ExoPlayer.Builder.setLooper(...)`
+   时，播放器永远停在 `BUFFERING`、timeline 始终为空（`duration=TIME_UNSET`、`tracks=0`），媒体源
+   一次都没被读取。改到主 Looper 后同一份代码立刻 `READY`。
+2. **视频渲染器需要一个会被消费的 Surface。** 只用 `setVideoSurface(null)` 或"挂了 `SurfaceTexture`
+   但不 `updateTexImage()`"都会卡在准备阶段；本研究建了私有 EGL 上下文，在专用线程上持续
+   `updateTexImage()`，`READY` 与出帧才正常。
+3. **instrumentation 进程里音频路径起不来。** 音频解码器从未被创建，只要音频轨参与准备，播放器就
+   永远 `BUFFERING`。因此本研究**只选视频轨**（`DefaultTrackSelector` 关闭 `TRACK_TYPE_AUDIO`）。
+   → **音频间断这一项本轮无法验证**（见"未能覆盖"）。
+
+### T0.1-U7 / U8 / U9：单一裁剪源的区间外能力与坐标语义
+
+对照组（未裁剪）：
+
+```text
+BASELINE_UNCUT      durationPlayerMs=95458  durationWindowMs=95458  seekable=true  advancedMsIn2s=2010  framesIn2s=50
+```
+
+包裹 `ClippingMediaSource(20000, 22000)` 之后（同一条日志、同一台设备）：
+
+```text
+U9_CLIPPED_SEMANTICS_AT_A            durationPlayerMs=2000  durationWindowMs=2000
+                                    durationClippedLengthMs=2000  durationFullMs=95458
+                                    positionInFirstPeriodUs=20000000  currentPositionMs=2017
+                                    advancedMsIn2s=0  framesIn2s=0  seekable=true
+U7_SEEK_BEFORE_A                     seekTargetMs=12000  positionOnSeekMs=2010  advancedMsIn2s=0  framesIn2s=0
+                                    playerState=ENDED  playedContentBeforeA=false
+U8_SEEK_AFTER_B                      seekTargetMs=28000  positionOnSeekMs=2012  advancedMsIn2s=0  framesIn2s=0
+                                    playerState=ENDED
+U8_AFTER_B_SETTLED                   positionMs=2012  playerState=ENDED  playWhenReady=true  isPlaying=false
+```
+
+把同一时刻的窗口/周期字段并排读出来，坐标系就完全确定了：
+
+```text
+COORD_POSITION_VS_OFFSET  currentPositionMs=1038   durationMs=2000  windowDurationMs=2000
+                          windowPositionInFirstPeriodUs=20000000  windowDefaultPositionUs=0
+                          periodPositionInWindowUs=-20000000      periodDurationUs=22000000  periodIndex=0
+```
+
+`Period.getPositionInWindowUs() = -20000000`（即 −A）说明：**"时长"与"位置"用的不是同一个原点**，
+而 `currentPosition` 报的是**窗口内位置**（0..2000），不是媒体绝对时间。
+
+**逐条回答**：
+
+- **U7（能否播 A 之前的内容）：不能，而且比"钳到 A"更糟。** seek 到 12000 ms 这一请求的落点是
+  `2010`（把它当成"窗口内 12000 ms"去钳，结果钳到窗口末尾），随后 `advancedMsIn2s=0`、
+  `framesIn2s=0`、`playerState=ENDED`：**既没有播到 A 之前，也没有回到 A 继续播，而是直接结束**。
+- **U8（区间外 seek 的行为）：钳到窗口末尾并 `ENDED`，不回到 A。** seek 到 28000 → 停在 2012、
+  `ENDED`、`isPlaying=false`；`playWhenReady` 仍为 `true`，但不会有任何进展。事件面上只出现
+  `onPositionDiscontinuity(SEEK)`（old 2010 → new 1999），**没有** `onMediaItemTransition`。
+- **U9（位置/时长是绝对值还是片段相对值）：两者口径不一致，这是最要命的一条。**
+  - `player.duration` = **片段长度**（2000 ms）；
+  - `player.currentPosition` = **窗口内位置**（1038..2017），不是绝对媒体时间；
+  - 同一次 discontinuity 里 `newPositionMs` 又出现过 `20000`（绝对）；
+  - `Window.positionInFirstPeriodUs` = 20000000（绝对），`Period.positionInWindowUs` = −20000000。
+  → 进度条按"位置/时长"画会直接错（位置 1038 / 时长 2000，看起来像"播到一半"，实际在绝对 21 s 处）；
+    而且**位置轨道与 seek 目标是两个不同的度量**（见下）。
+- **seek 目标的坐标系与位置上报的坐标系不一致（本轮最关键的发现）**。逐目标实测
+  （窗口 [20000, 22000]，时长 2000）：
+
+  | 请求 seek 到 | 实际落点 | 状态 | 解释 |
+  | --- | --- | --- | --- |
+  | `0` | `667`（即窗口内 ~0，偏差来自解码起步） | READY | 命中窗口起点 |
+  | `500` | `1157`（窗口内 ~500） | READY | 命中 |
+  | `1000` | `1663`（窗口内 ~1000） | READY | 命中 |
+  | `1500` | `2000` | ENDED | 越界 → 钳到窗口末尾 |
+  | `2000` | `2014` | ENDED | 等于时长 → 末尾 |
+  | `2500` | `2012` | ENDED | 越界 → 末尾 |
+  | `21000`（= 绝对 A+1000） | `2015`，`framesIn2s=0` | ENDED | 越界 → 末尾，**且不再播放** |
+
+  同一现象在另一个窗口上复现（[60000, 62000]，`positionInFirstPeriodUs=60000000`）：
+
+  ```text
+  COORD_CLIP_60_62_OPEN_ABS_60000   positionOnReady=1999  positionAfter2s=2017  positionDeltaMs=17  framesIn2s=1
+  COORD_CLIP_20_22_OPEN_REL_0       positionOnReady=28    positionAfter2s=2004  positionDeltaMs=1978  framesIn2s=44
+  ```
+
+  **结论**：`seekTo(x)` 的 `x` 是**窗口内（片段相对）**坐标，而 `currentPosition` 报的也是窗口内坐标，
+  但 `Window`/`Period` 字段是绝对媒体时间；`docs/20` §4.1 的"重建前记录绝对位置、重建后 seek 回"
+  以及"循环回 A = `Seek(A)`"在裁剪源上**会 seek 到区间之外**，把播放器打成 `ENDED`。要在裁剪源上成立，
+  必须同时改写"目标 A/B → 窗口内坐标"与"窗口内位置 → 绝对位置（进度条/截图/历史/上一首）"两侧，
+  即 `docs/20` §2.4 的全局映射层**比预计的范围更大**（不只是展示层，还包括所有 seek 入口）。
+
+  另一个反直觉但必须记录的实测：**"打开就在起点"也不安全**。
+  `open(clipped, 20000)`（即绝对 A）会让播放器直接 `ENDED`、一帧不出；只有 `open(clipped, 0)`
+  （窗口起点）才能正常播完整段（`advancedMsIn2s=1978`、`framesIn2s=44`）。
+  显式声明 `setRelativeToDefaultPosition(true)` 也**不能**改变这一点（`positionDeltaMs=0`、`framesIn2s=0`）。
+
+### T0.1-U10：切源（未裁剪源 ⇄ 裁剪循环源）的无缝性
+
+事件序列（原始 JSON，节选）：
+
+```text
+U10_UNCUT_STARTED              startMs=16000  dur=95458
+SWAP_TO_CLIPPED_FIRED          value=20005  tMs=4244
+DISCONTINUITY                  reason=REMOVE  oldPositionMs=20005  newPositionMs=20000
+PLAYBACK_STATE                 BUFFERING -> READY -> ENDED
+U10_AFTER_SWAP_TO_CLIPPED      positionMs=2014  playerState=ENDED  durationMsWhenClipped=2000
+SEEK_POSTED                    value=15000
+U10_SEEK_OUTSIDE_CLIPPED       requestedMs=15000  positionMs=2011  playerState=ENDED
+SWAP_BACK_TO_UNCUT_FIRED       value=2011  tMs=42475
+DISCONTINUITY                  reason=REMOVE  oldPositionMs=2011  newPositionMs=15000
+U10_AFTER_SWAP_BACK_TO_UNCUT   positionMs=17582  playerState=READY  durationMsWhenUncut=95458
+summary                        swapInRebuffers=3  swapInFrameGaps=3
+```
+
+逐帧墙钟（从 A−1.5 s 开始记录，25fps 的正常帧间隔是 40 ms）：
+
+```text
+最大帧空洞（相邻两帧的墙钟差）：
+  104 ms   t=4222..4326     pts 20040000 -> 21840000
+  53/52/51 ms  （正常抖动）
+切源点（SWAP_TO_CLIPPED_FIRED@t=4244）±200 ms 内的空洞 = [40, 51, 31, 32, 51, 104]
+重缓冲时长 = [60, 36, 116] ms（3 次，均值约 71 ms）
+切回未裁剪源之后恢复正常：空洞 [20, 10, 40, 41] ms
+```
+
+**判定**：
+
+- **黑帧/停顿：切源瞬间有约 104 ms 的帧空洞**，是名义帧间隔（40 ms）的 **2.6 倍**，
+  超过 `docs/20` §3.4 的"≤1 帧"，因此**不满足"无缝"**。
+- **重新缓冲：切源 3 次出现 3 次 `STATE_BUFFERING`（36/60/116 ms）**，§3.4 要求循环点 0 次 → **不达标**。
+- **位置连续性：不成立。** 进入裁剪源后 `currentPosition` 从 20005（绝对）变成 2014（窗口内），
+  切回未裁剪源又回到 15000（绝对）：`DISCONTINUITY(REMOVE)` 记录到 −18 s 级别的跳变。
+  即使"看起来数字没跳"（`newPositionMs=20000` 那次），也只是两套坐标系的巧合，不是连续。
+- **切换"是否无缝"（按 §3.4 口径）：不通过。** 而且这一条**无法通过"实现得更小心"来绕过**，
+  因为根因是 U7–U9 的坐标系不匹配：进入区间后播放器即 `ENDED`，切源换来的是一个静止的末帧。
+
+### T0.2：方案 A（手动 `seek(A)` + 强制 `EXACT`）的对照
+
+同一素材、同一区间、同一台设备、同一条观测链（循环方式与现实现一致：**播到接近 B 再 seek 回 A**）。
+
+| 指标 | 实测 | §3.4 阈值 | 判定 |
+| --- | --- | --- | --- |
+| 落点误差（50 次，PTS 对 A 的偏差） | **50/50 = 0 µs**，唯一取值 `{0}` | ≤1 帧（40 ms） | ✅ 通过，且是帧精确 |
+| 第 1 次 / 第 2 次 / 第 50 次误差 | `0 / 0 / 0` µs | 无累积漂移 | ✅ 通过（全程恒为 0） |
+| 无累积漂移 | 前 10 次与后 10 次均值都是 0 | 首末同量级 | ✅ 通过 |
+| 循环点是否重新缓冲 | **50/50 次都出现 `STATE_BUFFERING`**；每次持续 **27–45 ms**（均值 37.3 ms，n=49 次测得时长） | **日志计数 = 0 才算通过** | ❌ **不通过** |
+| 丢帧/画面空洞 | `frameGapCount=50`（每次循环点一次），`framesRenderedPerRound` 中位数 = 1 | 逐帧录像无空洞 | ❌ 不通过（见下方口径说明） |
+| 音频间断 | **未能验证**（见"未能覆盖"） | 无静音段超过 1 帧 | ⚠️ 无证据 |
+
+口径说明（避免把"重缓冲"读成"卡很久"）：27–45 ms 的 `STATE_BUFFERING` **短于一个帧间隔（40 ms）**，
+所以它更接近"一帧的抖动"而不是"明显卡顿"；但 `docs/20` §3.4 对重缓冲写的是**零容忍的日志计数**，
+按该口径**方案 A 不通过**。这一条是"阈值是否过严"的产品选择，不是测量误差。
+
+### 两个方案对 §3.4 的逐项对照
+
+| §3.4 项 | 通过条件 | 切源方案（D8-A） | 方案 A（手动 seek + EXACT） |
+| --- | --- | --- | --- |
+| 循环落点误差 | ≤1 帧 | ❌ **测不到**（进入裁剪源后 `ENDED`，一帧不出） | ✅ 0 ms（帧精确） |
+| 无累积漂移 | 50 次内首末同量级 | ❌ 同上 | ✅ 全程恒 0 |
+| 不得重新缓冲 | 日志计数 = 0 | ❌ 3/3 次切源都重缓冲（36/60/116 ms） | ❌ **50/50 次循环点都重缓冲（27–45 ms）** |
+| 音视频间断 | 逐帧无空洞、音频静音 ≤1 帧 | ❌ 切源处 104 ms 帧空洞（2.6 帧） | ❌ 循环点每次 1 帧空洞；**音频未测** |
+| 主观无卡顿 | 与上面四项**同时**满足 | ❌ 前提不成立 | ⚠️ 客观项未全过，主观不作为通过依据 |
+
+**总结论：按 `docs/20` §3.4 现有阈值，两个方案都不达标。** 不同的地方在于失败方式：
+
+- **切源方案（D8-A）是被能力阻断**：单一裁剪源没有"区间外"能力（U7），且 seek/位置坐标系与
+  现有"绝对毫秒"口径冲突（U9），切源处还有 2.6 帧的黑帧空洞（U10）。
+- **方案 A 是被"零重缓冲"这一条卡住**：落点精度反而是帧精确的，唯一（但客观）的失败是每次循环点
+  一次 27–45 ms 的重缓冲。
+
+按 `docs/20` §1.1，这里**不默认回退即通过**，把取舍选项列为：
+
+1. **接受轻微停顿**（收窄验收口径）：选方案 A，把 §3.4 的"重缓冲计数 = 0"改为
+   "循环点重缓冲 ≤ 1 帧（40 ms）且不累积"；需明确写入体验口径，并补一次音频验证。
+2. **收窄为 D8-B**（改 `docs/20` §1.1/§3.1 与 `docs/16`/`docs/17`）：放弃"区间外播放/可拖出区间"，
+   换取单一裁剪源；但**仍要解决坐标系与位置映射**（U9），且要重新验证裁剪源在全片段上的播放
+   （本轮的 `framesIn2s` 在 [20,22] 上正常，但 `open(绝对 A)` 直接 `ENDED` 这一点必须绕开）。
+3. **换其它实现**：先解决"位置/seek 是两套坐标系"这个根因（唯一映射层 + 所有 seek 入口改口径），
+   再评估"可变裁剪"（`docs/20` U11 / T0.7）是否能让 A/B 调整不重建、从而避免切源。
+4. **放弃无缝要求**（产品侧接受循环点可见一帧的接缝）：这是最省事但必须显式确认的选项。
+
+### 对 `docs/20` 的修正建议（只报告，本轮未改文档结构）
+
+1. **§1.1 / §4.1 必须补"seek 坐标系"这条约束**：裁剪源上 `seekTo(x)` 的 `x` 是窗口内坐标，
+   而 `currentPosition`/`Window.positionInFirstPeriodUs`/`Period.positionInWindowUs` 三者的原点并不相同；
+   "重建前记录绝对位置、重建后 seek 回"与"循环回 A = `Seek(A)`"都必须先做坐标换算，否则直接 `ENDED`。
+2. **§2.4 / T2.4 的映射层范围要扩大**：不只是"展示层换算"，还包括**所有 seek 入口**（进度条拖动、
+   ±1 帧、上一首位置判定、截图取帧时间戳、恢复播放进度）——它们是写路径，裁剪后都会落到错误位置。
+3. **§3.4 的"重缓冲计数 = 0"在真机上做不到**（方案 A 实测 50/50 次）：需要明确"如果接受轻微停顿，
+   阈值改成什么"，否则阶段 2 的 T2.10 会永远无法通过。
+4. **§4.3 U11 的措辞要修正**：`ClippingMediaSource.Builder.setAllowDynamicClippingUpdates(...)` 的官方
+   注释是"裁剪窗口随 **live window** 移动"，**不是**"运行时改变裁剪边界"；"可变裁剪"是否存在，
+   需要在 T0.7 用 API 核对而不是默认它存在。
+5. **§4.1 的包装形态建议显式化相对模式**：同时声明 `setRelativeToDefaultPosition(true/false)`，
+   因为两种模式的实测差异（位置原点）会直接改变映射层的写法。
+6. **§2.3 的"引擎自己解析 URI"这一条被本轮证实是可行的**（`DefaultMediaSourceFactory` + 本地
+   `file://` 在同一进程可正常准备/播放），问题不在建源入口，而在上面的坐标系。
+
+### 未能覆盖 / 风险
+
+1. **音频间断没有验证**：instrumentation 进程里音频渲染器无法就绪（音频解码器从未创建，播放器因此
+   永远 `BUFFERING`），本轮被迫只选视频轨。方案 A 的"音频是否可观测间断"、以及 §3.4 的音频判定
+   必须在**能出声的宿主**（真实 app/service 进程或手工真机操作）上补测。
+2. **没有逐帧录像取证**：本研究播放器渲染到离屏 `SurfaceTexture`（为了获得逐帧 PTS 与帧计数），
+   屏幕上看不到画面，`screenrecord` 无法用于本次循环点。因此"黑帧"是用**帧 PTS 的墙钟空洞**判定的
+   （104 ms / 每次 1 帧），不是像素级验证；像素级黑帧检测留给能上屏的宿主补做。
+3. **只覆盖一种素材、一个设备**：720×480 25fps H.264+AAC、95.36 s，A=20 s/B=22 s。未覆盖
+   VFR、长 GOP 以外的编码、4K/高帧率、音频主导素材。§3.4 的基线说明同样适用于本节的数字。
+4. **未做**：U1 的端到端影响面（截图文件名时间戳、恢复播放进度、历史、上一首）、U2（可靠循环事件）、
+   U3/U4（重建代价、MediaSession/通知/PiP）、U5/U6（后台/锁屏/PiP 持续）、U11（可变裁剪）——
+   按任务要求留给下一批，本轮不给结论。
+
+### 回退证据
+
+spike 只新增了一个未跟踪文件 `app/src/androidTest/java/seeyuer/yingli/player/spike/AbLoopSpikeTest.kt`，
+**未修改任何主线源码**（因此结束时删除该文件即完全回退）。删除该文件后、**写入本证据章节之前**：
+
+```text
+$ git status --porcelain
+（空）
+$ git status --porcelain --untracked-files=all
+（空）
+```
+
+本节落笔后（即最终状态）只剩本证据章节这一处改动：
+
+```text
+$ git status --porcelain
+ M docs/19-player-implementation-progress.md
+$ git diff --stat
+ docs/19-player-implementation-progress.md | 271 ++++++++++++++++++++++++++++++
+ 1 file changed, 271 insertions(+)
+```
+
+随后用**回退后的源码**重新构建并安装测试 APK，并跑既有用例确认设备/构建链未被污染：
+
+```text
+$ .\gradlew.bat :app:assembleDebugAndroidTest
+BUILD SUCCESSFUL
+$ adb install -r -d app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+Success
+$ adb shell "am instrument -w -r -e class …AndroidFrameCountProbeTest#countingReadsEverySampleOfTheSyntheticContainer \
+    seeyuer.yingli.player.test/androidx.test.runner.AndroidJUnitRunner"
+OK (1 test)
+```
+
+spike 取证材料（全部在 gitignore 的 `build/` 下，不进入提交；`build/spike/`）：
+
+| 文件 | 内容 |
+| --- | --- |
+| `AbLoopSpikeTest.kt.spike` | spike 源码快照（含三个正式用例与两个坐标系/可播放性探针） |
+| `spike-androidTest.apk` | 可直接复跑的 spike 测试 APK |
+| `run_spike.ps1` | 跑测脚本（含本机两个 `am` 怪癖：整条命令必须是一个字符串、组件必须写成 `包/runner`） |
+| `analyze.py` / `frames.py` / `frametrace.py` | 三个分析脚本（误差统计、重缓冲时长、帧空洞） |
+| `json/u7_u8_u9.json`、`json/u10.json`、`json/t02.json`、`json/probe_coord.json`、`json/probe_clip.json` | app 侧原始 JSON 证据 |
+| `f_u10-*-logcat.txt`、`f_t02-*-logcat.txt`、`h_coord-*-logcat.txt` 等 | 逐帧/事件 logcat 原始落盘 |
+
+设备侧已清理：`adb shell cmd appops set seeyuer.yingli.player 10021 ignore`（恢复为 `ignore`）、
+删除 `/data/local/tmp/spike_land.m4v` 与 app 私有目录 `files/spike/`、`files/spike_land.m4v`。

@@ -100,7 +100,6 @@ internal fun ScreenshotUiState.hidesCenterTransportControls(): Boolean =
  *
  * 捕获按钮是**唯一的强调色实心按钮**（设计稿 §4.10「中间强调色圆角按钮」），
  * 其余三个是非实心的图标按钮；捕获中它切"等待态"（见 [ScreenshotCaptureButton]）。
- * [onCapturePositioned] 把捕获按钮在根布局里的中心点报给上层：预览卡要从它那里飞出去。
  */
 @Composable
 internal fun ScreenshotToolCapsule(
@@ -109,14 +108,13 @@ internal fun ScreenshotToolCapsule(
     onCapture: () -> Unit,
     onNextFrame: () -> Unit,
     onClose: () -> Unit,
-    onCapturePositioned: (Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val armed = state is ScreenshotUiState.Armed
-    ScreenshotCapsuleSurface(modifier.height(PlayerChromeButtonSize)) {
+    ScreenshotCapsuleSurface(modifier.height(PlayerScreenshotCapsuleHeight)) {
         Row(
-            modifier = Modifier.padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.padding(horizontal = ScreenshotCapsuleInnerPadding),
+            horizontalArrangement = Arrangement.spacedBy(PlayerScreenshotCapsuleButtonSpacing),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PlayerChromeIconButton(
@@ -125,12 +123,13 @@ internal fun ScreenshotToolCapsule(
                 onClick = onPreviousFrame,
                 enabled = armed,
                 tint = YingLiTheme.player.controlPrimary,
-                size = ScreenshotCapsuleButtonSize,
+                // 尺寸与工具托盘里的按钮**同一个常量**：胶囊取代的就是托盘行，
+                // 两边按钮圆径不一致会一眼看出"换了一套控件"。**不要在这里写死别的尺寸。**
+                size = PlayerScreenshotCapsuleButtonSize,
             )
             ScreenshotCaptureButton(
                 capturing = state is ScreenshotUiState.Capturing,
                 onCapture = onCapture,
-                onPositioned = onCapturePositioned,
             )
             PlayerChromeIconButton(
                 icon = YingLiIcon.SEEK_FORWARD,
@@ -138,14 +137,14 @@ internal fun ScreenshotToolCapsule(
                 onClick = onNextFrame,
                 enabled = armed,
                 tint = YingLiTheme.player.controlPrimary,
-                size = ScreenshotCapsuleButtonSize,
+                size = PlayerScreenshotCapsuleButtonSize,
             )
             PlayerChromeIconButton(
                 icon = YingLiIcon.CLOSE,
                 contentDescription = stringResource(R.string.action_cancel),
                 onClick = onClose,
                 tint = YingLiTheme.player.controlPrimary,
-                size = ScreenshotCapsuleButtonSize,
+                size = PlayerScreenshotCapsuleButtonSize,
             )
         }
     }
@@ -157,12 +156,15 @@ internal fun ScreenshotToolCapsule(
  * 等待态直接落在 `enabled = false` 上，而不是另做一套颜色：那正是"现在按不动"的语义
  * （等待期间重复点击本来也该被忽略），并且与项目里其余禁用按钮共用同一份视觉语言。
  * 颜色/描边仍来自 [PlayerChromeIconButton] 的 `filled` 分支，不在这里写第二份强调色。
+ *
+ * 它是四个按钮里**唯一实心**的一枚（设计稿的"强调色按钮"靠颜色与填充表达）；
+ * 尺寸同样是 [PlayerChromeButtonSize]，不再比同伴大一圈——飞入轨迹的起点已经改成
+ * 视频画面区域的右下角，不必再靠"按钮更大"来暗示"卡片从这里飞出去"。
  */
 @Composable
 private fun ScreenshotCaptureButton(
     capturing: Boolean,
     onCapture: () -> Unit,
-    onPositioned: (Offset) -> Unit,
 ) {
     PlayerChromeIconButton(
         icon = YingLiIcon.SCREENSHOT_CAPTURE,
@@ -170,17 +172,7 @@ private fun ScreenshotCaptureButton(
         onClick = onCapture,
         enabled = !capturing,
         filled = true,
-        size = ScreenshotCapsuleButtonSize + PlayerChromeButtonSize / 4,
-        modifier = Modifier.onGloballyPositioned { coordinates ->
-            val position = coordinates.positionInRoot()
-            val size = coordinates.size
-            onPositioned(
-                Offset(
-                    x = position.x + size.width / 2f,
-                    y = position.y + size.height / 2f,
-                ),
-            )
-        },
+        size = PlayerScreenshotCapsuleButtonSize,
     )
 }
 
@@ -289,7 +281,7 @@ internal fun playerFrameCounterFontSizeSp(
 }
 
 /**
- * 截图预览卡：捕获成功后从捕获按钮处**飞入页面左上角**的小卡（设计稿 §4.10 / §6）。
+ * 截图预览卡：捕获成功后从**视频画面区域的右下角**飞入页面左上角的小卡（设计稿 §4.10 / §6）。
  *
  * - 出现：`scale(2.4) → 1` + 位移，0.42s（[ScreenshotPreviewSpec]）；
  * - 尺寸：116dp 宽、16:10、白色描边；
@@ -298,12 +290,15 @@ internal fun playerFrameCounterFontSizeSp(
  *
  * 展开态下**不画这张卡**：大图预览是它放大后的形态，两者同时在场只会看到一厚一薄两张同图。
  *
- * [captureButtonCenter] 是捕获按钮在根布局里的中心点（未测量到时为 null），飞行起点由它决定。
+ * [flyInOrigin] 是飞行**起点**（根布局坐标系）：视频**实际渲染区域**的右下角，
+ * 由 `VideoRotationStageMath.pictureBounds` 按 letterbox 几何算出（未量到时为 null）。
+ * 终点不需要外部给：卡片静止在左上角（调用方已按 safeDrawing 内边距摆好），
+ * 它的中心就是终点，量在下面那个无变换的外层 Box 上。
  */
 @Composable
 internal fun ScreenshotPreviewCard(
     state: ScreenshotUiState.Preview,
-    captureButtonCenter: Offset?,
+    flyInOrigin: Offset?,
     onExpand: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -313,12 +308,12 @@ internal fun ScreenshotPreviewCard(
     // 目标一帧一变，位移公式的输入自己就在动（"先反向移动再回来"的成因之一）。
     var targetTopLeft by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current
-    // 只有捕获按钮与卡片几何都量到了才让 [entered] 变 true：动画**等几何到位再开始**，
+    // 只有起点与卡片几何都量到了才让 [entered] 变 true：动画**等几何到位再开始**，
     // 而不是先跑起来再纠正起点。首帧没坐标就多停一帧，用户看不到任何突变。
     var geometryReady by remember(state.uri) { mutableStateOf(false) }
     var entered by remember(state.uri) { mutableStateOf(false) }
-    LaunchedEffect(state.uri, captureButtonCenter, targetTopLeft) {
-        if (captureButtonCenter != null && targetTopLeft != Offset.Zero) geometryReady = true
+    LaunchedEffect(state.uri, flyInOrigin, targetTopLeft) {
+        if (flyInOrigin != null && targetTopLeft != Offset.Zero) geometryReady = true
     }
     LaunchedEffect(state.uri, geometryReady) {
         if (geometryReady) entered = true
@@ -339,8 +334,8 @@ internal fun ScreenshotPreviewCard(
                     transformOrigin = TransformOrigin(0f, 0f)
                     val size = ScreenshotPreviewSize(this.size.width, this.size.height)
                     val track = screenshotPreviewTrack(
-                        buttonCenterX = captureButtonCenter?.x,
-                        buttonCenterY = captureButtonCenter?.y,
+                        startCenterX = flyInOrigin?.x,
+                        startCenterY = flyInOrigin?.y,
                         targetX = targetTopLeft.x,
                         targetY = targetTopLeft.y,
                         size = size,
@@ -526,8 +521,61 @@ private val PlayerScreenshotPreviewBorderWidth = 1.5.dp
 private val PlayerScreenshotPreviewCornerRadius = 7.dp
 private val PlayerScreenshotPreviewProgressHeight = 4.dp
 
-/** 截图胶囊里普通按钮的尺寸：比底栏按钮小一圈，让中间那枚强调按钮成为视觉主体。 */
-private val ScreenshotCapsuleButtonSize = 40.dp
+/**
+ * 截图胶囊的高度：比工具托盘的按钮高出 [PlayerPortraitControlsSpacing] 一档
+ * （48dp + 16dp = 64dp）。
+ *
+ * 为什么是"增大"而不是沿用按钮尺寸：胶囊里并排放着四枚圆按钮，高度与按钮相等时
+ * 胶囊上下沿正好贴着按钮顶点，看起来是一排按钮而不是"一个容器里的一组按钮"
+ * （用户实测反馈原胶囊偏小）。高出一档后，四周留出 [ScreenshotCapsuleInnerPadding]
+ * 的呼吸圈。**不要再退回到 PlayerChromeButtonSize 或另写一个更小的字面量。**
+ *
+ * 它同时决定辅助带的满高（[PlayerAuxiliaryBandHeight] = 本值 + 同一个间距），
+ * 所以改这里会同时影响托盘行与胶囊在底栏里的竖直位置。
+ *
+ * `get()` 而不是顶层 `val`：它引用底栏文件里的 [PlayerPortraitControlsSpacing]，
+ * 而底栏文件又引用本常量——顶层 `val` 会构成初始化环（先加载谁就拿到谁 0.dp 的默认值）。
+ * 计算属性与取值顺序无关。**不要再改回顶层 val。**
+ */
+internal val PlayerScreenshotCapsuleHeight: Dp
+    get() = PlayerChromeButtonSize + PlayerPortraitControlsSpacing
+
+/**
+ * 胶囊内所有按钮（含捕获按钮）的尺寸：**就等于工具托盘的按钮尺寸** [PlayerChromeButtonSize]。
+ *
+ * 用户实测反馈原实现的胶囊按钮（40dp）比托盘按钮（48dp）小一圈，同屏切换时像是换了一套控件；
+ * 这里用一个等值别名把它绑死，单测直接断言两者相等——任何"顺手调小/调大胶囊按钮"的改动都会红。
+ * **不要在胶囊里出现别的尺寸字面量。**
+ */
+internal val PlayerScreenshotCapsuleButtonSize = PlayerChromeButtonSize
+
+/**
+ * 胶囊内边距 = (胶囊高度 - 按钮尺寸) / 2：水平方向也取同一个值，
+ * 四周呼吸圈才是一致的（写死 4dp 会让左右比上下窄一半）。
+ */
+internal val ScreenshotCapsuleInnerPadding: Dp
+    get() = (PlayerScreenshotCapsuleHeight - PlayerScreenshotCapsuleButtonSize) / 2
+
+/**
+ * 胶囊内按钮之间的间距（12dp）。
+ *
+ * 比工具托盘里同组按钮的 [PlayerShortcutSpacing]（8dp）更大：托盘按钮之间的空隙外侧还有整行的
+ * 空白可以"借"，而胶囊是一整块容器，同样的间距在胶囊里会明显更挤（用户实测反馈"按钮挤在一起"）。
+ * 12dp 与项目里 8/12/16 那一档间距一致，不引入新数字。
+ */
+internal val PlayerScreenshotCapsuleButtonSpacing = 12.dp
+
+/**
+ * 截图胶囊滑入/滑出（含淡入淡出）的时长（360ms）。
+ *
+ * 比底栏三段的 [TRANSPORT_SECTION_TRANSITION_MILLIS]（240ms）**慢一档**，理由是：
+ *   · 胶囊是"工具入口"，进出比播放控制更需要从容——240ms 与三段淡入同拍时，
+ *     胶囊的横向滑行会显得仓促、和底栏的收起挤在一起（用户实测反馈"太快"）；
+ *   · 胶囊比底栏按钮大一圈，同样的位移速度下大控件看起来更快，放慢后速度感才与底栏一致。
+ * 辅助带的"退出留位窗口"必须跟着它走（见 `BottomPlaybackControls` 的 capsuleBandHeld），
+ * 否则带子会在胶囊还没滑完时提前塌掉。**不要为了"跟底栏同拍"把它改回 240ms。**
+ */
+internal const val SCREENSHOT_CAPSULE_TRANSITION_MILLIS = 360
 
 /** 删除按钮尺寸（设计稿 27px）。 */
 private val PlayerScreenshotDeleteButtonSize = 27.dp

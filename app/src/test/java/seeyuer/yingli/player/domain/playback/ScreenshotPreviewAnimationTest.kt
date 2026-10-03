@@ -14,23 +14,27 @@ import kotlin.math.sign
  * 这里把"起点 → 终点"的换算抽成纯函数，并从三个互补的角度把单调性钉住：
  * 1. 到终点的距离随进度**单调不增**（不允许出现反向段）；
  * 2. 每一步的位移方向**恒定**（不允许拐弯回头）；
- * 3. 两个端点必须精确落在"捕获按钮中心"与"卡片静止位置"上（否则会先跑偏再回来）。
+ * 3. 两个端点必须精确落在"视频画面区域的右下角"与"卡片静止位置"上（否则会先跑偏再回来）。
  *
  * 只断言"某一帧长什么样"是防不住这类回归的——非单调恰恰只在中间某几帧看得出来。
+ *
+ * 起点口径已按需求改为**视频画面（不含黑边）的右下角**（此前是捕获按钮中心）：
+ * 下面的坐标取"1080x2400 画布 + 16:9 视频"的真实量级——画面是居中一条 1080x607.5 的横带，
+ * 右下角落在 (1080, 1503.75)，明显高于屏幕右下角 (1080, 2400)。
  */
 class ScreenshotPreviewAnimationTest {
-    /** 一段真实量级的几何：卡片 116dp 宽、按钮在屏幕中下方。 */
+    /** 一段真实量级的几何：卡片 116dp 宽、起点在画布中下部偏右的视频画面右下角。 */
     private val size = ScreenshotPreviewSize(width = 300f, height = 187.5f)
     private val targetX = 12f
     private val targetY = 160f
-    private val buttonX = 900f
-    private val buttonY = 2_100f
+    private val pictureX = 1_080f
+    private val pictureY = 1_503.75f
 
     private fun track(): ScreenshotPreviewTrack =
         requireNotNull(
             screenshotPreviewTrack(
-                buttonCenterX = buttonX,
-                buttonCenterY = buttonY,
+                startCenterX = pictureX,
+                startCenterY = pictureY,
                 targetX = targetX,
                 targetY = targetY,
                 size = size,
@@ -53,11 +57,11 @@ class ScreenshotPreviewAnimationTest {
     }
 
     @Test
-    fun trackStartsAtTheCaptureButtonAndEndsAtTheRestingSpot() {
+    fun trackStartsAtTheVideoPictureBottomRightAndEndsAtTheRestingSpot() {
         val track = track()
 
-        assertEquals(buttonX, track.startCenter.x, 0.01f)
-        assertEquals(buttonY, track.startCenter.y, 0.01f)
+        assertEquals(pictureX, track.startCenter.x, 0.01f)
+        assertEquals(pictureY, track.startCenter.y, 0.01f)
         assertEquals(targetX + size.width / 2f, track.endCenter.x, 0.01f)
         assertEquals(targetY + size.height / 2f, track.endCenter.y, 0.01f)
     }
@@ -66,9 +70,9 @@ class ScreenshotPreviewAnimationTest {
     fun enteringFramesTouchBothEndpointsExactly() {
         val sampled = frames()
 
-        // 首帧必须正好在按钮上、末帧必须正好在静止位置：任何一段"跑偏"都表现为端点对不上。
-        assertEquals(buttonX, sampled.first().x, 0.01f)
-        assertEquals(buttonY, sampled.first().y, 0.01f)
+        // 首帧必须正好在画面右下角、末帧必须正好在静止位置：任何一段"跑偏"都表现为端点对不上。
+        assertEquals(pictureX, sampled.first().x, 0.01f)
+        assertEquals(pictureY, sampled.first().y, 0.01f)
         assertEquals(targetX + size.width / 2f, sampled.last().x, 0.01f)
         assertEquals(targetY + size.height / 2f, sampled.last().y, 0.01f)
     }
@@ -105,12 +109,12 @@ class ScreenshotPreviewAnimationTest {
     }
 
     @Test
-    fun aButtonBelowTheCardStillMovesMonotonically() {
-        // 反向场景（卡片在下、按钮在上）也要单调：单调性是轨迹的性质，不是这一组坐标的巧合。
+    fun aStartBelowTheCardStillMovesMonotonically() {
+        // 反向场景（卡片在下、起点在上）也要单调：单调性是轨迹的性质，不是这一组坐标的巧合。
         val track = requireNotNull(
             screenshotPreviewTrack(
-                buttonCenterX = 120f,
-                buttonCenterY = 40f,
+                startCenterX = 120f,
+                startCenterY = 40f,
                 targetX = targetX,
                 targetY = 600f,
                 size = size,
@@ -139,8 +143,8 @@ class ScreenshotPreviewAnimationTest {
         // 几何没量到就不给轨迹：调用方据此**等几何到位再开始动画**，
         // 这正是"先跑动画、量到坐标后再纠正位置"（表现为先下后回）的根治办法。
         assertNull(screenshotPreviewTrack(null, null, targetX, targetY, size))
-        assertNull(screenshotPreviewTrack(buttonX, buttonY, targetX, targetY, ScreenshotPreviewSize(0f, 0f)))
-        assertNull(screenshotPreviewTrack(buttonX, buttonY, targetX, targetY, ScreenshotPreviewSize(300f, 0f)))
+        assertNull(screenshotPreviewTrack(pictureX, pictureY, targetX, targetY, ScreenshotPreviewSize(0f, 0f)))
+        assertNull(screenshotPreviewTrack(pictureX, pictureY, targetX, targetY, ScreenshotPreviewSize(300f, 0f)))
     }
 
     @Test

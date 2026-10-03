@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import seeyuer.yingli.player.domain.playback.VideoRotation
+import seeyuer.yingli.player.domain.playback.VideoScaleMode
 
 class VideoRotationStageMathTest {
     private val portraitStage = 1080f to 2400f
@@ -88,6 +89,116 @@ class VideoRotationStageMathTest {
 
         assertEquals(90f, result.rotationDegrees, 0.01f)
         assertEquals(1f, result.scale, 0.01f)
+    }
+}
+
+/**
+ * "视频画面实际渲染区域"（[VideoRotationStageMath.pictureBounds]）的单测。
+ *
+ * 这是截图预览卡飞入**起点**的唯一依据：起点要落在画面（不含黑边）的右下角，
+ * 而不是承载画面的容器右下角。竖屏里容器等于整块画布，两者相差整整一条 letterbox，
+ * 所以下面既钉住"有黑边时起点上移"，也钉住"cover/固定宽度时可见画面就是整块画布"。
+ */
+class VideoPictureBoundsTest {
+    private val portraitStage = 1080f to 2400f
+    private val landscapeVideoAspect = 16f / 9f
+
+    private fun bounds(
+        stage: Pair<Float, Float> = portraitStage,
+        aspect: Float? = landscapeVideoAspect,
+        scaleMode: VideoScaleMode = VideoScaleMode.FIT,
+        rotation: Float = 0f,
+        fillScreen: Boolean = false,
+    ): VideoPictureBounds = VideoRotationStageMath.pictureBounds(
+        stageWidth = stage.first,
+        stageHeight = stage.second,
+        videoAspect = aspect,
+        scaleMode = scaleMode,
+        rotationDegrees = rotation,
+        fillScreen = fillScreen,
+    )
+
+    @Test
+    fun `letterboxed picture bottom right sits above the canvas corner`() {
+        // 16:9 视频在 1080x2400 画布上按 contain 得到 1080x607.5 的横带，居中：
+        // 上下各留 896.25 的黑边，于是画面右下角是 (1080, 1503.75) —— **不是**屏幕右下角 (1080, 2400)。
+        val picture = bounds()
+
+        assertEquals(0f, picture.left, 0.5f)
+        assertEquals(896.25f, picture.top, 0.5f)
+        assertEquals(1080f, picture.right, 0.5f)
+        assertEquals(1503.75f, picture.bottom, 0.5f)
+        assertTrue("画面下沿必须明显高于画布下沿", picture.bottom < 2400f - 800f)
+    }
+
+    @Test
+    fun `unknown aspect falls back to the whole canvas`() {
+        // 拿不到媒体宽高时不猜比例：宁可给画布角落，也不能把起点画进一条并不存在的黑边里。
+        val picture = bounds(aspect = null)
+
+        assertEquals(0f, picture.left, 0.01f)
+        assertEquals(0f, picture.top, 0.01f)
+        assertEquals(1080f, picture.right, 0.01f)
+        assertEquals(2400f, picture.bottom, 0.01f)
+    }
+
+    @Test
+    fun `cover mode leaves no black bars so the visible picture is the whole canvas`() {
+        val picture = bounds(scaleMode = VideoScaleMode.FILL)
+
+        // cover：等比放大到铺满，多出来的部分被容器裁掉 → 可见画面 = 整块画布。
+        assertEquals(0f, picture.left, 0.5f)
+        assertEquals(0f, picture.top, 0.5f)
+        assertEquals(1080f, picture.right, 0.5f)
+        assertEquals(2400f, picture.bottom, 0.5f)
+    }
+
+    @Test
+    fun `fixed width mode uses the container width even when that overflows`() {
+        // 横屏画布 + 正方形视频：contain 会得到居中的 1080x1080（左右各 660 黑边），
+        // 固定宽度则铺满容器宽度、上下溢出后被裁掉 → 可见画面又是整块画布。两种模式必须算得不同。
+        val square = 1f
+        val contain = bounds(stage = 2400f to 1080f, aspect = square, scaleMode = VideoScaleMode.FIT)
+        val fixedWidth = bounds(stage = 2400f to 1080f, aspect = square, scaleMode = VideoScaleMode.ORIGINAL)
+
+        assertEquals(660f, contain.left, 0.5f)
+        assertEquals(1740f, contain.right, 0.5f)
+        assertEquals(0f, fixedWidth.left, 0.5f)
+        assertEquals(2400f, fixedWidth.right, 0.5f)
+    }
+
+    @Test
+    fun `quarter turn keeps the picture inside the canvas`() {
+        val picture = bounds(rotation = 90f)
+
+        // 旋转 90° 后画面是竖着的 1080x1920，居中落在画布内：左右贴边、上下各留 240。
+        assertEquals(0f, picture.left, 1f)
+        assertEquals(1080f, picture.right, 1f)
+        assertEquals(240f, picture.top, 1f)
+        assertEquals(2160f, picture.bottom, 1f)
+        assertTrue(picture.left >= 0f && picture.top >= 0f)
+        assertTrue(picture.right <= 1080f && picture.bottom <= 2400f)
+    }
+
+    @Test
+    fun `fill screen scale is clipped to the canvas`() {
+        // fillScreen 把画面放大到 cover（1.25 倍），横向会溢出画布：
+        // 可见画面只能是画布本身，起点不能落到屏幕外。
+        val picture = bounds(aspect = 9f / 16f, fillScreen = true)
+
+        assertEquals(0f, picture.left, 0.5f)
+        assertEquals(0f, picture.top, 0.5f)
+        assertEquals(1080f, picture.right, 0.5f)
+        assertEquals(2400f, picture.bottom, 0.5f)
+    }
+
+    @Test
+    fun `degenerate stage yields an empty rect instead of NaN`() {
+        val picture = bounds(stage = 0f to 0f)
+
+        assertEquals(0f, picture.left, 0.01f)
+        assertEquals(0f, picture.right, 0.01f)
+        assertEquals(0f, picture.bottom, 0.01f)
     }
 }
 

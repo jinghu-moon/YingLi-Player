@@ -1,6 +1,7 @@
 package seeyuer.yingli.player.feature.player
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
@@ -38,6 +40,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -71,22 +74,67 @@ internal val PlayerPortraitBarVerticalPadding = 10.dp
 internal val PlayerLandscapeBarHorizontalPadding = 16.dp
 internal val PlayerLandscapeBarVerticalPadding = 12.dp
 
-/** 竖屏进度行与按钮行之间的间距。 */
-private val PlayerPortraitControlsSpacing = 16.dp
+/**
+ * 竖屏进度行与按钮行之间的间距。
+ *
+ * 它同时是「辅助带 = 工具格高度 + 这一个间距」里的那个间距，以及截图胶囊比托盘按钮高出的一档，
+ * 所以底栏的竖直几何、胶囊尺寸、托盘行的顶部内边距都引用这**同一个**常量。
+ */
+internal val PlayerPortraitControlsSpacing = 16.dp
 
 /**
- * 底栏「辅助带」的高度：**工具托盘行与截图胶囊叠放在同一格**里共用这个固定高度。
+ * 底栏「辅助带」的满高：**工具托盘行与截图胶囊叠放在同一格**里共用它。
  *
- * 尺寸依据：[PlayerChromeButtonSize]（48dp，`PlayerTopBar.kt` 里定义）既是托盘行按钮的真实圆径
- * （[PlayerShortcut] 的 `size = PlayerChromeButtonSize`），也是截图胶囊的高度
- * （`ScreenshotToolCapsule` 固定 48dp）；该行与下方按钮行之间的间距取
- * [PlayerPortraitControlsSpacing]。托盘行原本的内容高度就是"48dp 按钮 + 16dp 下内边距"，
- * 所以胶囊占这一格时，与托盘行处在同一条竖直带上，也与"托盘展开时的底栏高度"完全一致。
+ * 尺寸依据：这一格要同时住得下 [PlayerScreenshotCapsuleHeight] 的胶囊与 [PlayerChromeButtonSize]
+ * 的托盘按钮，且两者与下方按钮行之间都要留出 [PlayerPortraitControlsSpacing] 的间距，
+ * 所以满高取"胶囊高度 + 该间距"（64dp + 16dp = 80dp）。托盘行比胶囊矮一档，
+ * 靠 [PlayerToolRowTopInset] 把顶部补齐——托盘按钮的**绝对位置与旧实现完全一致**
+ * （仍然离按钮行 16dp），多出来的 16dp 落在带子上方（空白）。
  *
- * **不要按"当前有没有内容"去算这个高度，也不要让它参与动画**：胶囊的竖直带
- * （= 按钮行槽位高度 + 底栏内边距）必须自始至终固定，带子塌掉的那一帧胶囊就会跟着上下跳。
+ * 为什么托盘态与截图态共用一个满高（而不是各算各的）：辅助带位于进度行下方，
+ * 底栏又是底对齐的 Column，带子高度一变，进度行就整体位移。两者共用同一个满高之后，
+ * 「托盘 → 截图会话」「截图会话 → 托盘」这两次切换里进度行一帧都不动，
+ * 也就不存在"退出截图后整段跳一下"这类瞬时位移。
+ *
+ * 三条硬约束（改这一段之前请先读完）：
+ *   1. 只要胶囊在场——**包含它滑出屏幕的那 [SCREENSHOT_CAPSULE_TRANSITION_MILLIS]ms**——
+ *      辅助带就必须是满高，而且必须**瞬时**到位（见 [playerAuxiliaryBandHeight]）；
+ *      带子若晚一帧或跟着动画走，胶囊就会在滑入/滑出时被带着上下跳。
+ *   2. 普通模式下的托盘开关**必须走高度动画**：进度行的"上移/回位"就是这个高度在变，
+ *      不许退回 `if (toolsExpanded) 满高 else 0.dp` 那种瞬时切换——那正是用户实测到的
+ *      "进度条突然上移、突然回到原位"。
+ *   3. 托盘行/胶囊都必须按 [PlayerAuxiliaryBandHeight] 固定自身高度再参与裁剪，
+ *      不能让它们被动画中途的带子高度挤小（见托盘行的 `requiredHeight`）。
+ *
+ * 注意这里是 `get()` 而不是普通顶层 `val`：它由**另一个文件**里的 [PlayerScreenshotCapsuleHeight]
+ * 推出，而那个常量又要读本文件的 [PlayerPortraitControlsSpacing]——两个文件的顶层 `val` 会构成
+ * 初始化环，谁先被加载谁就拿到对方的默认值（实测会算出 16dp 这种"说不出理由"的带子高度）。
+ * 写成计算属性后与取值顺序无关，环随即消失。**不要再把它改回顶层 val。**
  */
-private val PlayerAuxiliaryBandHeight = PlayerChromeButtonSize + PlayerPortraitControlsSpacing
+internal val PlayerAuxiliaryBandHeight: Dp
+    get() = PlayerScreenshotCapsuleHeight + PlayerPortraitControlsSpacing
+
+/**
+ * 托盘行在辅助带里的顶部内边距 = 胶囊比托盘按钮高出的那一档。
+ *
+ * 它的唯一作用：把"托盘按钮在同一格里的最终位置"钉在辅助带只有托盘行高度时的位置
+ * （即离下方按钮行 [PlayerPortraitControlsSpacing]）。它和胶囊高度必须同源，
+ * 否则托盘展开后按钮会整体上下漂。同样是 `get()`：理由见 [PlayerAuxiliaryBandHeight]。
+ */
+private val PlayerToolRowTopInset: Dp
+    get() = PlayerScreenshotCapsuleHeight - PlayerChromeButtonSize
+
+/**
+ * 辅助带的最终高度：截图会话（含胶囊滑出的留位窗口）期间**直接取满高、瞬时到位**；
+ * 其余情况透传"托盘开关的高度动画值"。
+ *
+ * 为什么不做成"一个 `animateDpAsState` 打天下"：进入截图会话的那一帧，带子必须已经是终值。
+ * 若让胶囊出现时带子还在做 0→满高 的动画，胶囊会跟着带子一起从下往上滑，
+ * 那就是上一轮修掉的"胶囊竖直跳变"（commit 01ebdfa）。所以两条路径必须分开：
+ * **普通模式的托盘开关 → 高度做动画；截图会话 → 立即满高。**
+ */
+internal fun playerAuxiliaryBandHeight(trayAnimatedHeight: Dp, screenshotHold: Boolean): Dp =
+    if (screenshotHold) PlayerAuxiliaryBandHeight else trayAnimatedHeight
 
 /** 时间文本最小宽度，保证播放中进度条长度不随时长位数跳动。 */
 private val PlayerTimeLabelMinWidth = 42.dp
@@ -100,8 +148,11 @@ private val PlayerTimeLabelMinWidth = 42.dp
 private const val LIVE_SEEK_MIN_INTERVAL_MILLIS = 60L
 
 /**
- * 底栏三段（进度行 / 工具托盘 / 按钮行）在进出截图模式时的收起-展开时长。
- * 与截图胶囊的滑入滑出同取 240ms 一档（设计稿 §6 的 0.24s），保证两侧同时开始、同时结束。
+ * 底栏三段（进度行 / 工具托盘 / 按钮行）进出截图模式时的收起-展开时长，也是托盘开关时
+ * 辅助带高度动画的时长（设计稿 §6 的 0.24s）。三段淡入淡出与带子高度必须同取这一档，
+ * 否则进度行的上移会晚于托盘内容出现，看起来还是"先跳一下再淡出"。
+ *
+ * 它**不是**截图胶囊的出入场时长：胶囊取更慢的 [SCREENSHOT_CAPSULE_TRANSITION_MILLIS]。
  */
 internal const val TRANSPORT_SECTION_TRANSITION_MILLIS = 240
 
@@ -282,23 +333,36 @@ internal fun BottomPlaybackControls(
         // 带子会跟着塌掉，胶囊的滑出就没有落脚点了。
         val screenshotSession = state.isScreenshotToolActive()
         val capsuleVisible = state.screenshot.isCapsuleVisible()
-        // 辅助带的"退出留位窗口"：胶囊滑出需要 TRANSPORT_SECTION_TRANSITION_MILLIS，
+        // 辅助带的"退出留位窗口"：胶囊滑出需要 SCREENSHOT_CAPSULE_TRANSITION_MILLIS，
         // 这段里带子必须继续满高，否则内容会被挤成 0 高（滑出动画等于被吃掉）。
-        // 进入不看这个标志（约束 3），所以它只负责"晚一点撤"，不参与"什么时候出现"。
+        // 进入不看这个标志（约束 1），所以它只负责"晚一点撤"，不参与"什么时候出现"。
+        // 延长到胶囊自己的时长：胶囊滑出比底栏三段的 240ms 慢，留位窗口必须跟着它走，
+        // 否则带子会在胶囊还在滑的时候提前塌掉。
         var capsuleBandHeld by remember { mutableStateOf(false) }
         LaunchedEffect(capsuleVisible) {
             if (capsuleVisible) {
                 capsuleBandHeld = true
             } else if (capsuleBandHeld) {
-                delay(TRANSPORT_SECTION_TRANSITION_MILLIS.toLong())
+                delay(SCREENSHOT_CAPSULE_TRANSITION_MILLIS.toLong())
                 capsuleBandHeld = false
             }
         }
         // 三段（进度行 / 工具托盘行 / 按钮行）共用一个可见性判据：截图会话结束就回来。
         // 唯一的例外不是"判据不同"，而是"回来的时机"：辅助带只是为胶囊留位、且托盘没开时，
-        // 带子稍后要塌回 0（胶囊滑完那 240ms），三段必须等它塌完再淡入——否则它们会在带子
+        // 带子稍后要塌回 0（胶囊滑完），三段必须等它塌完再淡入——否则它们会在带子
         // 塌掉的那一帧整体下移一个带高。托盘本来就开着时带子不塌，三段立刻回来。
         val sectionsVisible = !screenshotSession && !(capsuleBandHeld && !toolsExpanded)
+        // 辅助带是否被截图会话（或它的留位窗口）钉在满高：这一条走**瞬时**路径。
+        val screenshotHold = screenshotSession || capsuleBandHeld
+        // 托盘开关的高度动画：**进度行上移/回位的唯一驱动**，与三段淡入淡出同拍（240ms）。
+        // 它只跟 toolsExpanded 走；截图会话那一路由 playerAuxiliaryBandHeight 直接取满高覆盖，
+        // 两者相加才等于带子的最终高度（这条分工就是"托盘有动画、胶囊竖直带固定"的落点）。
+        val trayBandHeight by animateDpAsState(
+            targetValue = if (toolsExpanded) PlayerAuxiliaryBandHeight else 0.dp,
+            animationSpec = tween(TRANSPORT_SECTION_TRANSITION_MILLIS),
+            label = "transport-auxiliary-band",
+        )
+        val auxiliaryBandHeight = playerAuxiliaryBandHeight(trayBandHeight, screenshotHold)
         // 进度区是固定槽位（高度 = 进度行高度 + AB 行的预留）：截图模式下只淡出内容，
         // 槽位高度不变。**这里若用 shrink/expand，底对齐的整个 Column 会在截图模式切换时
         // 重新定位**，胶囊虽然住在辅助带里不受这一段影响，但三段一起变高变矮仍然会让底栏
@@ -401,30 +465,46 @@ internal fun BottomPlaybackControls(
             )
         }
         if (compact) Spacer(Modifier.height(PlayerPortraitControlsSpacing))
-        // 辅助带：工具托盘行与截图胶囊**叠放在同一个固定高度的槽位**里（这就是"托盘行 + 胶囊
-        // 放进一个固定高度 Box"），槽位高度不参与任何动画，只在这两种情况下切换：
+        // 辅助带：工具托盘行与截图胶囊**叠放在同一个槽位**里（这就是"托盘行 + 胶囊
+        // 放进一个固定高度 Box"），槽位高度只在这两种情况下切换：
         //   · 想要它（托盘展开 / 截图会话中）→ 满高；
-        //   · 想要它 + 胶囊正在滑出 → 继续满高（capsuleBandHeld，约束 2）；
+        //   · 想要它 + 胶囊正在滑出 → 继续满高（capsuleBandHeld，约束 1）；
         //   · 其余 → 0（与不挂载这个 Box 等价，但节点留在组合里）。
+        // 托盘展开/收起这条路径的高度**由动画给出**（trayBandHeight），因此进度行是滑上去、
+        // 滑回来的；截图会话那条路径瞬时取满高，胶囊的竖直带因此一帧都不动。
         // 槽位**常驻组合**：两层内容的 AnimatedVisibility 因此一直存在，进出场都只由状态翻转
         // 驱动，不会出现"节点刚建立、进场动画来不及播"的时序问题。
-        val auxiliaryBandHeight = if (toolsExpanded || screenshotSession || capsuleBandHeld) {
-            PlayerAuxiliaryBandHeight
-        } else {
-            0.dp
-        }
-        Box(modifier = Modifier.fillMaxWidth().height(auxiliaryBandHeight)) {
-            androidx.compose.animation.AnimatedVisibility(
-                visible = toolsExpanded && sectionsVisible,
-                modifier = Modifier.fillMaxSize(),
-                enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
-                exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = PlayerPortraitControlsSpacing),
-                    horizontalArrangement = Arrangement.spacedBy(PlayerShortcutSpacing, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
+        //
+        // clipToBounds 有两个作用，缺一不可：
+        //   · 托盘行按满高参与布局（requiredHeight），动画中途它比带子高，不裁剪就会把按钮
+        //     画到下方按钮行上——裁剪之后它表现为"从按钮行后面长出来"，这才是"随高度展开露出"；
+        //   · 带子塌回 0 的那一帧彻底不可见，不会有 0 高 Box 里的内容残留。
+        Box(
+            modifier = Modifier.fillMaxWidth()
+                .height(auxiliaryBandHeight)
+                .clipToBounds(),
+        ) {
+            // 外层的 contentAlignment 显式写 TopStart：托盘行按满高测量（requiredHeight），动画中途
+            // 比带子高，**必须**从带子顶边往下摆，否则托盘会随着带子高度在格子里上下浮动。
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = toolsExpanded && sectionsVisible,
+                    enter = fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+                    exit = fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
                 ) {
+                    Row(
+                        // requiredHeight 而不是 height：子项按**满高**测量，不受动画中途的带子高度
+                        // 约束（否则带子还矮时 padding 会把 48dp 按钮压小，托盘会"边涨边挤"）。
+                        // 顶部内边距把托盘按钮挪回"辅助带只有托盘行高度时"的位置，见 PlayerToolRowTopInset。
+                        modifier = Modifier.fillMaxWidth()
+                            .requiredHeight(PlayerAuxiliaryBandHeight)
+                            .padding(
+                                top = PlayerToolRowTopInset,
+                                bottom = PlayerPortraitControlsSpacing,
+                            ),
+                        horizontalArrangement = Arrangement.spacedBy(PlayerShortcutSpacing, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                     state.controlLayout
                         .controls(seeyuer.yingli.player.domain.playback.PlayerControlSurface.TOOLS)
                         .reversed()
@@ -457,6 +537,7 @@ internal fun BottomPlaybackControls(
                                 onToggleBackgroundPlayback = onToggleBackgroundPlayback,
                             )
                         }
+                    }
                 }
             }
             ScreenshotToolAnimatedSlot(
@@ -590,6 +671,13 @@ internal fun BottomPlaybackControls(
     }
 }
 
+/**
+ * 截图胶囊在辅助带里的叠放槽：从右向左滑入/滑出 + 淡入淡出，时长取胶囊自己的
+ * [SCREENSHOT_CAPSULE_TRANSITION_MILLIS]（比底栏三段的 240ms 慢，理由见该常量）。
+ *
+ * 内层 Box 的高度固定为 [PlayerScreenshotCapsuleHeight]：胶囊在带子里的竖直位置只由"带子顶边"
+ * 决定，槽位高度不参与测量，避免胶囊被动画中途的带子高度压扁。
+ */
 @Composable
 private fun ScreenshotToolAnimatedSlot(
     visible: Boolean,
@@ -603,15 +691,15 @@ private fun ScreenshotToolAnimatedSlot(
             visible = visible,
             enter = slideInHorizontally(
                 initialOffsetX = { it },
-                animationSpec = tween(TRANSPORT_SECTION_TRANSITION_MILLIS),
-            ) + fadeIn(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+                animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS),
+            ) + fadeIn(tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS)),
             exit = slideOutHorizontally(
                 targetOffsetX = { it },
-                animationSpec = tween(TRANSPORT_SECTION_TRANSITION_MILLIS),
-            ) + fadeOut(tween(TRANSPORT_SECTION_TRANSITION_MILLIS)),
+                animationSpec = tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS),
+            ) + fadeOut(tween(SCREENSHOT_CAPSULE_TRANSITION_MILLIS)),
         ) {
             Box(
-                modifier = Modifier.fillMaxWidth().height(PlayerChromeButtonSize),
+                modifier = Modifier.fillMaxWidth().requiredHeight(PlayerScreenshotCapsuleHeight),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 screenshotTool()

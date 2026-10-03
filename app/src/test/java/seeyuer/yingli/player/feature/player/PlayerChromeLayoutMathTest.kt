@@ -7,13 +7,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 播放页浮层布局里两处纯计算：
+ * 播放页浮层布局里几处纯计算 / 常量关系：
  *
  * 1. 帧数胶囊"下移到顶栏下方"所用的顶栏高度（[PlayerTopBarContentHeight]）；
- * 2. 极窄屏 / 最大字体下帧数文本的兜底字号（[playerFrameCounterFontSizeSp]）。
+ * 2. 极窄屏 / 最大字体下帧数文本的兜底字号（[playerFrameCounterFontSizeSp]）；
+ * 3. 辅助带高度动画的判据（[playerAuxiliaryBandHeight]）与截图胶囊的尺寸/动效常量。
  *
- * 两者都是"胶囊不许压住顶栏按钮"这条要求的可验证部分：高度错了胶囊会重新贴回按钮上，
- * 字号算错则帧号会被裁掉。
+ * 1、2 是"胶囊不许压住顶栏按钮"这条要求的可验证部分；3 是"托盘展开时进度行有动画、
+ * 而胶囊的竖直带不参与动画"这条要求的可验证部分——两侧都靠这里的数字关系成立。
  */
 class PlayerChromeLayoutMathTest {
 
@@ -24,6 +25,66 @@ class PlayerChromeLayoutMathTest {
         assertEquals(48.dp, PlayerChromeButtonSize)
         assertEquals(64.dp, PlayerTopBarContentHeight)
         assertEquals(12.dp, PlayerFrameCounterTopGap)
+    }
+
+    @Test
+    fun `tool band is full height whenever the screenshot session holds it`() {
+        // 截图会话（含胶囊滑出的留位窗口）期间**直接取满高**：这一帧就必须是终值，
+        // 否则胶囊会跟着带子的 0→满高 动画一起从下往上滑（上一轮修掉的"竖直跳变"）。
+        assertEquals(PlayerAuxiliaryBandHeight, playerAuxiliaryBandHeight(0.dp, screenshotHold = true))
+        assertEquals(PlayerAuxiliaryBandHeight, playerAuxiliaryBandHeight(17.dp, screenshotHold = true))
+    }
+
+    @Test
+    fun `tool band keeps the tray height animation when no screenshot holds it`() {
+        // 普通模式：高度就是"托盘开关的动画值"，**中间值要原样透传**——
+        // 一旦在这里被取整/取满，进度行的上移就又会变成瞬移。
+        assertEquals(0.dp, playerAuxiliaryBandHeight(0.dp, screenshotHold = false))
+        assertEquals(17.dp, playerAuxiliaryBandHeight(17.dp, screenshotHold = false))
+        assertEquals(PlayerAuxiliaryBandHeight, playerAuxiliaryBandHeight(PlayerAuxiliaryBandHeight, false))
+    }
+
+    @Test
+    fun `screenshot capsule is taller than a tray button and fits the tool band`() {
+        // 胶囊必须**比托盘按钮高一档**（用户实测反馈原胶囊偏小），并且整枚胶囊要住得进辅助带，
+        // 与下方按钮行之间仍然留出 PlayerPortraitControlsSpacing：这三条是同一条竖直几何。
+        assertTrue(
+            "胶囊高度必须大于托盘按钮尺寸：$PlayerScreenshotCapsuleHeight",
+            PlayerScreenshotCapsuleHeight > PlayerChromeButtonSize,
+        )
+        assertEquals(PlayerChromeButtonSize + PlayerPortraitControlsSpacing, PlayerScreenshotCapsuleHeight)
+        assertEquals(PlayerScreenshotCapsuleHeight + PlayerPortraitControlsSpacing, PlayerAuxiliaryBandHeight)
+        // 四周呼吸圈 = (胶囊高 - 按钮尺寸)/2，水平方向也用同一个值。
+        assertEquals(
+            (PlayerScreenshotCapsuleHeight - PlayerScreenshotCapsuleButtonSize) / 2,
+            ScreenshotCapsuleInnerPadding,
+        )
+        assertTrue("呼吸圈不许为 0（胶囊会贴上按钮顶点）", ScreenshotCapsuleInnerPadding > 0.dp)
+    }
+
+    @Test
+    fun `capsule buttons use exactly the tray button size`() {
+        // 需求：胶囊内按钮的尺寸必须与工具托盘里的按钮一致（同一个常量）。
+        // 这里直接钉住等值关系，任何"顺手换个尺寸"的改动都会红。
+        assertEquals(PlayerChromeButtonSize, PlayerScreenshotCapsuleButtonSize)
+    }
+
+    @Test
+    fun `capsule button spacing is roomier than the tray row spacing`() {
+        // 胶囊是一整块容器，按钮之间没有行外空白可以借，所以间距要比托盘行更大才不显挤。
+        assertTrue(
+            "胶囊内间距必须大于托盘行间距：$PlayerScreenshotCapsuleButtonSpacing",
+            PlayerScreenshotCapsuleButtonSpacing > PlayerShortcutSpacing,
+        )
+    }
+
+    @Test
+    fun `capsule transition is slower than the bottom bar sections`() {
+        // 胶囊出入场取 360ms 一档，比底栏三段的 240ms 慢：工具入口要从容，
+        // 也避免与三段同拍时挤在一起。同时辅助带的留位窗口用的是**胶囊自己的**时长，
+        // 所以改这里必须连带胶囊滑出一起想（见 BottomPlaybackControls 的 capsuleBandHeld）。
+        assertEquals(360, SCREENSHOT_CAPSULE_TRANSITION_MILLIS)
+        assertTrue(SCREENSHOT_CAPSULE_TRANSITION_MILLIS > TRANSPORT_SECTION_TRANSITION_MILLIS)
     }
 
     @Test

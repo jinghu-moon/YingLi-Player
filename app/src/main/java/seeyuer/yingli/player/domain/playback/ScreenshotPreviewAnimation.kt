@@ -42,9 +42,12 @@ data class ScreenshotPreviewTrack(
 }
 
 /**
- * 由"捕获按钮中心"与"卡片静止时左上角"推出飞入轨迹。
+ * 由"飞行起点"与"卡片静止时左上角"推出飞入轨迹。
  *
- * 起点 = 按钮中心，终点 = 卡片静止时的中心（左上角 + 尺寸/2）。
+ * 起点 = [startCenterX]/[startCenterY]，即**视频画面区域（不含黑边）的右下角**：
+ * 这个点由 `VideoRotationStageMath.pictureBounds` 按 letterbox 几何算出并换算到根布局坐标系
+ * （画面有黑边时它明显高于屏幕右下角；未知宽高比时退化为整块画布）。
+ * 终点 = 卡片静止时的中心（左上角 + 尺寸/2），卡片由调用方按 safeDrawing 内边距摆在屏幕左上角。
  * 两个点都在**根布局坐标系**里量，因此不存在"两套坐标系叠一起"的可能。
  *
  * 按钮位置或卡片尺寸还没测量到（首帧、或测试环境里没有布局）时返回 `null`：
@@ -52,16 +55,16 @@ data class ScreenshotPreviewTrack(
  * "首帧没几何、动画已经跑了，量到之后位置突变"正是"先反向移动再回来"这类缺陷的来源。
  */
 fun screenshotPreviewTrack(
-    buttonCenterX: Float?,
-    buttonCenterY: Float?,
+    startCenterX: Float?,
+    startCenterY: Float?,
     targetX: Float,
     targetY: Float,
     size: ScreenshotPreviewSize,
 ): ScreenshotPreviewTrack? {
-    if (buttonCenterX == null || buttonCenterY == null) return null
+    if (startCenterX == null || startCenterY == null) return null
     if (!size.isValid) return null
     return ScreenshotPreviewTrack(
-        startCenter = ScreenshotPreviewPoint(buttonCenterX, buttonCenterY),
+        startCenter = ScreenshotPreviewPoint(startCenterX, startCenterY),
         endCenter = ScreenshotPreviewPoint(targetX + size.width / 2f, targetY + size.height / 2f),
     )
 }
@@ -92,7 +95,7 @@ fun screenshotPreviewCenterAt(track: ScreenshotPreviewTrack, progress: Float): S
  * ```
  * translation = (center(t) - target) / layerScale - size / 2
  * ```
- * 起始帧 `layerScale = ENTER_SCALE`、`center = 按钮中心`，卡片正好从按钮处"长出来"；
+ * 起始帧 `layerScale = ENTER_SCALE`、`center = 画面右下角`，卡片正好从画面右下角"长出来"；
  * 结束帧 `layerScale = 1`、`center = 终点`，平移量归零，卡片静静停在左上角。
  */
 fun screenshotPreviewEnterTranslation(

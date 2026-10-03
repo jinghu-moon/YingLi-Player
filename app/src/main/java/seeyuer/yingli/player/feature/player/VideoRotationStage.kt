@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import seeyuer.yingli.player.domain.playback.VideoRotation
+import seeyuer.yingli.player.domain.playback.VideoScaleMode
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -34,6 +35,22 @@ internal data class VideoRotationRender(
     val rotationDegrees: Float,
     val scale: Float,
 )
+
+/**
+ * 一块轴对齐矩形（像素，舞台坐标系）：[left]/[top] 是左上角，[right]/[bottom] 是右下角。
+ *
+ * 用它表达"视频画面**实际渲染**的区域"（不含黑边），而不是"承载画面的那个 Box"——
+ * 后者在竖屏里等于整块画布，右下角就是屏幕右下角，与用户看到的画面角落差了整整一条黑边。
+ */
+internal data class VideoPictureBounds(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+) {
+    val width: Float get() = right - left
+    val height: Float get() = bottom - top
+}
 
 /**
  * 画面旋转的几何计算（纯函数，可单测）。
@@ -112,6 +129,82 @@ internal object VideoRotationStageMath {
         val cosValue = abs(cos(radians)).toFloat()
         val sinValue = abs(sin(radians)).toFloat()
         return (width * cosValue + height * sinValue) to (width * sinValue + height * cosValue)
+    }
+
+    /**
+     * 视频画面**实际渲染区域**的矩形（舞台坐标系，像素，已经过旋转/缩放，取轴对齐外接矩形）。
+     *
+     * 为什么要单独算：舞台里那个 `requiredSize(frameWidth, frameHeight)` 的 Box 只是播放输出的
+     * **容器**，画面在容器内还要按缩放模式再摆一次（media3 的 `resizeMode` 口径）：
+     *   - [VideoScaleMode.FIT] → contain：容器内居中，宽或高有一侧留黑边（letterbox）；
+     *   - [VideoScaleMode.FILL] → cover：等比放大到铺满容器，多出来的部分被容器裁掉
+     *     （此时"可见画面"就是容器本身，没有黑边）；
+     *   - [VideoScaleMode.ORIGINAL] → 固定宽度：宽 = 容器宽，高按比例，可能上下溢出而只露出中间一条。
+     * 容器还会被舞台旋转（90°/270° 时宽高互换）、并在 [fillScreen] 时整体等比放大到 cover。
+     * 需求"飞入起点 = 视频画面的右下角"要的正是这整条链路的终点，**不能取根布局的右下角**。
+     * 返回值最后会按画布夹一次：cover/旋转都可能让矩形超出画布，而用户看得到的只有画布内的部分。
+     *
+     * 宽高比未知（尚未拿到媒体信息）时退化为"画面铺满容器"：没有依据时宁可给容器角落，
+     * 也不猜一个假比例把起点画到黑边里。
+     */
+    fun pictureBounds(
+        stageWidth: Float,
+        stageHeight: Float,
+        videoAspect: Float?,
+        scaleMode: VideoScaleMode,
+        rotationDegrees: Float,
+        fillScreen: Boolean,
+    ): VideoPictureBounds {
+        if (stageWidth <= 0f || stageHeight <= 0f) return VideoPictureBounds(0f, 0f, 0f, 0f)
+        val swapped = swapsStage(rotationDegrees)
+        // 舞台里的容器尺寸：旋转 90°/270° 时与画布互换（`VideoRotationStage` 的 requiredSize）。
+        val frameWidth = if (swapped) stageHeight else stageWidth
+        val frameHeight = if (swapped) stageWidth else stageHeight
+        val frameLeft = (stageWidth - frameWidth) / 2f
+        val frameTop = (stageHeight - frameHeight) / 2f
+        val aspect = videoAspect?.takeIf { it.isFinite() && it > 0f }
+        // 画面在容器内的绘制尺寸。
+        val drawn = when {
+            aspect == null -> frameWidth to frameHeight
+            scaleMode == VideoScaleMode.FILL -> {
+                val contained = pictureSize(aspect, frameWidth, frameHeight, swapped = false)
+                val factor = maxOf(frameWidth / contained.first, frameHeight / contained.second)
+                (contained.first * factor) to (contained.second * factor)
+            }
+            scaleMode == VideoScaleMode.ORIGINAL -> frameWidth to (frameWidth / aspect)
+            else -> pictureSize(aspect, frameWidth, frameHeight, swapped = false)
+        }
+        // 画面在容器内居中；超出容器的部分（cover / 固定宽度）被容器裁掉。
+        val left = (frameLeft + (frameWidth - drawn.first) / 2f).coerceAtLeast(frameLeft)
+        val top = (frameTop + (frameHeight - drawn.second) / 2f).coerceAtLeast(frameTop)
+        val right = (left + drawn.first).coerceAtMost(frameLeft + frameWidth)
+        val bottom = (top + drawn.second).coerceAtMost(frameTop + frameHeight)
+        // 舞台的 graphicsLayer：绕舞台中心旋转 + 等比缩放（fillScreen 时放大到 cover，与
+        // `VideoRotationStage` 里的 coverScale 用同一个函数，保证"算出来的"和"画出来的"一致）。
+        val scale = if (fillScreen) coverScale(stageWidth, stageHeight, aspect) else 1f
+        val centerX = stageWidth / 2f
+        val centerY = stageHeight / 2f
+        val radians = Math.toRadians(rotationDegrees.toDouble())
+        val cosValue = cos(radians).toFloat()
+        val sinValue = sin(radians).toFloat()
+        val corners = listOf(
+            left to top,
+            right to top,
+            left to bottom,
+            right to bottom,
+        ).map { (x, y) ->
+            val dx = (x - centerX) * scale
+            val dy = (y - centerY) * scale
+            (centerX + dx * cosValue - dy * sinValue) to (centerY + dx * sinValue + dy * cosValue)
+        }
+        // 最后再按画布夹一次：fillScreen（放大到 cover）与旋转都会让矩形超出画布，
+        // 而"画面上看得到的区域"只能落在画布里——飞入起点落到画布外就飞不回来了。
+        return VideoPictureBounds(
+            left = corners.minOf { it.first }.coerceAtLeast(0f),
+            top = corners.minOf { it.second }.coerceAtLeast(0f),
+            right = corners.maxOf { it.first }.coerceAtMost(stageWidth),
+            bottom = corners.maxOf { it.second }.coerceAtMost(stageHeight),
+        )
     }
 }
 

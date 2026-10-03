@@ -38,8 +38,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -143,8 +145,10 @@ fun PlayerScreen(
     val hasTransientTool = state.panel != PlayerPanel.NONE || state.abToolOpen ||
         state.screenshot is ScreenshotUiState.Armed || state.screenshot is ScreenshotUiState.Capturing ||
         state.screenshot is ScreenshotUiState.Preview
-    // 预览卡飞入的几何输入：捕获按钮在根布局里的中心点（未测量到时为 null）。
-    var captureButtonCenter by remember { mutableStateOf<Offset?>(null) }
+    // 预览卡飞入的几何输入：视频画面容器在根布局里的矩形（未测量到时为 null）。
+    // 起点不取"捕获按钮中心"：截图工具胶囊在 Preview 阶段已经收掉，按钮位置与"这张图来自画面的哪一角"
+    // 毫无关系；起点要落在**视频画面区域**上（见下面的 flyInOrigin）。
+    var videoStageBounds by remember { mutableStateOf<Rect?>(null) }
     // 画面手势的唯一所有者是 playerCanvasDragGestures：把单击/双击接线到画布回调。
     // 放大状态下双击改为复位缩放（规格要求提供复位入口，且不会误伤播放状态）。
     val latestZoomActive by rememberUpdatedState(state.zoom.isActive)
@@ -270,28 +274,45 @@ fun PlayerScreen(
             label = "mirror-y",
         )
         Box(
-            modifier = Modifier.fillMaxSize().graphicsLayer {
-                // 镜像与缩放都是倍数，直接相乘；平移量不受翻转影响（翻转不改变画面中心所在位置）。
-                scaleX = zoomScale * mirrorScaleX
-                scaleY = zoomScale * mirrorScaleY
-                translationX = zoomOffsetX * size.width * zoomScale
-                translationY = -zoomOffsetY * size.height * zoomScale
+            // 画面容器的矩形**量在最外层**（这一层没有 graphicsLayer）：里层带着缩放/镜像/旋转，
+            // 量它会把变换一起算进来，取到的就不是"画面区域"本身。
+            // 量到的矩形是"未经自由缩放"的画面区域：预览卡的飞入起点要的是画面自身的角落，
+            // 与用户捏合放大到几倍无关。
+            modifier = Modifier.fillMaxSize().onGloballyPositioned { coordinates ->
+                val position = coordinates.positionInRoot()
+                val size = coordinates.size
+                videoStageBounds = Rect(
+                    left = position.x,
+                    top = position.y,
+                    right = position.x + size.width,
+                    bottom = position.y + size.height,
+                )
             },
         ) {
-            VideoRotationStage(
-                rotation = state.rotation,
-                videoAspect = state.videoAspect(),
-                fillScreen = state.fillScreen,
-                // 镜像与旋转/缩放一样只作用于视图层级：SurfaceView 的画面由 SurfaceFlinger 单独合成，
-                // 不会跟随父级 graphicsLayer 的负缩放，因此只要镜像生效就必须切到 TextureView 输出，
-                // 否则按钮状态变了、画面却纹丝不动。
-                zoomActive = state.zoom.isActive || mirror.isActive,
-                modifier = Modifier.fillMaxSize(),
-                mediaKey = state.playback.request?.mediaId?.value,
-            ) { transformed ->
-                // SurfaceView 不能跟随父级 graphicsLayer 缩放/平移；自由缩放时强制使用
-                // TextureView，否则 ViewModel 中的 zoom 会变化但画面仍停在原尺寸。
-                videoSurface(transformed || state.zoom.isActive)
+            Box(
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    // 镜像与缩放都是倍数，直接相乘；平移量不受翻转影响（翻转不改变画面中心所在位置）。
+                    scaleX = zoomScale * mirrorScaleX
+                    scaleY = zoomScale * mirrorScaleY
+                    translationX = zoomOffsetX * size.width * zoomScale
+                    translationY = -zoomOffsetY * size.height * zoomScale
+                },
+            ) {
+                VideoRotationStage(
+                    rotation = state.rotation,
+                    videoAspect = state.videoAspect(),
+                    fillScreen = state.fillScreen,
+                    // 镜像与旋转/缩放一样只作用于视图层级：SurfaceView 的画面由 SurfaceFlinger 单独合成，
+                    // 不会跟随父级 graphicsLayer 的负缩放，因此只要镜像生效就必须切到 TextureView 输出，
+                    // 否则按钮状态变了、画面却纹丝不动。
+                    zoomActive = state.zoom.isActive || mirror.isActive,
+                    modifier = Modifier.fillMaxSize(),
+                    mediaKey = state.playback.request?.mediaId?.value,
+                ) { transformed ->
+                    // SurfaceView 不能跟随父级 graphicsLayer 缩放/平移；自由缩放时强制使用
+                    // TextureView，否则 ViewModel 中的 zoom 会变化但画面仍停在原尺寸。
+                    videoSurface(transformed || state.zoom.isActive)
+                }
             }
         }
         Box(
@@ -513,7 +534,6 @@ fun PlayerScreen(
                         onCapture = onCaptureScreenshot,
                         onNextFrame = onNextScreenshotFrame,
                         onClose = onCloseScreenshot,
-                        onCapturePositioned = { captureButtonCenter = it },
                         modifier = Modifier.testTag(PlayerTestTags.SCREENSHOT_CAPSULE),
                     )
                 },
@@ -565,12 +585,30 @@ fun PlayerScreen(
                     onDelete = onDeleteScreenshot,
                 )
             } else {
+                // 飞入**起点**：视频画面（不含黑边）的右下角 —— 按 letterbox 几何算出来后
+                // 加上画面容器自身在根布局里的原点，落成根布局坐标。纯算术，不引额外状态。
+                // 几何取**当前的目标态**（旋转角度 / 填满 / 缩放模式）：截图这一刻画面已经停稳；
+                // 画面旋转的 320ms 动画如果正好在跑，起点按终态算（差一帧不影响"从画面角落里飞出来"）。
+                // 画面宽高比未知时退化为容器右下角（没有依据时不猜比例，见 pictureBounds 的说明）。
+                val flyInOrigin = videoStageBounds?.let { bounds ->
+                    val picture = VideoRotationStageMath.pictureBounds(
+                        stageWidth = bounds.width,
+                        stageHeight = bounds.height,
+                        videoAspect = state.videoAspect(),
+                        scaleMode = state.scaleMode,
+                        rotationDegrees = state.rotation.degrees.toFloat(),
+                        fillScreen = state.fillScreen,
+                    )
+                    Offset(bounds.left + picture.right, bounds.top + picture.bottom)
+                }
                 ScreenshotPreviewCard(
                     state = preview,
-                    captureButtonCenter = captureButtonCenter,
+                    flyInOrigin = flyInOrigin,
                     onExpand = { onSetScreenshotPreviewExpanded(true) },
                     // 卡片落在左上角：**帧号胶囊下方**（帧号胶囊固定在顶栏下方那条带里），
                     // 两者共享同一条水平带的左端，错开竖直位置才不会互相压住。
+                    // 它就是飞入的**终点**：safeDrawing 内边距在这里统一处理，不许改成手写 padding
+                    // 绕过 inset（那样会压到状态栏/刘海或顶栏按钮上）。
                     modifier = Modifier.align(Alignment.TopStart)
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                         .padding(

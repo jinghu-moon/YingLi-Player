@@ -1238,4 +1238,115 @@ instrumented 断言（`PlayerAbLoopScreenTest.abCapsuleTakesTheSameAuxiliaryBand
 2. **辅助带高度合并为单一 `Animatable` + `SNAP`/`ANIMATE` 判据**（原计划只要求"路径复用"）；
 3. **异步晚到改为 generation 契约**（原计划只要求"必须丢弃"）。
 
+## A-B 循环：采纳范围内的分层落地、两个真机缺陷与过程性发现（2026-10-04，提交 `1e4bf51`）
+
+对应 `docs/21`（A-B 进度区分层规格与采纳边界）与 `docs/20` §5 的阶段 3 余项 / 阶段 4 文档项。
+源码在主线：本批 `1e4bf51`，其前置修复为 `8fa612f`（定尺寸圆钮 + 区间防撞）、`50a76ea`（字母徽标 + 区间外压暗 + `hh:mm:ss`）、
+`f0f8955`（胶囊按钮竖直居中）、`bcd3b8e`（AB 状态回流共用一条线格式）、`c597599`（展示层位置推进）。
+本节记录**已实现行为**、**两个用户实测缺陷的根因**与过程性发现；口径与规格写在 `docs/16` §5.11、裁决与偏离写在 `docs/21` §9，本节不重复。
+
+### 本批落地清单（常量 / 判定 / 交互的落点，逐条可核对）
+
+> 下表给的是**代码落点**；其中"区间条语义、幽灵竖线、标记层"目前只到**常量与几何判定**，绘制是否接线见本节末尾「当前缺口」。
+
+| 项 | 落点 |
+| --- | --- |
+| 分层绘制顺序与竖直分寸链（`33dp` 标记组 / `3dp` 条 / `12dp` 间隙 / `18dp` 徽标 / `64dp` 标记层） | `AbLoopMath.kt:34-55`、`:57-143`、`:209`、`:256-290` |
+| 区间条语义（仅 A `28%` + 按 `min(aX, gX)` 随播放头延展）、幽灵竖线、夸大虚线、区间外压暗 | `AbLoopMath.kt:394-423`、`:526-626`；压暗 `PlayerTransportControls.kt:860-889`、`:969-977` |
+| 读数条四态文案 + U+2014 + `Δ` 同源格式 + A/B 可点数值 | `AbLoopControls.kt:175-268`、`:341-414` |
+| 域层 B 侧规则（`max(播放头, A+1s)` → 帧吸附 → 夹片长 → 拒绝）与 A 侧互换/相等拒绝 | `PlaybackSessionContracts.kt:198-300` |
+| 真横屏：胶囊打开时隐藏中央三连 | `PlayerScreen.kt:472-482`、`ScreenshotControls.kt:107-110` |
+
+**位置口径的偏离（如实记录）**：`docs/21` §3.1 与 demo 要求读数条住**AB 胶囊首行**，本批**未搬** ——
+它仍在**进度区第二行**，显示判据从"设过点"改为"AB 工具打开"。理由写在实现侧注释里
+（`PlayerTransportControls.kt:546-554`：按"胶囊首行"布局时 `AB_CAPSULE` 的节点几何会被夹成读数条那一行的高度、
+四枚 48dp 圆钮溢出胶囊之外；而按内容撑开胶囊会破坏"与截图胶囊同一竖直带"这条既有约定）。
+
+### 用户实测缺陷 A："AB 胶囊里 A/B/清除 点击无响应、无提示"（提交 `bcd3b8e`）
+
+| 项 | 内容 |
+| --- | --- |
+| 表现 | 点「A 设置」有涟漪，胶囊状态不变（A 仍显示"未设置"、B 与清除保持禁用），且**没有任何提示** |
+| 根因（架构层） | **会话 → 客户端的状态回流在客户端被第二套解码丢弃**：服务侧 `publishAbLoopExtras` 如实发布"只设了 A"（extras 只有 `yingli.abPointA`），客户端 `updateAbLoopFromExtras` 重建投影时要求 A、B 同时存在且 A < B，否则返回空区间 → 命令其实 `Applied`（会话侧 A 已设、B 可用），客户端投影却一直是空 |
+| "无提示"为何是必然 | 命令结果是 `Applied` 而不是 `Rejected`，不会产生 `OneShotFeedback` → 这不是提示通道故障，而是"根本没有被拒" |
+| 修法 | 两端**共用同一条线格式**：新增 `engine/media3/AbLoopSessionExtras.kt`（`AbLoopSession.toSessionExtras()` / `Bundle.readAbLoopSession()`，Bundle ↔ 线格式的**唯一**映射）；`AbLoopSessionCommands.STATE_KEYS / encodeState / decodeState` 与 Bundle 无关、可在 JVM 穷举往返；`decodeState` 明确保留"只设了 A"（`pointB == null` 合法），只丢弃会话不可能持有的载荷（只有 B / A ≥ B / 负数）并退回"没有区间" |
+| 证据（修前红 → 修后绿） | 新增真实 `MediaController` + 真实 `YingLiPlaybackService` 会话的 instrumented 用例 `Media3PlaybackControllerTest.setPointOnTheRealSessionRoundTripsIntoTheClientProjection`（四步：可用会话命令包含 `SET_POINT`/`CLEAR`、回执 `Applied`、raw sessionExtras 里 A 非空、客户端投影与之一致）。修前红（`build/ab-red-4.log`，`Starting 1 tests` → 1 failed）：<br>`java.lang.AssertionError: A 没有回流到客户端投影（extras=10000 projection=AbLoopSession(state=AbLoopState(pointA=null, pointB=null), loopCount=0)）`（红日志记的栈位置是 `Media3PlaybackControllerTest.kt:237`；该文件此后有改动，同一条断言的文本现在是 `:263-266`）；修后绿 |
+
+> 取证说明：`build/` 已被 gitignore，红日志不在提交里；同一断言文本在 `bcd3b8e` 的提交信息中逐字复述。
+> 另：该提交顺带更正一处此前的错误推断 —— Android 16 的 `dumpsys media_session` 打印的是平台
+> `PlaybackState.CustomAction`（旧 `MediaSessionCompat` 字段），**不是** Media3 的 `SessionCommands`，
+> 因此"会话对外没有暴露自定义命令"不成立。
+
+### 用户实测缺陷 B："胶囊内按钮没有垂直居中"（提交 `f0f8955`）
+
+| 项 | 内容 |
+| --- | --- |
+| 表现 | 胶囊里四枚按钮**贴顶**，下方空 `16dp` |
+| 根因 | `PlayerChromeCapsuleSurface` 用的是 Material3 `Surface(content = …)`，其内部是 `Box(contentAlignment = TopStart)` + `propagateMinConstraints`：胶囊 `64dp`、按钮 `48dp` 时行被量成 `64dp` 而按钮贴顶。**截图胶囊此前用的是同一个 API，同样贴顶** —— 所以"参考截图胶囊"这条基准本身也偏，只是从未断言过内容位置 |
+| 修法 | 给 `PlayerChromeCapsuleSurface` 增加 `verticalAlignment`（默认 `Top`，帧数胶囊不传 → 行为不变）；AB 与截图两枚按钮胶囊传 `CenterVertically` → 上下各 `(64 − 48) / 2 = 8dp`，两枚胶囊同格同位 |
+| 证据（修前红 → 修后绿） | 新增 `PlayerAbLoopCapsuleCommandTest.capsuleButtonsAreVerticallyCenteredInsideTheCapsule`：每个按钮**上下留白之差 ≤ 1px** 且**按钮中心与胶囊中心之差 ≤ 1px**（修前红：上 = 0 / 下 = 16；修后绿）。该批 5 个 instrumented 类 **14/14** 通过（`f0f8955`） |
+
+### 过程性发现 1：本机播放页的 Compose 语义树对 `uiautomator` 不可见
+
+- 现象：`adb shell input tap` 无法可靠命中播放页控件（`uiautomator dump` 只返回 **9 个无文本节点**）。
+- 后果：真机 UI 门禁**必须**用 Compose 的 `performClick()` 覆盖。此前三层测试都不覆盖"用户按下胶囊里的按钮"——
+  `PlayerAbLoopScreenTest` 直接摆 `PlayerUiState`（`onSetAbPoint` 走的是 `PlayerScreen` 的默认空实现），
+  两个会话级 instrumented 驱动的是**会话命令**而非点击 —— 所以"UI 按钮没接线"这类缺陷能一路躲过早期回归。
+  `PlayerAbLoopCapsuleCommandTest`（真实 `PlayerViewModel` + 真实桥接 + 真实布局，`performClick` 驱动）就是为此补的。
+- 来源：`PlayerAbLoopCapsuleCommandTest.kt:56-80`（类注释与"为什么必须有这一层"）。
+
+### 过程性发现 2：重装 APK 会让 app 侧 `MediaController` 与 Service 会话位置失同步
+
+- 现象：`currentPositionMillis` **长期停在 `1ms`**，设点表现成"不可用"；`force-stop` + 冷启动后恢复。
+- 另记：`appops 10021` 为 `ignore` 时 instrumented 会**卡在 0/N 且无日志**（与本文档
+  「本机 instrumented 测试环境（MIUI/HyperOS）」记录的"宿主 Activity 启动被 MIUI 拒绝 → `ActivityScenario.launch`
+  永久挂起、进程最终被 force-stop 后才报 crashed"同源）。
+- 来源：**本轮真机排查的会话记录**（父代理在真机上操作时观察），仓库内**没有**可核对的提交或代码行；
+  第 2 条的同类现象在本文档前述 MIUI 小节里有独立记录。
+
+### 过程性发现 3：Compose 1.11.4 的裁剪几何读取存在瞬时脏值 → 测试侧加稳定器
+
+> 版本出处：提交 `8fa612f` 的记录写作 Compose `1.11.4`；本项目经 `gradle/libs.versions.toml` 的 `compose-bom = "2026.06.01"`
+> 引入 Compose（此处按提交记录的版本号写，未再另行解析依赖树 —— 本轮禁止运行 Gradle）。
+
+- 现象（同一份布局、`state` 一个字段都不动，连读多帧）：**没有裁剪祖先**的读数行读到过 `9×9 @ (21,21)`；
+  横屏档"设置 B 点"（真实几何 `146..194 × 254..302`）读到过 `0×0 @ (0,0)`；`boundsInRoot(clipBounds = true)`
+  被夹空时直接返回 `Rect.Zero`；`assertIsDisplayed()` 也会误报（它读 `boundsInWindow`，同一条带裁剪的路径）。
+  同一批帧里**未裁剪几何**逐像素一致，真机截图也确认产品几何正确 → **不稳定的是读数，不是产品**。
+- 修法：测试侧新增 `PlayerBoundsSettling.kt` 的 `BoundsSettler` —— "读到**自洽帧**才返回"（自洽 = 该帧
+  `assertIsDisplayed()` 通过、已裁剪几何非空、宽高不小于未裁剪、中心与未裁剪重合），上限 `SETTLE_ATTEMPTS = 12` 帧。
+  **断言一条未削弱**：真实的裁剪在**每一帧**都一样不自洽，循环用尽后返回的就是那组不自洽读数，调用方的原断言
+  （在场 / 非空 / 不小于未裁剪 / 中心重合）照旧逐条判死，失败消息里还带 `frames` / `settled`。
+- 为什么不是"连续两帧一致才返回"：真机每帧 ≈ `300–800ms`（同一帧读两次实测 `668ms`），
+  "每个节点读两帧"会把 `PlayerAbLoopExclusionTest` 里 3 秒的预览卡倒计时耗光（实测 4 次断言花掉 3.3s，卡片已过期）。
+- 来源：`PlayerBoundsSettling.kt:38-157`；提交 `8fa612f`（该提交信息逐字记录同一现象与"只改测试、断言一条未削弱"）。
+
+### 真横屏暴露的问题与修法
+
+- **暴露**：把测试档改成**真 `800×400dp`** 后（提交 `50a76ea` 的 D 项"真横屏档"）才暴露出 —— AB 胶囊打开时
+  底栏长到竖直中线、被中央三连的播放键压住（B 徽标与进度行被盖），关闭胶囊即不重叠。`50a76ea` 当时把它如实记为
+  **"已知未解决（待用户裁决），本批未改产品来'变绿'"**。
+- **修法**（提交 `1e4bf51`）：`hidesCenterTransportControlsForTool` 把"截图工具激活"与"辅助带里住着胶囊"合并成**一条**
+  判据，中央三连在 AB 胶囊打开时**也不在场**（与截图工具对称）；instrumented 断言
+  `PlayerScreenStateTest.landscapeAbCapsuleHidesTheCenterControls`（真 `800×400dp`：底栏与 AB 胶囊在场、
+  `LANDSCAPE_CENTER_CONTROLS` 节点数 0；关掉胶囊后中央三连回来）。口径写入 `docs/16` §5.11。
+
+### 当前缺口（如实记录，不得当成已完成）
+
+1. **采纳范围内的绘制未全部落地**：区间条（`3dp`、`28%` / `100%`）、播放头幽灵竖线、`64dp` 独立标记层、
+   轨道上的端点热区目前**只有常量与几何判定**（`AbLoopMath.kt` 的 `AbRangeBarThickness` / `AbRangeInactiveAlpha` /
+   `AbRangeGhostHead*` / `AbMarkerLayerHeight` / `abMarkerLayout` / `abRangeBarMinWidthPx`）与 testTag
+   （`PlayerTestTags.AB_MARKER_LAYER`）；当前绘制只有**区间外压暗 + 夸大虚线 + 徽标/合并块**
+   （`PlayerTransportControls.kt:837-967`）。上述常量在 `app/src/main` 内除 `AbLoopMath.kt` 自身外**无引用**。
+   → 与 `1e4bf51` 提交信息里"区间条…另画播放头幽灵竖线"的表述**不一致**，**以代码为准**；因此裁决 U6 的
+   "点轨道上的徽标跳该端点"当前只落在读数条的 A / B 数值上。
+2. **读数条未搬进 AB 胶囊首行**（见本文开头"位置口径的偏离"）；`PlayerScreen.kt:816` 与 `ScreenshotControls.kt:99`
+   的注释仍写"读数条住胶囊首行"，与 `PlayerTransportControls.kt:546-554` 的实现说明矛盾 —— 本次只改文档、
+   **未改代码注释**，在此报备。
+3. **instrumented 因设备断开未跑**：`1e4bf51` 只执行了不需要设备的门禁（`compileDebugKotlin` /
+   `compileDebugAndroidTestKotlin` 零警告、`lintDebug` 0 issue、相关 JVM 过滤全绿），本批新增/改写的断言
+   （真横屏中央三连、读数条三态文案、真横屏档几何）**尚未跑过**；待设备恢复后补跑受影响的 instrumented 类各一次。
+4. **循环点重缓冲 P95 目标未达标**：目标仍是 `P95 ≤ 名义一帧`，实测 `P95 88–106 ms / max 270–319 ms`，
+   按"已知未达标"记录，**不得**降级为通过（唯一判定口径与逐次数字见 `docs/20` §3.4 与本文件阶段 1/2 的"三条用户裁决"）。
+
 

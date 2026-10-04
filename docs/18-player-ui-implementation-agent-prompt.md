@@ -367,6 +367,7 @@ git diff --check
 - [ ] 常规播放器布局、控件、颜色、尺寸、遮罩、面板和动效尽可能复原 Demo。
 - [ ] 截图真实捕获，胶囊、飞入预览、3 秒进度、暂停与删除完整。
 - [ ] AB 标记可见、可拖动、可键盘调整，播放和 Seek 被真实限制在 A/B。
+  > **更正标注（本条是历史代理提示词，现行口径以下列为准）**：**AB 不钳制用户 seek** —— A 之前正常播放、抵达 A 后进入循环（播到 B 由引擎精确回跳 A）、**循环期间允许拖到 `[A,B]` 之外**（**D8-A**，用户裁决保留；旧实现里的钳制已删除）。权威表述见 [`16-player-ui-ux-interaction-implementation-spec.md`](16-player-ui-ux-interaction-implementation-spec.md) §5.11「播放语义」与 [`20-ab-loop-refactor-plan.md`](20-ab-loop-refactor-plan.md) §1.1/§3.1。另：**"拖拽端点 / 编辑态 / 键盘调整"本批不采纳、无实现**（处置清单见 [`21-ab-progress-layering-spec.md`](21-ab-progress-layering-spec.md) §5 与 §9）。
 - [ ] 播放列表、四态顺序、速度、比例、音轨、字幕、信息、PiP、全屏、旋转、锁定真实生效。
 - [ ] 控件布局编辑器可增删排序、即时同步并持久化。
 - [ ] Shorts 上下/左右手势、邻项动画、长按倍速、自动下一条、循环完整。

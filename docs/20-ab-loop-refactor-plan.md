@@ -222,7 +222,15 @@
 - **带文字胶囊按钮**（审核 P2）：`A 00:12`、`B 设置`；
   - `48dp` 是**最小触控高度**，不是固定宽度 → 文字按钮必须**弹性宽度**；
   - 验收：**窄屏 / 横屏 / 系统字号放大**下不溢出、不截断语义（必要时缩字号但保持可读）；
-- **进度条**：A–B **区间高亮** + 两端标记 + **计数文案 `循环 ×12`**（Q1 定稿）；
+
+> **更正（提交 `8fa612f`，本节 UI 规格以 `docs/16` §5.11 为准）**：AB 胶囊里那三枚"弹性宽度文字按钮"**已被删除** ——
+> 文字会把 `48dp` 圆钮**撑成椭圆**（用户真机实测缺陷）。现在是**四枚定尺寸圆钮**（`PlayerChromeIconButton`，
+> "这一端设没设"由 `filled` + `selected` 表达），数值一律交给**读数条**；`PlayerChromeTextButton` 及其专属常量
+> （`PlayerChromeTextButtonHorizontalPadding` / `...CompactHorizontalPadding` / `ScreenshotCapsuleInnerPaddingCompact`）
+> 随之删除，"常规档 ↔ 紧凑档"那套 `abCapsuleTextLayout` / `labelsFit` 排版决策点也不再存在。
+> 上一条的"弹性宽度"与下面的验收口径因此**已作废**，其可读性目标改由读数条的字号模型
+> （`abReadoutFontSizeSp`，下限 `10sp`）承接。
+- **进度条**：A–B **区间高亮** + 两端标记 + **计数文案 `循环 ×12`**（Q1 定稿）→ **更正（提交 `1e4bf51`）**：两端标记已是 **18dp 字母徽标**，计数文案**附在读数条末尾**（`A … — B … · Δ … · 循环 ×N`），不再挂在区间旁（口径见 `docs/16` §5.11、裁决见 `docs/21` §9.1 的 U2）；
 - **互斥**（D2，审核 P2 细分）：与截图的三个状态分别定义（v3 另补一条**异步晚到时序**）：
   | 截图状态 | 打开 AB 工具时 | 关闭 AB 时 |
   |---|---|---|
@@ -243,7 +251,7 @@
 | 项 | 取值 | 来源 |
 |---|---|---|
 | 胶囊高度 | 64dp | `PlayerScreenshotCapsuleHeight` 同款 |
-| 按钮最小触控高度 | 48dp（=`PlayerChromeButtonSize`） | 工具托盘同一常量；**宽度弹性** |
+| 按钮最小触控高度 | 48dp（=`PlayerChromeButtonSize`） | 工具托盘同一常量；**宽度固定**（定尺寸圆钮，内容不改写尺寸 —— 见 §3.2 的更正） |
 | 按钮间距 | 12dp | `PlayerScreenshotCapsuleButtonSpacing` 同款 |
 | 内边距 | (64−48)/2 = 8dp | 同上 |
 | 出入场 | 360ms，从右滑入行内居中 | `SCREENSHOT_CAPSULE_TRANSITION_MILLIS` 同款 |
@@ -262,7 +270,7 @@
 | 循环落点误差 | 每次回到 A 的偏差 **≤ 1 帧**；名义帧率 `fps` 下即 **≤ `1000/fps` 毫秒**（25fps → ≤40ms，30fps → ≤33ms，60fps → ≤17ms） | 位置日志：每次回到 A 后立刻采样 `positionMillis`，与设定的 A 逐次求差 | 帧吸附（D5/D13）的最小可分辨单位就是 1 帧；≤1 帧等价于"落点与设定点落在同一帧内"。**方案 A 实测 50/50 = 0 µs**（`docs/19` T0.2） |
 | 无累积漂移 | 连续 **50 次**循环内，**第 50 次偏差不得显著大于第 1 次**（同一量级，不允许随次数单调增大） | 同上的 50 次采样序列，首末对比 + 观察是否单调漂移 | 累积漂移是"循环点用相对量重算"这类实现错误的直接症状。**方案 A 实测全程恒 0** |
 | 循环点重缓冲（**v4 修订**） | **每个循环最多一次 rebuffer**（不再是"计数 = 0"） | 循环点前后各 1 秒的 `STATE_BUFFERING` / `onIsLoadingChanged(true)` 日志计数与时长 | v3 的"计数 = 0"在真机上**做不到**：方案 A 实测 **50/50 次 `STATE_BUFFERING`，27–45 ms（均值 37.3 ms）**，且**短于一帧（40 ms）**（`docs/19` T0.2 口径说明）。**这是阈值过严的产品选择，不是测量误差** —— 故改为"每循环 ≤ 1 次" |
-| 重缓冲时长 P95 | **P95 ≤ 名义一帧**（25fps → ≤40 ms） | 逐次时长序列取 P95 | 一帧以内的衔接视为不可感知；**方案 A 实测 27–45 ms，P95 落在 45 ms 量级**，与"≤1 帧"仅差毫秒级 |
+| 重缓冲时长 P95 | **P95 ≤ 名义一帧**（25fps → ≤40 ms） | 逐次时长序列取 P95 | 一帧以内的衔接视为不可感知；阶段 0 实测 27–45 ms（P95 落在 45 ms 量级）。**阶段 1/2 真机实测未达标：P95 88–106 ms / max 270–319 ms → 目标保留、记为"已知未达标"，不得改写为通过**（逐次数字与三条用户裁决见 `docs/19` 的"三条用户裁决"1） |
 | 重缓冲时长 max（**v4 修订**） | **逐次记录每次时长，并单独报告 max**；**max 不作为硬阻断，但必须定义测量容差：max ≤ 2 × 名义一帧**（25fps → ≤80 ms） | 逐次时长序列取 max，并连同 P95 一起写入证据 | **25fps 一帧 = 40 ms，而实测 max = 45 ms，二者不可同时成立** → 不能把"max ≤ 1 帧"写成硬门槛。**本轮明确采用"定义测量容差 + 不作硬阻断"**：容差取"再放宽一帧"，覆盖调度/时钟测量误差；一旦 max 超过 2 帧即视为回归，**P95 与 max 必须同时报告，不得只报 P95** |
 | 音视频间断 | 逐帧录像中循环点**无丢帧**（不出现帧时间戳空洞，即**无超过 1 帧的空洞**）；音频**无静音段超过 1 帧** | 逐帧录像 + 帧时间戳序列核对；音频静音段按采样判定 | 与"≤1 帧"同一尺度。**注意**：方案 A 实测循环点**每次 1 帧空洞**（`frameGapCount=50`，`docs/19` T0.2），恰好卡在阈值上；**音频这一项至今无任何证据**（instrumentation 进程音频渲染器起不来，见下） |
 | 音频连续性（**v4 新增，阶段 2 阻断项**） | **音频解码器确实启动**；循环点静音 ≤ 1 帧；**无重复/丢样本/明显 click**；播放速度、后台、锁屏下表现一致 | 必须在**能出声的宿主**（真实 app/service 进程或手工真机操作）上测量，逐项记录 | **方案 A 的音频连续性完全未验证**（`docs/19` T0.1 "未能覆盖" 1、方案 C "未能覆盖" 1）。**该项完成前不得宣称整体验收通过**（§5 阶段 2、§6） |
@@ -290,7 +298,7 @@
 | 机制 | 处理 |
 |---|---|
 | AB 状态所有权 | **两条权**（§2.2 表格为唯一权威表述）：`PlaybackSessionRuntime` **唯一持有** `AbLoopState`、循环计数、`loopGeneration` 与**全部业务规则**；`ServicePlaybackEngine` 负责**边界检测、精确回跳、事件上报**；`PlaybackSessionClientBridge` 与 `PlayerViewModel` **删除本地 AB 状态**（不得残留第三份，T1.1） |
-| 边界检测与回跳 | **搬到引擎**（§4.4）：不得保留 ViewModel ticker / UI 按位置猜测（`PlayerViewModel.kt:1285-1302` 的 `projectedPlayingState()` 轮询必须删除）；回跳一律带 `SeekOrigin.AB_LOOP` 且**强制 `EXACT`** |
+| 边界检测与回跳 | **搬到引擎**（§4.4）：不得保留 ViewModel ticker / UI 按位置猜测（`PlayerViewModel.kt:1285-1302` 的 `projectedPlayingState()` 轮询必须删除）；回跳一律带 `SeekOrigin.AB_LOOP` 且**强制 `EXACT`**。**例外的边界见 §4.4**：展示层允许一条只服务渲染的位置投影（`DisplayPositionProjection.displayPositionMillis`），禁令只针对边界检测与决策 |
 | generation / origin | 语义已写死在 **§3.1**：A/B 变更/清除/切媒体 → 新 generation；用户 seek/拖动/逐帧/队列切换 → 取消或重置旧边界消息；只有**当前 generation 的自然边界事件**才计数；过期事件与位置回退**不计数** |
 | `SeekPrecision` | AB 胶囊打开期间强制 `EXACT`（设点要准）；**循环回跳由引擎强制 `EXACT`**（方案 A 的帧精确落点来自这里，实测 50/50 = 0 µs，`docs/19` T0.2） |
 | 位置映射 | **方案 A 下媒体源未被裁剪**，不需要"相对时间轴 → 绝对位置"映射层（§2.4 已重述）；仍需保证**位置只有一个权威来源**：回跳后的位置由引擎 timeline 上报，UI 不再推算 |
@@ -363,6 +371,12 @@ sealed interface PlaybackEngineEvent {
 - 由**引擎**负责，**优先评估 Media3 `PlayerMessage` 定点消息**（在 B 位置安排一次播放器消息；`app/src` 全量检索确认**当前代码库尚未使用** `createMessage` / `sendMessage` / `PlayerMessage`，属新增 API 采用与验证项 **U12**，在 T1.1 内评估）；
 - 若 `PlayerMessage` 在**用户 seek、暂停、重缓冲**场景下不可靠 → 实现**引擎内部的主线程边界调度**（例如在引擎自己的主 Looper 上按位置采样推进，**仅在 AB 激活且正在播放时运行**），并配套取消/重置语义；
 - **明令禁止**恢复成 **ViewModel ticker**（`PlayerViewModel.kt:1285-1302` 那种 UI 轮询）或任何 **UI 按位置猜测** 的实现；违反即视为回到本方案要修掉的那个根因。
+- **禁令的范围必须读准：它管的是"边界检测与决策"，不是"任何按时间读位置"**。**展示层允许一条只服务渲染的位置投影**，本项目的落点是 `domain/playback/DisplayPositionProjection.kt` 的 `displayPositionMillis(sessionClient)`：
+  - `Playing` 相位内每 `DISPLAY_POSITION_TICK_MILLIS = 250 ms` 用 `sessionClient.currentPositionMillis()`（**实时值，不插值不预测**）刷新；
+  - **非播放相位**（暂停 / 无媒体 / Idle / Preparing / Ready / Buffering / Ended / Failed）交出该相位的权威位置后**挂起等待**，不按 tick 空转；播放重新开始时**立即**再读一次；
+  - `distinctUntilChanged` 去重；它只被换进 `displayedPositionMillis` 与展示用的 `playback.timeline`（进度条、时间读数、帧号）。
+  - **它不得用于任何决策**：设点、截图文件名时间戳、上一项、双击快进/快退、帧步进锚点仍**直接调用** `currentPositionMillis()`（边界写在该文件的函数注释里；展示层位置冻结的根因与修法见 `docs/19`、提交 `c597599`）。
+  - 一句话：**"展示可平滑、决策必须实时"** —— 边界检测与循环计数只认引擎事件，这条展示通道的存在**不构成**"UI 按位置猜测"。
 
 ---
 
@@ -437,7 +451,7 @@ sealed interface PlaybackEngineEvent {
 - [x] T3.1 图标：`AB_LOOP → YingLiIcon.AB2`（**已确认真名**：解包 `icons-tabler-0.1.0-local.1.aar` 得到的属性名是 **`AB2`**，不是 `Ab2`）；**`REPLAY` 保留** —— 它另有 **5 处非 AB 用途**（`HomeScreen` 首页卡片、`ProcessingScreen` 重试与撤销、`PlayerStatusOverlay` 重新播放、`YingLiApp`，映射 `ti-refresh`），删除属**无关重构**；且**正确的删除方式**是把这 5 处改名为新的 `REFRESH`，**不在本计划范围**。（原写"删除 `REPLAY`（含 `YingLiIconTest` 调整）"有误，本轮更正；实际 `YingLiIconTest` 里**既没有** `REPLAY` 也没有 `AB2` 的断言，本次改动不触及它）
 - [x] T3.2 托盘按钮激活态（`filled = abLoop.active`；同类开关型按钮一并把状态写进语义 `selected`，供读屏与测试断言）
 - [x] T3.3 AB 胶囊迁入**底栏辅助带**，复用同源几何/材质/360ms 滑入；删除独立浮层（原 `PlayerScreen` 居中浮层与其 `bottom 176/96dp` 魔法数字）
-- [x] T3.4 新增**带文字胶囊按钮**（`PlayerChromeTextButton`：弹性宽度；最小触控 48dp）；验收窄屏/横屏/字号放大不溢出（真机四场景 + JVM 矩阵，见 `docs/19` 阶段 3）
+- [x] T3.4 新增**带文字胶囊按钮**（`PlayerChromeTextButton`：弹性宽度；最小触控 48dp）；验收窄屏/横屏/字号放大不溢出（真机四场景 + JVM 矩阵，见 `docs/19` 阶段 3）→ **更正（提交 `8fa612f`）**：文字按钮已删除，改为**四枚定尺寸圆钮**，"不溢出 / 不截断"的验收由**读数条**字号模型（`abReadoutFontSizeSp`，下限 `10sp`）与胶囊几何断言承接（见 §3.2 的更正与 `docs/19`）
 - [x] T3.5 进度条 A–B 区间 + 两端标记 + `循环 ×12` 文案
 - [x] T3.6 互斥（按 §3.2 的截图状态细分，含预览卡清理/保留策略）；**含异步晚到**：截图处于 `Capturing` 时打开 AB → 除结束截图会话外，**晚到的捕获回调必须被丢弃**；**已固化为 generation 契约**（`isScreenshotCaptureResultCurrent` + `screenshotCaptureGeneration`），覆盖"打开 AB 后那次捕获的回调才返回"这一时序，断言预览卡与 AB 胶囊不同时出现
 - [x] T3.7 关闭≠取消（D3）与清除入口

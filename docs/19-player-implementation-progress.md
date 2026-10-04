@@ -1333,20 +1333,110 @@ instrumented 断言（`PlayerAbLoopScreenTest.abCapsuleTakesTheSameAuxiliaryBand
 
 ### 当前缺口（如实记录，不得当成已完成）
 
-1. **采纳范围内的绘制未全部落地**：区间条（`3dp`、`28%` / `100%`）、播放头幽灵竖线、`64dp` 独立标记层、
+1. ~~**采纳范围内的绘制未全部落地**~~ —— **已由 `22ed984` 补齐（本条作为历史记录保留，不再算缺口）**。以下是 `1e4bf51` 当时的缺口原文：区间条（`3dp`、`28%` / `100%`）、播放头幽灵竖线、`64dp` 独立标记层、
    轨道上的端点热区目前**只有常量与几何判定**（`AbLoopMath.kt` 的 `AbRangeBarThickness` / `AbRangeInactiveAlpha` /
    `AbRangeGhostHead*` / `AbMarkerLayerHeight` / `abMarkerLayout` / `abRangeBarMinWidthPx`）与 testTag
    （`PlayerTestTags.AB_MARKER_LAYER`）；当前绘制只有**区间外压暗 + 夸大虚线 + 徽标/合并块**
    （`PlayerTransportControls.kt:837-967`）。上述常量在 `app/src/main` 内除 `AbLoopMath.kt` 自身外**无引用**。
    → 与 `1e4bf51` 提交信息里"区间条…另画播放头幽灵竖线"的表述**不一致**，**以代码为准**；因此裁决 U6 的
-   "点轨道上的徽标跳该端点"当前只落在读数条的 A / B 数值上。
-2. **读数条未搬进 AB 胶囊首行**（见本文开头"位置口径的偏离"）；`PlayerScreen.kt:816` 与 `ScreenshotControls.kt:99`
-   的注释仍写"读数条住胶囊首行"，与 `PlayerTransportControls.kt:546-554` 的实现说明矛盾 —— 本次只改文档、
-   **未改代码注释**，在此报备。
-3. **instrumented 因设备断开未跑**：`1e4bf51` 只执行了不需要设备的门禁（`compileDebugKotlin` /
-   `compileDebugAndroidTestKotlin` 零警告、`lintDebug` 0 issue、相关 JVM 过滤全绿），本批新增/改写的断言
-   （真横屏中央三连、读数条三态文案、真横屏档几何）**尚未跑过**；待设备恢复后补跑受影响的 instrumented 类各一次。
+   "点轨道上的徽标跳该端点"当时只落在读数条的 A / B 数值上。
+   **`22ed984` 的补齐情况**：区间条 / 播放头幽灵竖线 / `64dp` 独立标记层 / 端点热区均已**绘制、已挂手势**；`AB_MARKER_LAYER` 已**挂载**、新增 `AB_MARKER_POINT_A` / `AB_MARKER_POINT_B`，`AB_RANGE` 现在只是**压暗层**；竖直几何唯一来源 = `abMarkerLayout`（绘制与端点热区共用同一份）。逐条落点见本文档末尾「A-B 循环：绘制接线补齐与两个布局根因」一节。
+2. **读数条未搬进 AB 胶囊首行**（见本文开头"位置口径的偏离"）—— 位置口径**仍然如此**，但理由已从"`AB_CAPSULE` 的节点几何被夹成读数条那一行的高度"这类**结果描述**换成**算式**：胶囊 `PlayerScreenshotCapsuleHeight = 64dp` 内已住一排 `PlayerChromeButtonSize = 48dp` 圆钮 ⇒ 只剩 `16dp`；读数行高 `= max(AbValueTapTargetHeight 20dp, abReadoutBandHeight)`（`AbLoopControls.kt:360`）⇒ **1× 字号 `48 + 20 = 68 > 64`**、**2× 系统字号 `48 + 32.2 = 80.2 > 64`** ⇒ **放不下**。要搬必须先裁决"AB 胶囊允许比截图胶囊高"或下调 `32 × 20dp` 热区 / `abReadoutBandHeight` 天条（属 docs 级口径，见 `docs/16` §5.11）。
+   先前报备的两处"读数条住胶囊首行"假注释（`PlayerScreen.kt:816`、`ScreenshotControls.kt:99`）**已在 `22ed984` 改正**（该提交共改四处，含 `PlayerTransportControls.kt`）；**仍有一处残留**、本轮只改文档未改代码：`PlayerScreen.kt:808` 的 `AB_RANGE` 仍写作"区间高亮（含两端标记）"，而它现在只是**压暗层**（标记组在 `AB_MARKER_LAYER`，见 `PlayerTransportControls.kt:918-945`、`:982-1133`）。
+3. ~~**instrumented 因设备断开未跑**~~ —— **已由 `22ed984` 补跑**：受影响的 4 个类 **31/31** 全绿（`PlayerAbLoopScreenTest` 8 / `PlayerScreenStateTest` 16 / `PlayerAbLoopCapsuleCommandTest` 5 / `PlayerAbLoopExclusionTest` 2），其中 `1e4bf51` 新增/改写的断言（真横屏中央三连、读数条三态文案、真横屏档几何）**已在这一轮跑过**；原先 3 个失败用例全部转绿（两条改为逐子节点有序断言、一条是辅助带被夹的根因修复）。`1e4bf51` 当时只执行了不需要设备的门禁（`compileDebugKotlin` / `compileDebugAndroidTestKotlin` 零警告、`lintDebug` 0 issue、相关 JVM 过滤全绿）—— 逐类数字与三条用例的最终状态见本文档末尾一节。
 4. **循环点重缓冲 P95 目标未达标**：目标仍是 `P95 ≤ 名义一帧`，实测 `P95 88–106 ms / max 270–319 ms`，
    按"已知未达标"记录，**不得**降级为通过（唯一判定口径与逐次数字见 `docs/20` §3.4 与本文件阶段 1/2 的"三条用户裁决"）。
+
+---
+
+## A-B 循环：绘制接线补齐与两个布局根因（2026-10-04，提交 `22ed984`）
+
+对应 `docs/16` §5.11（口径）与 `docs/21` §9（裁决落点）。上一批 `1e4bf51` 只写了常量与几何判定、绘制侧未接线、且提交信息与代码不符；
+本批把那一半补齐，并修掉两个**此前被误当成"断言问题"的布局根因**。本节只记证据与根因，口径不重复。
+
+### 本批落地（逐条可在代码核对）
+
+| 项 | 落点 |
+| --- | --- |
+| 区间条（`3dp`、完整 `100%` / 仅 A `28%`、起止按 `min(A, 播放头)` 延展、最小可辨宽度） | 绘制 `PlayerTransportControls.kt:1038-1045`；常量 `AbLoopMath.kt:59-75`、`:429-441`；仅 A 几何 `:588-618` |
+| 仅 A 的播放头幽灵竖线（`1.5dp` / `0.55`） | 绘制 `PlayerTransportControls.kt:1047-1056`；常量 `AbLoopMath.kt:443-459` |
+| `64dp` 独立标记层（滑杆的**兄弟**节点、`requiredHeight`） | 挂载 `PlayerTransportControls.kt:543-551`；画布 `:982-1133`；常量 `AbLoopMath.kt:133-144` |
+| 端点热区（`AB_MARKER_POINT_A/B`，点按徽标 = 跳端点 ⇒ 裁决 U6） | `PlayerTransportControls.kt:1154-1220`，挂载点 `:588-599` |
+| `AB_MARKER_LAYER` **已挂载**（不再是"仅定义"）；`AB_RANGE` 现在只是**压暗层** | `PlayerTransportControls.kt:997` / `:923`（`AbRangeDimOverlay` `:918-945`） |
+| 竖直分寸链唯一入口 `abMarkerLayout`（绘制与端点热区共用同一份） | `AbLoopMath.kt:372-417` |
+
+### 门禁结果（提交 `22ed984` 的验证记录，命令可直接复跑）
+
+| 门禁 | 结果 |
+| --- | --- |
+| `:app:compileDebugKotlin` / `:app:compileDebugUnitTestKotlin` | **零警告**（`-Werror` 下通过） |
+| 相关 JVM（6 个类的过滤执行） | **81/81** 全绿 |
+| instrumented（受影响的 4 个类） | **31/31** —— `PlayerAbLoopScreenTest` **8** / `PlayerScreenStateTest` **16** / `PlayerAbLoopCapsuleCommandTest` **5** / `PlayerAbLoopExclusionTest` **2** |
+| `:app:lintDebug` | **0 issue** |
+| 真机证据 | 截图与语义树 dump 在 `build/ab-evidence/files/`：**24** 张 `png` + **1** 份语义树 `ab-05-landscape-tree.txt`（共 25 个文件）。该目录被 `.gitignore` 的 `**/build/` 覆盖，**不在提交里** |
+
+### 三条原失败用例的最终状态（都不是"改预期掩盖问题"）
+
+| # | 用例 | 最终状态 |
+| --- | --- | --- |
+| 1 | `PlayerAbLoopScreenTest.theProgressRowKeepsTheAbRangeAndCarriesTheReadout` | 读数条断言改为**逐子节点有序断言** |
+| 2 | `PlayerAbLoopScreenTest.aFiveSecondRangeOnANinetyFiveMinuteVideoStaysVisibleAndReportsItsRealLength` | 同上 |
+| 3 | `PlayerScreenStateTest.landscapeAbCapsuleHidesTheCenterControls` | **辅助带被夹的根因修复**（见下面根因 2） |
+
+- 第 1、2 条的修法是新增测试侧辅助 `assertReadoutSegments(vararg expected)`（`PlayerAbLoopScreenTest.kt:575`）：比对**有序**分段列表 —— 段落文本、顺序、数量**三者都必须一致**，而不是"存在某个包含某段的文本"。
+  为什么原断言不再成立：读数行是 `Row { Text, Text, … }`，A / B 两个数值各自是**独立点击目标**（`clickable` → 合并语义里没有 `Text`），原来的 `assertTextContains(整行文本)` 会报"节点有 7 个子节点、但自身没有文本"。**所以这是断言形式的修正，不是把断言放宽**（口径相同的判断也写在测试注释里）。
+- 第 3 条**不是**断言问题，而是产品侧根因（辅助带被 `Column` 剩余空间夹小），修法与取证见根因 2。
+
+### 根因 1：`abMarkerLayout` 原公式把区间条放到 `-42 .. -45dp`（超出 `64dp` 画布，必被裁）
+
+- **原公式**：区间条画在"徽标中心再往上一个 `AbRangeBarToMarkerGap`"，即 `barBottom = markerCenterY − markerRadius − barGap`；代入本批取值（轨道中线以上 `AbMarkerTopOffset = 21dp`、半径 `9dp`、`gap = 12dp`）得到条的上沿约 `-42dp`、下沿约 `-45dp`。
+- **后果**：`AbMarkerLayerHeight` 只有 `64dp`（中线以上 `32dp`），`-42dp` 早已在画布之外 ⇒ 条**必被裁**；而且它与 `AbMarkerGroupHeight = 33dp`（= 直径 + 间隙 + 条厚）**自相矛盾** —— 按"间隙"的口径，条应落在间隙**内部**，不是叠在徽标之上。
+- **修正**：按常量口径统一为 徽标 `-30 .. -12` / 竖线 `-12 .. -2`（徽标下沿 → **轨道上沿**）/ 条 `-8.5 .. -5.5`（"徽标下沿 → 轨道上沿"这段空隙的正中），夸大虚线仍以**轨道中线**为锚；`abMarkerLayout` 的输入也从 `barGapPx` 换成 `trackThicknessPx`（竖线下端要连到轨道上沿）。
+- **钉住它的断言**：`AbLoopMathTest` 逐项断言 徽标 / 竖线 / 条 / 虚线四条线，并断言"**所有笔迹 y 都落在 `[0, AbMarkerLayerHeight]` 内**"（`AbLoopMath.kt:372-417`、`AbLoopMathTest.kt:213-272`）。
+
+### 根因 2：辅助带被 `Column` 剩余空间静默夹小 ⇒ 胶囊被裁（`height` → `requiredHeight`）
+
+- **现象**（真机 `400 × 200dp` 宿主）：辅助带被夹成 `48dp`，AB 胶囊 `unclipped 116..180 / clipped 124..172` —— **上下各被切 8dp**。
+- **根因**：带子用 `height(...)` 时高度会被 `Column` 的剩余空间**静默**夹小（不报错、不留日志）；而带子自带 `clipToBounds`，于是被裁的是**里面的胶囊** —— 用户看不到带子，只看得到胶囊缺一半。
+- **修法**：`Modifier.requiredHeight(auxiliaryBandHeight).clipToBounds()`（`PlayerTransportControls.kt:683-697`）：带子是**固定槽位**，放不下时该溢出的是这一格，而不是把工具切成两半。
+- **口径**：这与 `docs/16` §5.14 的"托盘行按满高测量（`requiredHeight(PlayerAuxiliaryBandHeight)`）"是同一条规则的两次落点；`docs/16` §5.11 已把"带子高度用 `requiredHeight`、不被 `Column` 剩余空间静默夹小"写成不变量。
+
+### 读数条位置：理由由"结果描述"改成算式
+
+`docs/21` §3.1 与 demo 要求读数条住**AB 胶囊首行**；本批**仍然不搬**，但判定依据换成算式（不再用"节点几何被夹成 20dp"这类**结果描述**）：
+
+- 胶囊高 `PlayerScreenshotCapsuleHeight = 64dp`（与截图胶囊**同格同高**是不变量），内部已住一排 `PlayerChromeButtonSize = 48dp` 圆钮 ⇒ **仅剩 `64 − 48 = 16dp`**；
+- 读数行高 `= max(AbValueTapTargetHeight 20dp, abReadoutBandHeight)`（`AbLoopControls.kt:360`）：**1× 字号** `abReadoutBandHeight = max(16dp, 14sp × 1 × 1.15) = 16.1dp` ⇒ 行高 `20dp` ⇒ `48 + 20 = 68 > 64`；**2× 系统字号** `14 × 2 × 1.15 = 32.2dp` ⇒ 行高 `32.2dp` ⇒ `48 + 32.2 = 80.2 > 64`；
+- ⇒ **放不下**。要搬必须先裁决"**AB 胶囊允许比截图胶囊高**"（并重算 `PlayerScreenshotCapsuleHeight` / `PlayerAuxiliaryBandHeight` 的高度账），或下调 `32 × 20dp` 热区与 `abReadoutBandHeight` 这条行高天条 —— 两者都是 **docs 级口径**。
+
+### 构建陷阱（本轮排障的真实教训，验证前必做）
+
+- **现象**：源码已经改了，测试却按**旧字节码**跑 —— 出现"源码改了、断言仍按旧实现结果判"的**假失败**，且日志里看不出（编译被判定为 UP-TO-DATE）。
+- **根因**：Gradle 的 build/config cache 会**静默还原**旧产物：
+  - `app/build/intermediates/built_in_kotlinc/`（Kotlin 编译产物）
+  - `app/build/intermediates/runtime_app_classes_jar/`（进 dex / 测试用的 class jar）
+
+  这两处被缓存还原之后，**连 `--rerun-tasks` 也挡不住**（`--rerun-tasks` 只让任务重跑，缓存产物仍会被还原回来）。
+- **规避（跑门禁前必做）**：先删这两个目录再执行编译 / JVM 过滤 / lint：
+  `Remove-Item -Recurse -Force app/build/intermediates/built_in_kotlinc, app/build/intermediates/runtime_app_classes_jar`
+- **判据**：同一份源码在"删目录前 / 删目录后"结果不一致时，**以删目录后的为准**（前者是假失败，也可能是假通过）。
+- **补充实测（文档同步这一轮复核时复现，并发现还有第二条渠道）**：**只删那两个目录还不够**。删完立刻跑 `:app:compileDebugKotlin`，Gradle 的**构建缓存**仍会把编译产物判成 `FROM-CACHE`（典型输出 `> Task :app:compileDebugKotlin FROM-CACHE`，`BUILD SUCCESSFUL in 3s`）—— 也就是**任务根本没编译源码，门禁却是绿的**，比"假失败"更危险。
+  因此完整配方是两步：① 删那两个目录；② 追加 `--no-build-cache`，并**核对任务真的执行了** —— 日志里被验证的任务不能是 `FROM-CACHE` / `UP-TO-DATE`。
+  本轮复核用的命令（任务均真实执行、逐条见下面的门禁表）：`gradlew :app:compileDebugKotlin :app:compileDebugUnitTestKotlin --no-build-cache --rerun-tasks`、`:app:testDebugUnitTest <过滤> --no-build-cache --rerun-tasks`、`:app:lintDebug --no-build-cache --rerun-tasks`。
+
+### 复核记录（文档同步这一轮：只改 `docs/`，源码树与 `22ed984` 相同）
+
+| 门禁 | 命令 | 结果 |
+| --- | --- | --- |
+| 编译 | `:app:compileDebugKotlin :app:compileDebugUnitTestKotlin --no-build-cache --rerun-tasks`（跑前删 `built_in_kotlinc` / `runtime_app_classes_jar`） | **BUILD SUCCESSFUL**，两个任务**真实执行**（不是 `FROM-CACHE` / `UP-TO-DATE`），日志中 `w:` / `e:` / `warning` / `error` 行 **0** |
+| 相关 JVM | `:app:testDebugUnitTest --tests "*AbLoopMathTest" --tests "*AbLoopUiContractTest" --tests "*AbLoopLimiterTest" --tests "*PlayerChromeLayoutMathTest" --tests "*YingLiIconTest" --tests "*YingLiSliderMathTest" --no-build-cache --rerun-tasks` | **81/81**（`AbLoopMathTest` 23 / `AbLoopUiContractTest` 18 / `AbLoopLimiterTest` 14 / `PlayerChromeLayoutMathTest` 16 / `YingLiIconTest` 6 / `YingLiSliderMathTest` 4），failures / errors / skipped 全 0 |
+| lint | `:app:lintDebug --no-build-cache --rerun-tasks`（29 个任务全部真实执行） | **`No issues found.`**（`app/build/reports/lint-results-debug.txt`；XML 报告的 `<issues>` 为空 ⇒ **0 issue**） |
+| instrumented | **本轮未跑**（按任务约束不跑仪器化测试，无设备）；31/31 是 `22ed984` 自己的验证记录 | — |
+
+### 本批未做 / 仍然偏离
+
+- 读数条**未**搬进 AB 胶囊首行（算式判定放不下，见上）。
+- 真机全链路观感（与截图、镜像、后台播放共存）仍未补测。
+- `PlayerScreen.kt:808` 的 `AB_RANGE` 注释仍是旧的"区间高亮（含两端标记）"（本轮只改文档、未改代码；该节点现在只是压暗层）。
 
 

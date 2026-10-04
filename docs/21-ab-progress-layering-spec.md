@@ -13,7 +13,7 @@
 
 | # | 口径 | 含义 |
 |---|---|---|
-| 1 | **保留"区间外压暗"** | 区间条是主表达，压暗是辅助；压暗已实现：`AbRangeOutsideAlpha = 0.55`、下限 `AbRangeOutsideAlphaFloor = 0.30`，且 `DstOut` **只覆盖区间外**（`AbLoopMath.kt:214/217`、`PlayerTransportControls.kt:913-931`、`:1019`） |
+| 1 | **保留"区间外压暗"** | 区间条是主表达，压暗是辅助；压暗已实现：`AbRangeOutsideAlpha = 0.55`、下限 `AbRangeOutsideAlphaFloor = 0.30`，且 `DstOut` **只覆盖区间外**（`AbLoopMath.kt:333-336`、`PlayerTransportControls.kt:918-945`（`AbRangeDimOverlay`）、`:1230`（`DstOut` 源）） |
 | 2 | **胶囊按钮不变** | 仍是 **A / B / 清除 / 关闭**（`AbLoopControls.kt:47-109`）。**不采纳**设计里的「编辑」「删除」——我们的"清除"≈设计里的"删除"，"编辑"是新功能。因此设计里 **「编辑态」→「拖拽端点」→「拖动时瞬时浮签」这条链整块不采纳** |
 | 3 | **B 早于 A 取 A + 1s** | 采纳 `demo.html:384` 的 `B = max(播放头, A + 1s)`，**取代**我们现有的"拒绝 / 互换"（`PlaybackSessionContracts.kt:240-247` 的 `setPointB` 拒绝 + `:224-238` 的 A 侧互换） |
 | 4 | 端点徽标形态 | **字母徽标**（A/B 用图标字形，`YingLiIcon.LETTER_A/LETTER_B`），滑块保持 **14dp 白圆**，**与标记异层异形**（`demo.html:331`） |
@@ -81,15 +81,17 @@ demo 的绘制顺序即层序（同一批像素上从下到上）：
 
 > demo 的注脚把层名从下到上写作：**浮签层 · 瞬时 / 徽标层 / 循环层 / 轨道层 / 刻度行**（`demo.html:280-284`），与上表的绘制顺序一致（浮签在最上，刻度行在最下）。
 
-**与现有实现的一致性**：我们的层序在 `PlayerTransportControls.kt:493-534` 与 `YingLiControls.kt:495-528` 里写死为
-**① 轨道底 → ② 播放进度填充 → ③ AB 区间内外亮度 → ④ 端点徽标 → ⑤ 滑块**（非空时整行隔离成离屏层）。
-与 demo 相比：轨道底 / 进度 / 亮度 / 徽标 / 滑块的相对顺序**一致**；差异是 demo 里"区间条"是一个**可见色条**（第 4 层），而我们把它换成了"区间外压暗"（口径 1，已裁定的**有意差异**）。
+**与现有实现的一致性**（口径截至提交 `22ed984`）：我们的层序写死在两处 —— `YingLiSlider` 内部
+**① 轨道底 → ② 播放进度填充 → ③④ `trackOverlay`（= 区间外压暗 `AbRangeDimOverlay`）→ ⑤ 滑块**（`YingLiControls.kt:503-528`），
+以及滑杆**之外**的兄弟层 **A–B 标记组**（`AbMarkerLayer`：① 区间条 → ② 仅 A 的幽灵竖线 → ③ 夸大虚线 → ④ 竖线 → ⑤ 徽标 / 合并块，`PlayerTransportControls.kt:1035-1131`）。
+标记组画在滑杆**之前**（z 序更低），于是"滑块永不被压暗、永不被盖住"由绘制顺序保证（`PlayerTransportControls.kt:535-542`）；端点热区排在滑杆**之后**（命中测试从最后一个子节点开始）。
+与 demo 相比：轨道底 / 进度 / 亮度 / 徽标 / 滑块的相对顺序**一致**；差异是 demo 里"区间条"是一个**可见色条**（第 4 层），而我们**两者都有** —— 区间外压暗（口径 1，已裁定的有意差异）与 3dp 的区间条（`AbRangeBarThickness`）语义不重叠。
 
 ### 1.2 逐层数值（每个数值都标来源）
 
-> **状态更新（提交 `1e4bf51`）**：本表"我们现有实现"一列写于该提交**之前**，其中"未实现 / 缺口"若干条已经变化
-> （读数条文案与可点数值、区间条语义、区间外压暗、坐标与阈值等）。**与现状不一致处一律以 §9「采纳状态」与代码为准**，
-> 本表不再逐格回改（避免同一事实两处维护）。
+> **状态更新（提交 `1e4bf51` 记常量与判定，`22ed984` 补绘制接线）**：本表"我们现有实现"一列写于 `1e4bf51` **之前**，其中"未实现 / 缺口 / 待核对"若干条已经变化
+> （读数条文案与可点数值、引导态、区间条语义与 `28%` 未激活态、播放头幽灵竖线、`64dp` 独立标记层、轨道上的端点热区、区间外压暗、坐标与阈值等）。**与现状不一致处一律以 §9「采纳状态」与代码为准**，
+> 本表不再逐格回改（避免同一事实两处维护）；引用本表时请连它的**行级代码出处**一起按 `22ed984` 后的行号核对。
 
 | 层 | 项目 | demo 取值 | demo 来源 | 我们现有实现 | 是否冲突 |
 |---|---|---|---|---|---|
@@ -270,7 +272,7 @@ $('#readout').addEventListener('click',e=>{
 | 真实位置刻度 | 另在真实位置画两条竖直虚线（`y=ty-10..ty-3`） | `demo.html:465-466` |
 | 文案 | "把两端拖到很近 → 夸大防撞" | `demo.html:258` |
 
-> 我们现有实现：最小可视宽度 `MIN_AB_RANGE_WIDTH = 28dp`（= 合并阈值 `AbMarkerDiameter + AbMarkerMinGap`），中心锚定放大 + 夹回轨道 + 合并块 + 夸大时上下沿虚线（`AbLoopMath.kt:140-171`、`PlayerTransportControls.kt:954-972`）。**与 demo 的差异**：demo 的最小宽度是"像素域 48"（与 dp 无关），我们的是 `28dp`；demo 的"真实位置竖直刻度"我们**没有**（对应条目见 §4-I8）。
+> 我们现有实现：最小可视宽度 `MIN_AB_RANGE_WIDTH = 28dp`（= 合并阈值 `AbMarkerDiameter + AbMarkerMinGap`），中心锚定放大 + 夹回轨道 + 合并块 + 夸大时上下沿虚线（`AbLoopMath.kt:275-291`、`:562-661`、`PlayerTransportControls.kt:1058-1077`（上下沿虚线）、`:1097-1130`（合并块 / 缝 / 徽标））。**与 demo 的差异**：demo 的最小宽度是"像素域 48"（与 dp 无关），我们的是 `28dp`；demo 的"真实位置竖直刻度"我们**没有**（对应条目见 §4-I8）。
 
 ---
 
@@ -402,6 +404,10 @@ $('#btnD').addEventListener('click',()=>{ S.a=null;S.b=null;S.edit=false;render(
 
 > 每条写成「现状 → 目标 → 涉及文件/常量/断言」。数值与文案均来自 §1–§4 的 demo 来源。
 > **本清单不含**编辑态 / 拖拽端点 / 浮签（不采纳）。
+>
+> **状态说明（截至提交 `22ed984`）**：各条的「现状」写于**规格抽取时（`1e4bf51` 之前）**，属于历史快照；
+> 其**落地 / 未落地状态以 §9.2 为准**（`22ed984` 之后：I2 的区间条与 `28%`、I3 的可点数值、I4 的引导态、
+> I7 的标记层与"允许向上溢出"均已落地；I1 的"读数条搬进胶囊首行"仍**未做**，且有算式判定它放不下）。
 
 ### I1. 读数条从"进度区第二行"搬到"胶囊首行"
 
@@ -529,10 +535,11 @@ $('#btnD').addEventListener('click',()=>{ S.a=null;S.b=null;S.edit=false;render(
 
 ---
 
-## 9. 采纳状态（用户裁决与落地情况，提交 `1e4bf51`）
+## 9. 采纳状态（用户裁决与落地情况，截至提交 `22ed984`）
 
 > 本节是本文档的**收口**：§0.2 的"采纳 / 不采纳"是**规格抽取时**的判断，§7.1 的 U1–U10 是**待裁决项**；
-> 用户已逐条裁决（§9.1），本批按裁决落地到提交 `1e4bf51`；§6 的 I1–I9 是执行清单，其落地/未落地状态见 §9.2。
+> 用户已逐条裁决（§9.1），裁决先落地到 `1e4bf51`（**常量与几何判定**）、其**绘制接线**由 `22ed984` 补齐（§9.2）；
+> §6 的 I1–I9 是执行清单，其落地/未落地状态见 §9.2。
 > 引用规范：口径写进 `docs/16` §5.11，证据写进 `docs/19`，本节只回答"裁了什么、做到哪一步"。
 
 ### 9.1 U1–U10 的最终裁决与落点
@@ -544,18 +551,18 @@ $('#btnD').addEventListener('click',()=>{ S.a=null;S.b=null;S.edit=false;render(
 | U3 | **`Δ` 用两档格式**：`<1h` → `mm:ss`；`≥1h` → `hh:mm:ss`（小时**补零**），与两端时刻、进度行**同一份** `formatDuration`；旧实现的"一位小数秒（`5.0s`）"**删除** | `AbLoopControls.kt:257-268`（已落地）。**口径澄清**：§7.1 U3 当时把"我们现有两档"写成 `5.0s` / `01:00`（那是当轮实现的样子），**现行两档是 `mm:ss` / `hh:mm:ss`** |
 | U4 | **`A + 1s` 要再吸附到帧，并夹到片长**；夹完之后仍不足一帧 → **拒绝**（回流量成用户可见提示） | `PlaybackSessionContracts.kt:264-284`、`AB_POINT_B_MIN_GAP_MILLIS`（已落地） |
 | U5 | **保留"设完 B 后立即跳回 A"**（`SeekOrigin.AB_ACTIVATION`） | `PlaybackSessionRuntime.kt:533-538`（已落地；**有意比 demo 多做的一步**，理由见 §9.3） |
-| U6 | **点按端点 = 跳到该端点** | 读数条里的 A / B 数值已可点（`AbLoopControls.kt:380-411`、`AB_READOUT_POINT_A/B`）；**点轨道上的徽标尚未接线**（`AB_MARKER_LAYER` 仅定义未挂载，见 §9.2） |
-| U7 | **做 `30dp` 量级的标记组与"允许向上溢出"** | 已按剖面口径定为 `AbMarkerGroupHeight = 33dp` + `AbMarkerLayerHeight = 64dp`（`AbLoopMath.kt:113-143`）；**绘制未接线**（见 §9.2） |
+| U6 | **点按端点 = 跳到该端点** | **已落地（`22ed984`）**：读数条里的 A / B 数值可点（`AbLoopControls.kt:380-411`、`AB_READOUT_POINT_A/B`）；**轨道上的徽标也可点**（`AbMarkerTapTargets` + `AB_MARKER_POINT_A/B`，`PlayerTransportControls.kt:1154-1220`，挂载点 `:588-599`；热区排在滑杆**之后**并消费这次 down，所以"轨道空白处点按 = seek"不受影响） |
+| U7 | **做 `30dp` 量级的标记组与"允许向上溢出"** | **已落地（`22ed984`）**：`AbMarkerGroupHeight = 33dp`（**三部分之和**：徽标 18 + 间隙 12 + 条厚 3）+ `AbMarkerLayerHeight = 64dp`（中线以上 32dp > 绘制包围盒 30dp，余量 2dp，`AbLoopMath.kt:108-144`）；标记组住在滑杆的**兄弟**画布 `AbMarkerLayer` 里且**已绘制**（挂载 `PlayerTransportControls.kt:543-551`、画布 `:982-1133`） |
 | U8 | **不做** demo 的"真实位置刻度 / 横向虚线帽" | 保持现状：夸大只用"最小宽度 `28dp` + 合并块 + 上下沿虚线"（`1e4bf51`） |
-| U9 | **只取两档透明度**（仅 A `28%` / 设全 `100%`），**不引入**编辑态的"整组 50% 休眠" | `AbRangeInactiveAlpha`（`AbLoopMath.kt:394-405`）；与 `AbRangeOutsideAlpha = 0.55` 语义分开（§2.3） |
-| U10 | **画**播放头幽灵竖线 | 常量（`AbRangeGhostHeadWidth = 1.5dp` / `AbRangeGhostHeadAlpha = 0.55`）与几何（`headCenterXPx`）已落地；**绘制未接线**（见 §9.2） |
+| U9 | **只取两档透明度**（仅 A `28%` / 设全 `100%`），**不引入**编辑态的"整组 50% 休眠" | `AbRangeInactiveAlpha`（`AbLoopMath.kt:429-441`，绘制 `PlayerTransportControls.kt:1038-1045`）；与 `AbRangeOutsideAlpha = 0.55` 语义分开（§2.3） |
+| U10 | **画**播放头幽灵竖线 | **已落地（`22ed984`）**：常量（`AbRangeGhostHeadWidth = 1.5dp` / `AbRangeGhostHeadAlpha = 0.55`，`AbLoopMath.kt:443-459`）+ 几何（`headCenterXPx`，`:593-617`）+ **绘制**（`PlayerTransportControls.kt:1047-1056`）三者齐了 |
 
-### 9.2 落地状态（提交 `1e4bf51`；逐条可在代码核对）
+### 9.2 落地状态（截至提交 `22ed984`；`1e4bf51` 的"只有常量与判定"已由 `22ed984` 接线，逐条可在代码核对）
 
-- **已落地**：常量与几何判定（区间条 `3dp`、仅 A `28%` 且按 `min(aX, gX)` 随播放头延展、预判条最小宽度、幽灵竖线位置、标记组 `33dp`、标记层 `64dp`、`abMarkerLayout`）、读数条四态文案与可点数值、区间外压暗（`0.55` / 下限 `0.30` / `DstOut` 只覆盖区间外 / 跟随渲染后的区间）、夸大（`28dp` + 合并块 + 虚线）、域层 B 侧规则与 A 侧互换/拒绝、胶囊按钮竖直居中、真横屏隐藏中央三连。
-- **只有常量 / 判定，绘制未接线**：**区间条**、**播放头幽灵竖线**、**`64dp` 独立标记层**、**轨道上的端点热区**。证据：`AbRangeInactiveAlpha` / `AbRangeGhostHeadAlpha` / `AbRangeGhostHeadWidth` / `AbMarkerLayerHeight` / `abMarkerLayout` / `abRangeBarMinWidthPx` / `PlayerTestTags.AB_MARKER_LAYER` 在 `app/src/main` 内**除 `AbLoopMath.kt` 自身外无引用**；当前绘制只有"区间外压暗 + 夸大虚线 + 徽标/合并块"（`PlayerTransportControls.kt:837-967`）。→ 这与 `1e4bf51` 提交信息"区间条…另画播放头幽灵竖线"的表述**不一致，以代码为准**（已登记进 `docs/19` 的当前缺口）。
-- **目标未达成（据实保留的偏离）**：§6-I1 的"读数条搬到**胶囊首行**"**未做** —— 读数条仍在**进度区第二行**（理由写在 `PlayerTransportControls.kt:546-554`：按"胶囊首行"布局时 `AB_CAPSULE` 的节点几何被夹成读数条那一行的高度、四枚 48dp 圆钮溢出胶囊；按内容撑开胶囊又会破坏"与截图胶囊同一竖直带"）；文案、字号、点击目标均已按新口径实现。
-- **instrumented 未跑**：本批因**设备断开**只执行了不需要设备的门禁，待设备恢复后补跑受影响的类（命令、范围与缺口见 `docs/19`）。
+- **已落地（绘制 / 手势 / 文案 / 域层）**：**区间条**（`3dp`、完整 `100%` / 仅 A `28%` 且按 `min(aX, gX)` 随播放头延展、预判条最小宽度）、**播放头幽灵竖线**（`1.5dp` / `0.55`）、**`64dp` 独立标记层**（`AbMarkerLayer`，滑杆的**兄弟**节点、`requiredHeight`）、**轨道上的端点热区**（`AB_MARKER_POINT_A/B`，点按 = 跳端点）、竖线 + 徽标 / 合并块 / 夸大虚线、区间外压暗（`0.55` / 下限 `0.30` / `DstOut` **只覆盖区间外** / 跟随渲染后的区间）、读数条四态文案与可点数值、域层 B 侧规则与 A 侧互换/拒绝、胶囊按钮竖直居中、真横屏隐藏中央三连。落点：几何 `PlayerTransportControls.kt:510-531`、标记层挂载 `:543-551`、压暗挂载 `:579-583`、端点热区挂载 `:588-599`、压暗层 `:918-945`、标记组绘制 `:997-1132`、端点热区 `:1154-1220`；竖直几何唯一入口 `AbLoopMath.kt:372-417`。
+- **不再存在的缺口（`1e4bf51` 的表述已作废，以代码为准）**："区间条 / 播放头幽灵竖线 / `64dp` 标记层 / 轨道上的端点热区只有常量与判定、绘制未接线"、"`PlayerTestTags.AB_MARKER_LAYER` 仅定义未挂载"。现状：`AB_MARKER_LAYER` **已挂载**，而 `AB_RANGE` 现在**只是压暗层**（标记组住在 `AB_MARKER_LAYER` 这个兄弟节点里）。
+- **仍然偏离（据实保留，但理由已换成算式）**：§6-I1 的"读数条搬到**胶囊首行**"**未做** —— 读数条仍在**进度区第二行**（判据 = "AB 工具打开"，因此未设置态也显示引导文案）。算式：胶囊 `64dp` 内已住一排 `48dp` 圆钮 ⇒ 只剩 `16dp`；读数行高 `= max(AbValueTapTargetHeight 20dp, abReadoutBandHeight)`（`AbLoopControls.kt:360`）⇒ **1× 字号 `48 + 20 = 68 > 64`**、**2× 系统字号 `48 + 32.2 = 80.2 > 64`** ⇒ **放不下**（不再使用"节点几何被夹成 20dp"这类结果描述）。要搬必须先裁决"**AB 胶囊允许比截图胶囊高**"（并重算 `PlayerScreenshotCapsuleHeight` / `PlayerAuxiliaryBandHeight`）或下调 `32 × 20dp` 热区 / 行高天条 —— 属 docs 级口径。文案、字号、点击目标均已按新口径实现。
+- **instrumented 已跑（`22ed984`）**：受影响的 4 个类 **31/31**（`PlayerAbLoopScreenTest` 8 / `PlayerScreenStateTest` 16 / `PlayerAbLoopCapsuleCommandTest` 5 / `PlayerAbLoopExclusionTest` 2），相关 JVM 6 类 **81/81**，`lintDebug` **0 issue**，编译**零警告**；三条原失败用例的最终状态（两条改为**逐子节点有序断言**、一条是辅助带被夹的**根因修复**）与**构建陷阱**（验证前必须先删 `built_in_kotlinc` / `runtime_app_classes_jar`，`--rerun-tasks` 挡不住缓存还原）见 `docs/19` 末节「A-B 循环：绘制接线补齐与两个布局根因」。
 
 ### 9.3 两处有意偏离 demo（其余冲突见 §1.2 与 §2.3）
 

@@ -204,18 +204,19 @@ internal fun abReadoutSegments(
  *    足够回答"是不是我要的那一段"；反过来说，`00:05` 与端点读数（也是 `mm:ss`）看起来是同一类
  *    东西，用户还得自己做一次减法才知道区间多长。
  *  · **≥ 60s**：直接交给 [formatDuration]，也就是**与 A/B 两个端点、进度行两端同一份**格式化，
- *    例如 1800s → `30:00`。为什么不再用一位小数秒：95 分钟影片上的 30 分钟区间会显示成
- *    `1800.0s`，读起来像出错；改成同源格式之后，用户可以直接对着看"从 10:00 到 40:00"。
+ *    例如 1800s → `30:00`、5400s → `01:30:00`。为什么不再用一位小数秒：95 分钟影片上的 30 分钟区间
+ *    会显示成 `1800.0s`，读起来像出错；改成同源格式之后，用户可以直接对着看"从 10:00 到 40:00"。
  *
  * **边界（明确并有测试钉住）**：`>= 60_000ms` 走第二档 —— 正好 60s 显示 `01:00`；
  * 59_999ms 仍走第一档（它四舍五入后是 `60.0s`）。
  *
- * 关于 `h:mm:ss`：**这里不另写一套小时格式**。一小时以上的区间照样输出 `mm:ss`
- *（3600s → `60:00`），因为 [formatDuration] 就是这么做的，而进度行左端的影片总时长
- *（95 分钟的片子显示 `95:00`）走的也正是它 —— 同一行里区间写 `1:35:00`、端点写 `95:00`
- * 才是真正的不一致。要改成 `h:mm:ss`，必须先改 [formatDuration] 本身（那会同时改掉端点读数）。
+ * 关于 `hh:mm:ss`：**这里不另写一套小时格式**。一小时以上的区间照样交给 [formatDuration]，
+ * 而本批起 [formatDuration] 自己就是"≥ 1 小时进位到 `hh:mm:ss`、小时补零"（95 分钟 → `01:35:00`）。
+ * 于是同一个进度行里的区间与两个端点**逐字符同源**；旧实现两处都不进位（区间 `60:00`、端点 `95:00`），
+ * 量级一大就都要靠心算，而且"分钟位超过 59"本身也不是 `mm:ss` 的语义。
+ * 要再改档位，只允许改 [formatDuration] 一处（那会同时改掉端点读数，这正是我们要的）。
  *
- * 纯函数（不依赖资源）：`s` 是国际单位符号，`mm:ss` 只是数字与冒号，都不需要本地化。
+ * 纯函数（不依赖资源）：`s` 是国际单位符号，`mm:ss` / `hh:mm:ss` 只是数字与冒号，都不需要本地化。
  */
 internal fun formatAbIntervalDuration(intervalMillis: Long): String =
     if (intervalMillis >= AbIntervalDurationSecondsFormatThresholdMillis) {
@@ -236,10 +237,10 @@ internal fun formatAbIntervalDuration(intervalMillis: Long): String =
 internal const val AbIntervalDurationSecondsFormatThresholdMillis = 60_000L
 
 /**
- * A/B 时间读数：`mm:ss`，与进度行的时间文本**同一格式**（[formatDuration]）。
+ * A/B 时间读数：与进度行的时间文本**同一格式**（[formatDuration]：不足 1 小时 `mm:ss`，
+ * 1 小时起 `hh:mm:ss`）。
  *
  * 旧胶囊用的是 `m:ss`（`0:12`），与进度条上的 `00:12` 不一致 —— 同一段视频的同一个时间点
- * 在两处显示成两个样子，用户会怀疑自己设错了点。这里统一到进度条的格式（含小时会进位到分钟，
- * 与 `formatDuration` 的行为一致）。
+ * 在两处显示成两个样子，用户会怀疑自己设错了点。这里统一到进度条的格式。
  */
 internal fun formatAbTime(valueMillis: Long): String = formatDuration(valueMillis)

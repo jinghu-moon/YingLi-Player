@@ -97,7 +97,10 @@ internal fun PlayerGestureHudOverlay(
             )
             is PlayerGestureHud.Seek -> HudPill(
                 icon = YingLiIcon.SEEK_FORWARD,
-                label = "${formatGestureDuration(current.positionMillis)} / ${formatGestureDuration(current.durationMillis)}",
+                // 与进度行**同一份**格式化（`formatDuration`）：手势拖动时显示的目标时刻必须与
+                // 松手后进度条上那个时刻逐字符一致，否则同一段视频的同一个时间点会出现两个样子。
+                // `null`（时长未知）两边都显示 `--:--`。
+                label = "${formatDuration(current.positionMillis)} / ${formatDuration(current.durationMillis)}",
                 progress = current.durationMillis
                     ?.takeIf { it > 0 }
                     ?.let { (current.positionMillis.toFloat() / it).coerceIn(0f, 1f) },
@@ -249,9 +252,3 @@ private fun HudPill(
 }
 
 private fun percentLabel(fraction: Float): String = "${(fraction.coerceIn(0f, 1f) * 100).toInt()}%"
-
-private fun formatGestureDuration(millis: Long?): String {
-    if (millis == null || millis < 0) return "--:--"
-    val totalSeconds = millis / 1_000
-    return "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
-}

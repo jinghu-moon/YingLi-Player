@@ -10,6 +10,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -45,8 +46,13 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.vector.VectorPainter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -65,6 +71,7 @@ import seeyuer.yingli.player.core.designsystem.component.YingLiSlider
 import seeyuer.yingli.player.core.designsystem.component.YingLiSliderDefaults
 import seeyuer.yingli.player.core.designsystem.component.YingLiSliderThumbRadius
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
+import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.playback.PlaybackState
 import seeyuer.yingli.player.domain.playback.PlaybackSpeed
@@ -484,116 +491,15 @@ internal fun BottomPlaybackControls(
                     modifier = Modifier.widthIn(min = PlayerTimeLabelMinWidth),
                 )
                 Box(Modifier.weight(1f)) {
-                    if (duration != null && duration > 0 && abStart != null) {
-                        val markerColor = YingLiTheme.colors.selectionStructural
-                        // 合并标记中间那道缝的颜色与滑杆轨道同色（"空"），**在 Canvas 之外**取：
-                        // `YingLiTheme.player` 是 @Composable 属性，绘制作用域里读不到。
-                        val trackColor = YingLiTheme.player.track
-                        // A–B 区间高亮 + 两端标记：画在**进度条自己那一行**上（不是另起一行）。
-                        //
-                        // 几何走 `AbLoopMath.abRangeGeometry`（纯函数，有 JVM 单测）：这里只把
-                        // 需要的几个数字过一遍密度，**不在这里做任何判定**（最小宽度、中心锚定、
-                        // 越界夹取、是否合并、是否被夸大，全部由那个函数回答）。
-                        //
-                        // 左右内边距 = 滑杆圆钮半径：滑杆的轨道在它自己的坐标系里是
-                        // `[thumbRadius, width - thumbRadius]`（见 YingLiSlider 的绘制与
-                        // sliderTrackSpanPx），所以叠在同一行上的区间必须被夹进**同一段**轨道，
-                        // 否则端点会与圆钮错位（旧实现写死 10dp，与 7dp 的圆钮差 3dp）。
-                        Canvas(
-                            Modifier.matchParentSize()
-                                .padding(horizontal = YingLiSliderThumbRadius)
-                                .testTag(PlayerTestTags.AB_RANGE),
-                        ) {
-                            val markerRadiusPx = with(density) { AbMarkerRadius.toPx() }
-                            val geometry = abRangeGeometry(
-                                trackWidthPx = size.width,
-                                fractionStart = abStart.toFloat() / duration,
-                                fractionEnd = (abEnd ?: abStart).toFloat() / duration,
-                                minWidthPx = with(density) { MIN_AB_RANGE_WIDTH.toPx() },
-                                mergeThresholdPx = with(density) { AbMarkerMergeThreshold.toPx() },
-                                markerCenterYPx = size.height / 2f,
-                            )
-                            if (geometry.valid) {
-                                val bandHeight = with(density) { AbRangeBandHeight.toPx() }
-                                val cornerRadius = with(density) { AbRangeCornerRadius.toPx() }
-                                val bandTop = geometry.markerCenterYPx - bandHeight / 2f
-                                val bandSize = Size(geometry.visualWidthPx, bandHeight)
-                                val bandTopLeft = Offset(geometry.startPx, bandTop)
-                                // 区间色块：只设了 A 时不画（"只有标记、不循环"，与 §5.11 一致）。
-                                if (abEnd != null) {
-                                    drawRoundRect(
-                                        color = markerColor.copy(alpha = AbRangeFillAlpha),
-                                        topLeft = bandTopLeft,
-                                        size = bandSize,
-                                        cornerRadius = CornerRadius(cornerRadius, cornerRadius),
-                                    )
-                                    // **夸大必须可辨识**：画出来的宽度不等于真实宽度时，色块上下沿
-                                    // 改走虚线（实线 = 真实长度，虚线 = 为了看得见而放大过）。
-                                    // 为什么用虚线而不是换颜色/降透明度：颜色与透明度在这个项目里
-                                    // 已经各自有语义（强调色=生效、alpha=层级），再借用它们会让
-                                    // "这段被夸大"变成读不出来的第二含义；虚线是"非精确"的既有约定。
-                                    if (geometry.exaggerated) {
-                                        val stroke = with(density) { AbRangeDashStrokeWidth.toPx() }
-                                        val dash = with(density) { AbRangeDashLength.toPx() }
-                                        val inset = stroke / 2f
-                                        val effect = PathEffect.dashPathEffect(floatArrayOf(dash, dash))
-                                        listOf(bandTop + inset, bandTop + bandHeight - inset).forEach { y ->
-                                            drawLine(
-                                                color = markerColor,
-                                                start = Offset(geometry.startPx, y),
-                                                end = Offset(geometry.endPx, y),
-                                                strokeWidth = stroke,
-                                                pathEffect = effect,
-                                            )
-                                        }
-                                    }
-                                }
-                                if (geometry.merged && abEnd != null) {
-                                    // 合并标记：两枚标记太近（< AbMarkerMergeThreshold）时**不画两个圆**
-                                    // ——两个圆会糊成一个点，读不出"这里有个区间"。
-                                    // 改画**一枚小圆角块**（宽度容得下两枚标记并排：2 × 标记直径）+
-                                    // 中间一道缝，读起来就是"两枚标记被并到一起"。
-                                    drawRoundRect(
-                                        color = markerColor,
-                                        topLeft = Offset(
-                                            geometry.startPx,
-                                            geometry.markerCenterYPx - markerRadiusPx,
-                                        ),
-                                        size = Size(geometry.visualWidthPx, markerRadiusPx * 2),
-                                        cornerRadius = CornerRadius(cornerRadius, cornerRadius),
-                                    )
-                                    val seamWidth = with(density) { AbMarkerSeamWidth.toPx() }
-                                    val seamX = geometry.markerCenterXPx
-                                    drawLine(
-                                        // 缝用轨道色（同一行里的"空"），不是画一条浅色线：
-                                        // 它是"两枚标记之间的空隙"，视觉上就是把合并块切开。
-                                        // 颜色必须在 Canvas 之外取好：`YingLiTheme.player` 是
-                                        // @Composable 属性，绘制作用域里读不到。
-                                        color = trackColor,
-                                        start = Offset(seamX, geometry.markerCenterYPx - markerRadiusPx),
-                                        end = Offset(seamX, geometry.markerCenterYPx + markerRadiusPx),
-                                        strokeWidth = seamWidth,
-                                    )
-                                } else {
-                                    // 未合并：两端各一枚圆点。A 与 B 至少隔了
-                                    // AbMarkerMergeThreshold，所以两枚圆点**看得清是两枚**
-                                    //（这正是"标记不重叠"那条验收的可见形式）。
-                                    drawCircle(
-                                        color = markerColor,
-                                        radius = markerRadiusPx,
-                                        center = Offset(geometry.startPx, geometry.markerCenterYPx),
-                                    )
-                                    if (abEnd != null) {
-                                        drawCircle(
-                                            color = markerColor,
-                                            radius = markerRadiusPx,
-                                            center = Offset(geometry.endPx, geometry.markerCenterYPx),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // A–B 区间层住在滑杆的**叠加槽**里（见 YingLiSlider 的 trackOverlay）：
+                    // 整行的层序由滑杆这一个控件给出 ——
+                    //   ① 轨道底 → ② 播放进度填充 → ③ AB 区间内外亮度 → ④ 端点徽标 → ⑤ 滑块。
+                    // 为什么必须这样排：**"已播放"与"区间内外"是两个互相独立的维度，落在同一批像素上**。
+                    // 亮度压暗只有发生在进度填充**之后**，"已播放 + 区间外"才等于"已播放 × 同一档压暗"，
+                    // 读起来仍然是"两档亮度（已播放 / 未播放）× 一个区间系数"；反过来（把区间层与滑杆
+                    // 并排放在滑杆**之前**、整层落在轨道之下）"已播放 + 区间外"会变成第三种亮度，
+                    // 用户读不懂它到底是区间还是播放进度。滑块放最后：它是"现在在哪"的唯一指示，
+                    // 任何时候都不允许被压暗或盖住。
                     YingLiSlider(
                         value = displayedPositionMillis.toFloat().coerceAtMost((duration ?: 1).toFloat()),
                         onValueChange = {
@@ -619,6 +525,12 @@ internal fun BottomPlaybackControls(
                             inactiveTrack = YingLiTheme.player.track,
                             thumb = YingLiTheme.player.controlPrimary,
                         ),
+                        // 只设了 A 时也要画那一枚徽标，所以条件是"有 A 且时长可用"，而不是"区间完整"。
+                        trackOverlay = if (abStart != null && duration != null && duration > 0) {
+                            { AbRangeOverlay(abStart = abStart, abEnd = abEnd, durationMillis = duration) }
+                        } else {
+                            null
+                        },
                     )
                 }
                 Text(
@@ -928,6 +840,183 @@ internal fun BottomPlaybackControls(
     }
 }
 
+
+/**
+ * 进度条上 A–B 区间的**绘制层**：由 [YingLiSlider] 的 `trackOverlay` 槽插在
+ * 「轨道底 + 播放进度填充」之后、「滑块」之前（层序为什么必须如此，见调用处）。
+ *
+ * ## 两端是**字母徽标**，不再是实心小圆
+ *
+ * 旧端点画的是两枚 `selectionStructural` 的小圆点，而那个颜色跟的是**应用**主题：浅色主题下它是
+ * 近黑（`#1F1F1F`），画在播放器自己的黑底 chrome 上几乎不可见 —— 用户看到的"黑色小圆"就是它。
+ * 现在两端各是一枚 [AbMarkerDiameter]（18dp）的圆角徽标：
+ *  · 底色取播放器 chrome 的**强调色** `YingLiTheme.player.controlPrimary`（与滑杆圆钮、已播放进度
+ *    **同一个颜色**）—— 端点是这一行的一种 chrome，而不是应用主题里的选区色；
+ *  · 里面用**图标字形**画 A / B（[YingLiIcon.LETTER_A] / [YingLiIcon.LETTER_B]），颜色取 chrome 的
+ *    底色（黑，`YingLiTheme.player.canvas`）：这是播放器里既有的"实心控件 + 反色内容"配对
+ *    （与 `colors.selectionOnStructural` 同一口径），在任意画面上对比度都最高，也不引入新颜色；
+ *  · 徽标直径的依据（字母墨高必须高于项目允许的最小文字）见 [AbMarkerDiameter]。
+ *
+ * 几何（最小可视宽度、中心锚定、越界夹取、是否合并、是否被夸大、徽标落点）**全部**由
+ * [abRangeGeometry] 回答，这里只把它的结果画出来，**不做任何判定**。
+ */
+@Composable
+private fun BoxScope.AbRangeOverlay(
+    abStart: Long,
+    abEnd: Long?,
+    durationMillis: Long,
+) {
+    // 要用的颜色必须在**组合上下文**里取好：`YingLiTheme.player` 是 @Composable 属性，
+    // 绘制作用域里读不到。
+    val badgeColor = YingLiTheme.player.controlPrimary
+    val letterColor = YingLiTheme.player.canvas
+    val seamColor = YingLiTheme.player.canvas
+    // 字母用**字形**而不是 Text：绘制作用域里没有字体测量，而字形本来就能按任意尺寸画。
+    // 两个 painter 在组合期取好（rememberVectorPainter 是 @Composable），再交给绘制 lambda。
+    val letterA = rememberVectorPainter(YingLiIcon.LETTER_A.imageVector)
+    val letterB = rememberVectorPainter(YingLiIcon.LETTER_B.imageVector)
+
+    Canvas(
+        Modifier
+            .matchParentSize()
+            .testTag(PlayerTestTags.AB_RANGE),
+    ) {
+        val thumbRadiusPx = YingLiSliderThumbRadius.toPx()
+        // 整行宽度里两端各让出一个圆钮半径才是滑杆自己的轨道（与 YingLiSlider 的绘制同一段几何），
+        // 所以本层画在**轨道坐标系**里：下面所有 x 都以轨道左端为 0。
+        val trackWidthPx = (size.width - thumbRadiusPx * 2f).coerceAtLeast(0f)
+        val geometry = abRangeGeometry(
+            trackWidthPx = trackWidthPx,
+            fractionStart = abStart.toFloat() / durationMillis,
+            fractionEnd = abEnd?.toFloat()?.div(durationMillis),
+            markerDiameterPx = AbMarkerDiameter.toPx(),
+            minMarkerGapPx = AbMarkerMinGap.toPx(),
+            markerCenterYPx = size.height / 2f,
+        )
+        if (!geometry.valid) return@Canvas
+
+        val radius = AbMarkerRadius.toPx()
+        val glyphSize = AbMarkerGlyphSize.toPx()
+        val badgeCorner = CornerRadius(AbMarkerCornerRadius.toPx())
+
+        // ── ③ 区间内外的亮度 ────────────────────────────────────────────────────────────────
+        // 用 `DstOut`（结果 = `dst × (1 − srcAlpha)`）：保留这批像素的**颜色**，只把它们的 alpha
+        // 按系数缩放，也就是"同色降 alpha"，而不是往上面叠一层黑 —— chrome 底本来就是黑的，
+        // 叠黑既看不出压暗，又会在轨道之外多压一层画面。
+        //
+        // 为什么必须是 `DstOut` + **只覆盖区间外**：
+        //  · `DstIn`（`dst × srcAlpha`）是**全表面**混合 —— 源没覆盖到的像素会被乘 0，整行会被擦掉；
+        //    "先整行压暗、再把区间内还原成 1.0"也不行，乘法不可逆，还原那一道只是再乘一次 1；
+        //  · `DstOut` 只影响**被覆盖的像素**，区间内没有被覆盖，因此原样保留 —— 这正是要的效果。
+        //  · 只设了 A 时**不压暗**：那还没有"区间"可言，整行压暗会被读成"进度条被禁用了"，
+        //    这一状态由 A 徽标自己表达。
+        if (geometry.complete) {
+            // 压暗的左右边界与徽标/虚线**同一份几何**（`abRangeGeometry` 的渲染区间），只是把
+            // 轨道坐标系平移到整行坐标系。**跟随渲染后的区间**（放大之后的 startPx/endPx），
+            // 不是真实边界：否则会出现"亮区按放大后的画、暗区按真实边界切"的错位。
+            val intervalLeft = thumbRadiusPx + geometry.startPx
+            val intervalRight = thumbRadiusPx + geometry.endPx
+            drawRect(
+                color = AbRangeDimSource,
+                topLeft = Offset(0f, 0f),
+                size = Size(intervalLeft, size.height),
+                blendMode = BlendMode.DstOut,
+            )
+            drawRect(
+                color = AbRangeDimSource,
+                topLeft = Offset(intervalRight, 0f),
+                size = Size((size.width - intervalRight).coerceAtLeast(0f), size.height),
+                blendMode = BlendMode.DstOut,
+            )
+        }
+
+        // ── ④ 端点徽标（轨道坐标系；整行坐标系向左平移一个圆钮半径就是它）──────────────────
+        translate(left = thumbRadiusPx) {
+            val centerY = geometry.markerCenterYPx
+
+            fun drawBadge(centerX: Float) {
+                drawRoundRect(
+                    color = badgeColor,
+                    topLeft = Offset(centerX - radius, centerY - radius),
+                    size = Size(radius * 2f, radius * 2f),
+                    cornerRadius = badgeCorner,
+                )
+            }
+
+            fun drawLetter(painter: VectorPainter, centerX: Float) {
+                translate(left = centerX - glyphSize / 2f, top = centerY - glyphSize / 2f) {
+                    with(painter) {
+                        draw(size = Size(glyphSize, glyphSize), colorFilter = ColorFilter.tint(letterColor))
+                    }
+                }
+            }
+
+            // 夸大必须可辨识：画出来的宽度不等于真实宽度时，区间上下沿走虚线（实线 = 真实长度）。
+            // 区间色块取消之后，这条虚线是"为了看得见而放大过"的**唯一**视觉落点，所以必须保留。
+            if (geometry.complete && geometry.exaggerated) {
+                val stroke = AbRangeDashStrokeWidth.toPx()
+                val dash = AbRangeDashLength.toPx()
+                val bandHeight = AbRangeBandHeight.toPx()
+                val bandTop = centerY - bandHeight / 2f
+                val inset = stroke / 2f
+                val effect = PathEffect.dashPathEffect(floatArrayOf(dash, dash))
+                listOf(bandTop + inset, bandTop + bandHeight - inset).forEach { y ->
+                    drawLine(
+                        color = badgeColor,
+                        start = Offset(geometry.startPx, y),
+                        end = Offset(geometry.endPx, y),
+                        strokeWidth = stroke,
+                        pathEffect = effect,
+                    )
+                }
+            }
+
+            if (geometry.merged) {
+                // 合并块：**一枚**宽度 = 最小可视宽度（= 合并阈值 = 直径 + 最小间距）的圆角块，
+                // 中间一道 1dp 缝把它读成"A 与 B 被并到一起"。
+                // 两半各放**完整**的字母，而不是各放半个：每半正好是一个字形框的宽度，字形框放得下；
+                // 半个字母（每半只剩约 3.5dp 墨宽）根本认不出，而只画一道缝的空白块连"哪一端是哪一端"
+                // 都回答不了。块的宽度由徽标尺寸与最小间距推导，不是另拍的一个数。
+                drawRoundRect(
+                    color = badgeColor,
+                    topLeft = Offset(geometry.startPx, centerY - radius),
+                    size = Size(geometry.visualWidthPx, radius * 2f),
+                    cornerRadius = badgeCorner,
+                )
+                drawLine(
+                    // 缝是两枚徽标之间的"空"。徽标本体是**实心强调色**，所以这里的"空"只能取**反色**
+                    //（与字母同一支墨，[letterColor]）：旧实现用轨道色（半透明白）画在这块实心白上，
+                    // 半透明白叠白 = 白，**实测完全看不见**（`.tmp-abloop-badges/12-merged-5s.png`
+                    // 的逐像素取证）。画成反色之后，合并块才真的读成"两枚徽标被并到一起"。
+                    color = seamColor,
+                    start = Offset(geometry.centerXPx, centerY - radius),
+                    end = Offset(geometry.centerXPx, centerY + radius),
+                    strokeWidth = AbMarkerSeamWidth.toPx(),
+                )
+                drawLetter(letterA, geometry.aMarkerCenterXPx)
+                drawLetter(letterB, geometry.bMarkerCenterXPx)
+            } else {
+                // 未合并：两端各一枚徽标（只设了 A 时只有 A 那一枚）。
+                drawBadge(geometry.aMarkerCenterXPx)
+                drawLetter(letterA, geometry.aMarkerCenterXPx)
+                if (geometry.complete) {
+                    drawBadge(geometry.bMarkerCenterXPx)
+                    drawLetter(letterB, geometry.bMarkerCenterXPx)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * ③ 压暗用的 `DstOut` 源：混合结果是 `dst × (1 − srcAlpha)`，所以源的 alpha 取
+ * `1 − [AbRangeOutsideAlpha]`（区间外留在 0.55）。遮罩本身的颜色不参与混合（只有 alpha 参与），
+ * 黑色只是"没有颜色"的中性选择。
+ *
+ * 它只在本行被 [YingLiSlider] 隔离出来的离屏层里生效（见 `trackOverlay` 的参数文档）：
+ * 没有那层隔离，`DstOut` 会把这条轨道**下面的画面**也一起"打薄"。
+ */
+private val AbRangeDimSource = Color.Black.copy(alpha = 1f - AbRangeOutsideAlpha)
 /**
  * 底栏辅助带那一格里当前该渲染哪一枚工具胶囊。
  *
@@ -1181,14 +1270,31 @@ internal fun videoScaleModeIcon(mode: VideoScaleMode): YingLiIcon = when (mode) 
 }
 
 /**
- * 播放页各处时间读数的**唯一格式**（进度行两端、AB 区间读数行、AB 胶囊的设置点按钮）。
+ * 播放页各处时间读数的**唯一格式**（进度行两端、AB 区间读数行、手势 HUD）。
  *
- * `internal` 而不是 `private`：AB 胶囊必须显示与进度条**完全一样**的时间字符串，
- * 两处各写一份格式化就会漂移（旧胶囊用的是 `m:ss`，与进度条的 `mm:ss` 并排出现时像两个时间点）。
- * 超过一小时不进位成 `hh:mm:ss`，与进度条既有行为一致。
+ * **两档**（本批定稿）：
+ *  · **不足 1 小时**：`mm:ss`（`00:12` / `59:59`）—— 秒级媒体上多出来的 `00:` 只是噪声；
+ *  · **≥ 1 小时**：`hh:mm:ss`，小时**补零**（95 分钟 → `01:35:00`）。
+ *    旧实现超过一小时**不进位**（95 分钟显示 `95:00`）：那既不是 `mm:ss` 的语义（分钟位超过 59），
+ *    也让"这片子多长"要多做一次心算 —— 用户明确要求按 `01:35:00` 显示。
+ *
+ * 它是**同源**的唯一实现：端点读数（[formatAbTime]）、区间时长（[formatAbIntervalDuration]）、
+ * 手势 HUD、短视频页都调它，所以这一处改动在那些地方一起生效，不会出现"同一段视频的同一个时刻
+ * 在两处显示成两个样子"。
+ *
+ * `internal` 而不是 `private`：AB 读数与手势 HUD 必须显示与进度条**完全一样**的时间字符串。
+ * `null`（时长未知）统一显示 `--:--`。
  */
 internal fun formatDuration(durationMillis: Long?): String {
     if (durationMillis == null) return "--:--"
     val totalSeconds = durationMillis.coerceAtLeast(0) / 1_000
-    return "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+    val hours = totalSeconds / 3_600
+    val minutes = (totalSeconds % 3_600) / 60
+    val seconds = totalSeconds % 60
+    // 小时补零：`01:35:00`。三档之间的**唯一**判据是"有没有小时"，与进度行的时间文本同源。
+    return if (hours > 0) {
+        "%02d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%02d:%02d".format(minutes, seconds)
+    }
 }

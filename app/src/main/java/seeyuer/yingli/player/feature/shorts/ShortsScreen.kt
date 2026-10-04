@@ -44,6 +44,7 @@ import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.core.model.media.MediaItemId
+import seeyuer.yingli.player.feature.player.formatDuration
 import seeyuer.yingli.player.feature.player.frameRateLabel
 
 object ShortsTestTags {
@@ -415,10 +416,14 @@ private fun ShortsRailAction(
     }
 }
 
-private fun formatShortsTime(millis: Long?): String {
-    val totalSeconds = (millis ?: 0L).coerceAtLeast(0L) / 1_000L
-    return "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
-}
+/**
+ * 短视频页的时间读数：**就是**播放页那一份格式化（[formatDuration]，不足 1 小时 `mm:ss`、
+ * 1 小时起 `hh:mm:ss`）。
+ *
+ * 旧实现在这里另写了一遍 `%02d:%02d`：同一个影片在短视频页与播放页会显示成两个样子
+ * （95 分钟在这里是 `95:00`、在播放页是 `01:35:00`）。时长未知时与进度行一致显示 `--:--`。
+ */
+private fun formatShortsTime(millis: Long?): String = formatDuration(millis)
 
 @Composable
 private fun ShortsSheetSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {

@@ -248,8 +248,8 @@ class PlayerAbLoopScreenTest {
      * 真实宽度只有 0.09% —— 1000px 轨道上不到 1px，旧实现画出来必然是两个点糊在一起。
      * 断言三件事，缺一不可：
      *  1. **区间可见**：渲染宽度 ≥ [MIN_AB_RANGE_WIDTH]（而不是真实的那个亚像素宽度）；
-     *  2. **标记不重叠**：两端按 [AbMarkerMergeThreshold] 判定为**合并**（画一枚合并块），
-     *     而不是画两个会互相盖住的圆点；作为对照，正常区间必须判为**不合并**；
+     *  2. **标记不重叠**：两端按 [AbMarkerMergeThreshold] 判定为**合并**（画一枚合并块，
+     *     块里两半各放一个字形框），而不是画两枚会互相盖住的徽标；作为对照，正常区间必须判为**不合并**；
      *  3. **读数行给出真实数值**：`5.0s` 与循环计数照样显示 —— 渲染长度不再代表真实长度之后，
      *     真实长度只能靠文字表达。
      */
@@ -282,36 +282,42 @@ class PlayerAbLoopScreenTest {
             trackWidthPx = track,
             fractionStart = start.toFloat() / duration,
             fractionEnd = end.toFloat() / duration,
-            minWidthPx = with(composeRule.density) { MIN_AB_RANGE_WIDTH.toPx() },
-            mergeThresholdPx = with(composeRule.density) { AbMarkerMergeThreshold.toPx() },
+            markerDiameterPx = with(composeRule.density) { AbMarkerDiameter.toPx() },
+            minMarkerGapPx = with(composeRule.density) { AbMarkerMinGap.toPx() },
             markerCenterYPx = 0f,
         )
         assertTrue("区间必须可见（渲染宽度 ≥ 最小可视宽度）", geometry.visualWidthPx >= with(composeRule.density) { MIN_AB_RANGE_WIDTH.toPx() })
         assertTrue("95 分钟 / 5 秒：真实宽度必须远小于最小可视宽度", geometry.realWidthPx < geometry.visualWidthPx)
         assertTrue("被放大的区间必须走可辨识的视觉区分（虚线边）", geometry.exaggerated)
         assertTrue("两端标记太近 → 必须合并成一枚标记，而不是画两个会互相盖住的圆", geometry.merged)
+        // 合并块的两半各放一个字形框：字形中心落在整块的 1/4 与 3/4 处（半块的中间）。
+        assertEquals(geometry.startPx + geometry.visualWidthPx / 4f, geometry.aMarkerCenterXPx, 0.5f)
+        assertEquals(geometry.endPx - geometry.visualWidthPx / 4f, geometry.bMarkerCenterXPx, 0.5f)
 
-        // 对照：同一部影片上换一段**正常区间**（10 分钟），必须走真实宽度、且不合并。
-        // 时长读数走"≥60s"那一档：与两端同源的 `mm:ss`（10 分钟 = `10:00`），不是 `600.0s`。
+        // 对照：同一部影片上换一段**正常区间**（10:00 → 40:00，30 分钟），必须走真实宽度、且不合并。
+        // 这里刻意取一段**远离最小可视宽度**的区间（30 分钟 = 轨道宽的 31.6%，最小可视宽度只有
+        // 28dp ≈ 轨道的 10%）：档位紧贴阈值时这条会变成"阈值本身"的脆弱断言，而阈值的精确两侧
+        // 由 `AbLoopMathTest` 在像素域逐像素钉住。
+        // 时长读数走"≥60s"那一档：与两端同源的 `mm:ss`（30 分钟 = `30:00`），不是 `1800.0s`。
         val normalStart = 600_000L
-        val normalEnd = normalStart + 600_000L
+        val normalEnd = normalStart + 1_800_000L
         session = AbLoopSession(state = AbLoopState(pointA = normalStart, pointB = normalEnd), loopCount = 7)
         composeRule.waitForIdle()
         composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-            .assertTextEquals("A 10:00 → B 20:00 · 10:00 · 循环 ×7")
+            .assertTextEquals("A 10:00 → B 40:00 · 30:00 · 循环 ×7")
         val normal = abRangeGeometry(
             trackWidthPx = track,
             fractionStart = normalStart.toFloat() / duration,
             fractionEnd = normalEnd.toFloat() / duration,
-            minWidthPx = with(composeRule.density) { MIN_AB_RANGE_WIDTH.toPx() },
-            mergeThresholdPx = with(composeRule.density) { AbMarkerMergeThreshold.toPx() },
+            markerDiameterPx = with(composeRule.density) { AbMarkerDiameter.toPx() },
+            minMarkerGapPx = with(composeRule.density) { AbMarkerMinGap.toPx() },
             markerCenterYPx = 0f,
         )
         assertTrue("正常区间不允许被夸大", !normal.exaggerated)
-        assertTrue("正常区间必须画成两枚分离的圆点", !normal.merged)
+        assertTrue("正常区间必须画成两枚分离的徽标", !normal.merged)
         assertEquals(
-            "正常区间必须走真实宽度（10 分钟 / 95 分钟 = 轨道宽的 10.5%）",
-            track * 600_000f / duration,
+            "正常区间必须走真实宽度（30 分钟 / 95 分钟 = 轨道宽的 31.6%）",
+            track * 1_800_000f / duration,
             normal.visualWidthPx,
             0.5f,
         )
@@ -332,7 +338,13 @@ class PlayerAbLoopScreenTest {
         composeRule.setContent {
             val density = LocalDensity.current
             // 用 Density 直接给出 fontScale：这就是"系统字号放大"，比改系统设置更可控。
-            CompositionLocalProvider(LocalDensity provides Density(density.density, config.fontScale)) {
+            // `config.density` 只在需要**真的**放下一个比屏幕还宽的档位时才覆盖（见"横屏"那一档）。
+            CompositionLocalProvider(
+                LocalDensity provides Density(
+                    density = config.density ?: density.density,
+                    fontScale = config.fontScale,
+                ),
+            ) {
                 Box(Modifier.size(config.width, config.height)) {
                     YingLiTheme(darkTheme = true) {
                         PlayerScreen(
@@ -352,7 +364,11 @@ class PlayerAbLoopScreenTest {
 
         listOf(
             ScreenConfig(320.dp, 640.dp, 1f, "窄屏竖屏"),
-            ScreenConfig(800.dp, 400.dp, 1f, "横屏"),
+            // **真横屏 800 × 400dp**：必须同时把 density 降到 1，否则 `size(800.dp, ...)` 会被测试根的
+            // 实际约束夹成屏幕宽度（400dp）→ 得到 400 × 400，`landscape = maxWidth > maxHeight` 为 false，
+            // 于是这一档跑的是**竖屏**布局，"横屏"从未被真正测到。设备 1200 × 2608px @480dpi（400 × 869dp），
+            // density = 1 时 800 × 400dp 恰好放得下并且留有余量（800 < 1200、400 < 2608）。
+            ScreenConfig(800.dp, 400.dp, 1f, "横屏", density = 1f),
             ScreenConfig(360.dp, 720.dp, 2f, "系统字号 2 倍"),
             ScreenConfig(320.dp, 640.dp, 2f, "窄屏 + 字号 2 倍"),
         ).forEach { next ->
@@ -363,6 +379,16 @@ class PlayerAbLoopScreenTest {
     }
 
     private fun assertAbCapsuleFits(config: ScreenConfig) {
+        // 先确认这一档**真的是**横屏 / 竖屏：档位名说"横屏"、跑的却是竖屏，是这一档此前的真实缺陷
+        //（根约束把 800 × 400dp 夹成了 400 × 400dp）。判据就是 PlayerScreen 自己的
+        // `landscape = maxWidth > maxHeight`，两个 testTag 二选一。
+        if (config.width > config.height) {
+            composeRule.onNodeWithTag(PlayerTestTags.LANDSCAPE_CONTROLS).assertDisplayedSettled("${config.name}: 横屏底栏")
+            composeRule.onAllNodesWithTag(PlayerTestTags.PORTRAIT_CONTROLS).assertCountEquals(0)
+        } else {
+            composeRule.onNodeWithTag(PlayerTestTags.PORTRAIT_CONTROLS).assertDisplayedSettled("${config.name}: 竖屏底栏")
+            composeRule.onAllNodesWithTag(PlayerTestTags.LANDSCAPE_CONTROLS).assertCountEquals(0)
+        }
         val capsule = composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE)
         val capsuleSample = settler.bounds(capsule) { "${config.name}: 胶囊" }
         assertTrue("${config.name}: 胶囊不在场：${capsuleSample.describe}", capsuleSample.displayed)
@@ -476,6 +502,18 @@ class PlayerAbLoopScreenTest {
         val height: Dp,
         val fontScale: Float,
         val name: String,
+        /**
+         * 覆盖测试用的 density（`null` = 沿用设备密度）。
+         *
+         * 只有"真横屏 800 × 400dp"这一档需要它：测试根的宽度上限就是屏幕宽度（400dp @480dpi），
+         * `size(800.dp)` 会被夹成 400dp。降低 density 让同一块屏幕能放下更多 dp，档位才真的成立。
+         *
+         * **副作用（如实记录）**：设备真实的安全区是 px，density 降到 1 之后状态栏/导航栏的 px 会被
+         * 当成 dp（400dp 高的档位只剩 ~160dp 可用），纵向几行会互相重叠 —— 这一档因此测的是
+         * **横向几何**（胶囊与读数在 800dp 带宽下完整、按钮仍是 48dp 正圆），纵向观感以
+         * `.tmp-abloop-badges/04-landscape-800x400.png` 的取证为准。
+         */
+        val density: Float? = null,
     )
 
     private enum class SlotMode { SCREENSHOT, AB_LOOP, SCREENSHOT_CAPSULE_CLOSED }

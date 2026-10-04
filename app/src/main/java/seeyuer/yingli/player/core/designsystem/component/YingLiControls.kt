@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -59,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -400,6 +402,27 @@ fun YingLiSlider(
     trackHeight: Dp = YingLiSliderTrackHeight,
     thumbRadius: Dp = YingLiSliderThumbRadius,
     colors: YingLiSliderColors = YingLiSliderDefaults.colors(),
+    /**
+     * 插在**「轨道底 + 播放进度填充」之后、「滑块」之前**的一层（可空）。
+     *
+     * ## 为什么层序必须由这里给
+     *
+     * 播放页的 A–B 区间层要画在这条轨道上，而它的"区间外压暗"必须落在**轨道与已播放进度之上**
+     * （否则压暗的是轨道下面的画面，等于没做），同时**不允许**盖住滑块（"现在播到哪"任何时候都要
+     * 最亮）。三者的先后是这一个控件自己的事实，所以整行的层序只能在这里决定；调用方在外面叠一个
+     * `Canvas` 只会落在整条轨道**之下**。
+     *
+     * ## 隔离成离屏层
+     *
+     * 插了这一层时，整行会被隔离成一个离屏层（[CompositingStrategy.Offscreen]）：叠加层做
+     * "同色降 alpha"（`BlendMode.DstOut` 之类）的混合时，只允许作用在**本行**的像素上，
+     * 不允许把轨道下面的画面一起打薄、也不许与底栏其它内容互相混合。没插这一层时不隔离
+     * （不付离屏缓冲的代价）。
+     *
+     * 坐标：这一层收到的 `DrawScope` 与轨道**不是**同一个坐标系（轨道两端各让出一个圆钮半径），
+     * 需要轨道坐标系的叠加层自己按 `thumbRadius` 换算或平移。
+     */
+    trackOverlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     var draggingValue by remember { mutableStateOf<Float?>(null) }
     val coerced = (draggingValue ?: value).coerceIn(valueRange.start, valueRange.endInclusive)
@@ -423,6 +446,14 @@ fun YingLiSlider(
                 .fillMaxWidth()
                 // 视觉轨道保持细，但整个控件提供标准 48dp 触摸目标。
                 .height(48.dp)
+                // 插了叠加层才隔离成离屏层：见 trackOverlay 的参数文档。
+                .then(
+                    if (trackOverlay != null) {
+                        Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    } else {
+                        Modifier
+                    },
+                )
                 .then(
                     if (!enabled) {
                         Modifier
@@ -461,6 +492,7 @@ fun YingLiSlider(
                     },
                 ),
         ) {
+            // ① 轨道底 → ② 播放进度填充。这两层必须在叠加层**之下**：区间外压暗要落在它们的像素上。
             Canvas(Modifier.fillMaxSize()) {
                 val centerY = size.height / 2f
                 val stroke = trackHeight.toPx()
@@ -482,6 +514,16 @@ fun YingLiSlider(
                     strokeWidth = stroke,
                     cap = StrokeCap.Round,
                 )
+            }
+            // ③④ 叠加层（播放页的 A–B 区间内外亮度 + 端点徽标）。
+            trackOverlay?.invoke(this)
+            // ⑤ 滑块：永远最后画。"现在播到哪"是这一行唯一的**位置**指示，不允许被任何叠加层压暗。
+            Canvas(Modifier.fillMaxSize()) {
+                val centerY = size.height / 2f
+                val radius = thumbRadius.toPx()
+                val startX = radius
+                val endX = (size.width - radius).coerceAtLeast(startX)
+                val thumbX = startX + (endX - startX) * progress
                 drawCircle(color = colors.thumb, radius = radius, center = Offset(thumbX, centerY))
             }
         }

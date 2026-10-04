@@ -188,6 +188,29 @@ class AbLoopUiContractTest {
         assertEquals("--:--", formatDuration(null))
     }
 
+    /**
+     * 进度行时间格式的**两档边界**（本批定稿：不足 1 小时 `mm:ss`、1 小时起 `hh:mm:ss` 且小时补零）。
+     *
+     * 旧实现超过一小时**不进位**（95 分钟 → `95:00`）：分钟位超过 59 既不是 `mm:ss` 的语义，
+     * 也让"这片子多长"要多做一次心算。这里把两档的**切换点**与小时补零一起钉住。
+     */
+    @Test
+    fun `the progress time format switches to zero padded hours exactly at one hour`() {
+        assertEquals("00:00", formatDuration(0))
+        assertEquals("00:12", formatDuration(12_000))
+        // 切换点两侧：59:59 仍是 mm:ss，1:00:00 起进位成 hh:mm:ss。
+        assertEquals("59:59", formatDuration(59 * 60_000L + 59_000L))
+        assertEquals("01:00:00", formatDuration(60 * 60_000L))
+        // 同一秒内的毫秒不进位（格式只到秒）。
+        assertEquals("01:00:00", formatDuration(60 * 60_000L + 999L))
+        // 用户给的例子：95 分钟的影片 → 01:35:00（小时补零）。
+        assertEquals("01:35:00", formatDuration(95 * 60_000L))
+        assertEquals("10:05:03", formatDuration((10 * 3_600L + 5 * 60L + 3L) * 1_000L))
+        // 越界输入（不该出现）不许产出负号。
+        assertEquals("00:00", formatDuration(-1))
+        assertEquals("--:--", formatDuration(null))
+    }
+
     @Test
     fun `interval under a minute rounds to the nearest tenth of a second and never goes negative`() {
         assertEquals("5.0s", formatAbIntervalDuration(5_000))
@@ -211,11 +234,12 @@ class AbLoopUiContractTest {
         assertEquals("01:00", formatAbIntervalDuration(60_000))
         assertEquals("10:00", formatAbIntervalDuration(600_000))
         assertEquals("30:00", formatAbIntervalDuration(1_800_000))
-        // **不另写 `h:mm:ss`**：一小时以上照样是 `mm:ss`，与 formatDuration（进度行左端的总时长）
-        // 同一口径 —— 同一个进度行里区间写 `1:35:00`、端点写 `95:00` 才是真的不一致。
-        assertEquals("60:00", formatAbIntervalDuration(3_600_000))
+        // **不另写小时格式**：一小时以上直接走 formatDuration，也就是 `hh:mm:ss`（小时补零）。
+        // 旧实现这里会输出 `60:00`（分钟位超过 59），与端点读数一起都要靠心算。
+        assertEquals("01:00:00", formatAbIntervalDuration(3_600_000))
+        assertEquals("01:30:00", formatAbIntervalDuration(5_400_000))
         // 同源不是"看起来像"：长区间这一档必须逐字符等于 formatDuration 的输出。
-        listOf(60_000L, 125_400L, 600_000L, 1_800_000L, 3_600_000L, 5_700_000L).forEach { millis ->
+        listOf(60_000L, 125_400L, 600_000L, 1_800_000L, 3_600_000L, 5_400_000L, 5_700_000L).forEach { millis ->
             assertEquals(formatDuration(millis), formatAbIntervalDuration(millis))
         }
     }

@@ -209,6 +209,69 @@ class AbLoopMathTest {
         )
     }
 
+    /**
+     * 竖直分寸链的**唯一计算入口** [abMarkerLayout]：徽标在上、竖线连到轨道上沿、区间条落在那段
+     * 空隙的正中，并且**所有笔迹都落在 [AbMarkerLayerHeight] 那块 64dp 画布内**（画布中心与轨道
+     * 中线重合）。
+     *
+     * 这一条是"标记组不许被裁"的可断言形式：谁把间隙调大、把条挪到画布外，这里先红。
+     */
+    @Test
+    fun `the marker layout keeps every stroke inside the marker layer canvas`() {
+        // 像素域：density = 1（本文件其余用例同样把 dp 的数值直接当 px 用）。
+        val canvasHalf = AbMarkerLayerHeight.value / 2f
+        val trackCenter = canvasHalf
+        val layout = abMarkerLayout(
+            trackCenterYPx = trackCenter,
+            markerOffsetPx = AbMarkerTopOffset.value,
+            markerRadiusPx = AbMarkerRadius.value,
+            barThicknessPx = AbRangeBarThickness.value,
+            trackThicknessPx = YingLiSliderTrackHeight.value,
+            bandHeightPx = AbRangeBandHeight.value,
+        )
+        // 徽标：中心抬高 21dp，顶边到轨道中线 30dp（画布上沿 32 → 余量 2）。
+        assertEquals(trackCenter - 21f, layout.markerCenterYPx, 0.001f)
+        assertEquals(2f, canvasHalf - (trackCenter - layout.markerCenterYPx + AbMarkerRadius.value), 0.001f)
+        // 竖线：从徽标下沿（中线 − 12）连到**轨道上沿**（中线 − 2）。
+        assertEquals(trackCenter - AbRangeBarToMarkerGap.value, layout.connectorTopPx, 0.001f)
+        assertEquals(trackCenter - YingLiSliderTrackHeight.value / 2f, layout.connectorBottomPx, 0.001f)
+        assertEquals(
+            AbRangeBarToMarkerGap.value - YingLiSliderTrackHeight.value / 2f,
+            layout.connectorHeightPx,
+            0.001f,
+        )
+        // 区间条：落在"徽标下沿 → 轨道上沿"的正中，厚 3dp，且**在徽标下方、轨道上方**。
+        assertEquals(
+            (layout.connectorTopPx + layout.connectorBottomPx) / 2f,
+            (layout.barTopPx + layout.barBottomPx) / 2f,
+            0.001f,
+        )
+        assertEquals(AbRangeBarThickness.value, layout.barBottomPx - layout.barTopPx, 0.001f)
+        assertTrue("条必须在徽标下方：${layout.barTopPx} > ${layout.connectorTopPx}", layout.barTopPx > layout.connectorTopPx)
+        assertTrue("条必须在轨道上沿之上：${layout.barBottomPx} < ${layout.connectorBottomPx}", layout.barBottomPx < layout.connectorBottomPx)
+        // 夸大虚线框仍以**轨道中线**为锚（不跟着徽标上移）。
+        assertEquals(trackCenter - AbRangeBandHeight.value / 2f, layout.bandTopPx, 0.001f)
+        assertEquals(AbRangeBandHeight.value, layout.bandHeightPx, 0.001f)
+        // 画布内的硬约束：所有笔迹的 y 都落在 [0, 画布高] 内。
+        val strokes = listOf(
+            layout.markerCenterYPx - AbMarkerRadius.value,
+            layout.markerCenterYPx + AbMarkerRadius.value,
+            layout.connectorBottomPx,
+            layout.barTopPx,
+            layout.barBottomPx,
+            layout.bandTopPx,
+            layout.bandBottomPx,
+        )
+        assertTrue(
+            "标记组的笔迹必须全在画布 [0, ${AbMarkerLayerHeight.value}] 内：$strokes",
+            strokes.all { it >= 0f && it <= AbMarkerLayerHeight.value },
+        )
+        // 竖线宽度：比区间条细一档，与幽灵竖线同档（否则会读成"又一截条"）。
+        assertEquals(1.5f, AbMarkerConnectorWidth.value, 0.001f)
+        assertTrue(AbMarkerConnectorWidth < AbRangeBarThickness)
+        assertEquals(AbRangeGhostHeadWidth, AbMarkerConnectorWidth)
+    }
+
     // ---- 仅 A：预判区间条与幽灵竖线 -------------------------------------------
 
     /**

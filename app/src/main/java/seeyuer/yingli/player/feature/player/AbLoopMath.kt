@@ -38,14 +38,16 @@ import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
  *     轨道底 → 播放进度填充 → scrub 热区 → 区间条 → 竖线 + 徽标 → 夸大虚线
  *       → 端点热区 → 滑块（最后）→ 刻度文字
  *
- * 竖直方向的分寸链（轨道中线为 0，向上为负；常数见 [AbRangeBarToMarkerGap] 等）：
+ * 竖直方向的分寸链（轨道中线为 0，向上为负；常数见 [AbRangeBarToMarkerGap] 等；
+ * 唯一的计算入口是 [abMarkerLayout]，绘制侧不许自己写 `中心 ± 半径`）：
  *
- *     区间条  -33.0 .. -30.0   厚 [AbRangeBarThickness]（3dp，剖面口径）
- *     间隙    -30.0 .. -18.0   [AbRangeBarToMarkerGap]（12dp，与字形框同宽）
- *     徽标    -18.0 ..   0.0   [AbMarkerDiameter]（18dp，见其尺寸依据）
- *     ——— 轨道中线 0，轨道厚 4dp ———
+ *     徽标    -30.0 .. -12.0   [AbMarkerDiameter]（18dp，中心抬高 [AbMarkerTopOffset] = 21dp）
+ *     竖线    -12.0 ..  -2.0   徽标下沿 → **轨道上沿**（[AbMarkerConnectorWidth]，把徽标"钉"在轨道上）
+ *     区间条   -8.5 ..  -5.5   [AbRangeBarThickness]（3dp，剖面口径），落在上面那段空隙的**正中**
+ *     ——— 轨道中线 0，轨道厚 4dp（上沿 -2.0）———
  *
- * 于是**标记组总高 = [AbMarkerGroupHeight]（33dp）**，而滑杆那条 48dp 触控带只给到中线以上 24dp
+ * 于是**标记组从轨道中线往上占 30dp**（徽标顶边到中线；= [AbMarkerTopOffset] + [AbMarkerRadius]），
+ * 而滑杆那条 48dp 触控带只给到中线以上 24dp
  * —— 标记组**明确溢出 6dp**，这正是"徽标允许向上溢出、不许被裁"这条要求在几何上的落点：
  * 它由 [AbMarkerLayerHeight]（64dp 的独立画布）承载，**不是**靠把标记组压小、也不是靠
  * 指望某个祖先不裁剪（**真机核对结论与逐项验算见 [AbMarkerGroupHeight]**）。
@@ -73,30 +75,23 @@ internal val AbRangeBarCornerRadius: Dp
     get() = AbRangeBarThickness / 2
 
 /**
- * 徽标下沿与区间条下沿之间的**间隙**：12dp。
+ * 徽标下沿到**轨道中线**之间的距离，也是徽标与轨道之间那段空隙的总高：12dp。
  *
- * ## 这个数不是审美选择，它由"必须落在滑杆那条 48dp 触控带之内"反推
+ * 它同时是区间条（[AbRangeBarThickness]）的**容纳空间**：标记组上移之后，条不能再压在轨道上，
+ * 它落在"徽标下沿 → 轨道上沿"这段空隙的**正中**（见 [abMarkerLayout]），所以这一段空隙必须
+ * 明显厚于条本身（12dp vs 3dp），否则条会贴着徽标或贴着轨道、三者读成一件东西。
  *
- * 标记组从轨道中线往上占 `间隙 + 直径 + 半径 = 间隙 + 27dp`（区间条自己只有 3dp 厚，
- * 夹在间隙里）。滑杆的触控带（`YingLiControls.kt` 的 `height(48.dp)`）中线到上沿只有 **24dp**，
- * 而**轨道条落在它的中线上**（本批实测，见下），所以约束是：
+ * ## 取值是怎么被约束出来的
  *
- *     间隙 + 27dp ≤ 24dp  ⇒  间隙 ≤ −3dp ✗
+ * 徽标中心在轨道中线上方 [AbMarkerTopOffset]（= 本值 + 半径 = 21dp），因此徽标下沿正好在本值处
+ * （12dp）。滑杆那条 48dp 触控带（`YingLiControls.kt` 的 `height(48.dp)`）中线到上沿只有 **24dp**，
+ * 而标记组要从中线往上占到 `21 + 9 = 30dp` —— **明确超出 6dp**。所以约束不是"塞进 24dp"
+ * （那要求本值 ≤ 3dp，徽标会贴着轨道、读成一块），而是**给标记组自己的画布**
+ * （[AbMarkerLayerHeight]，64dp、中线以上 32dp），见 [AbMarkerGroupHeight] 与 [AbMarkerLayerHeight]。
  *
- * 等一下 —— 这个不等式说明**光靠"压在轨道中线上"是放不下的**。真正成立的是本批的实测结论：
- *
- *  · 徽标中心必须**落在轨道中线上方**（demo：徽标在上、轨道在下）；
- *  · 徽标顶边 = `中线 − 半径 − 间隙`（相对数值）… 按标记组"顶边在轨道中线上方
- *    `[AbMarkerGroupHeight]`"来算，24dp 的预算里要同时装下 `徽标直径 + 间隙 + 条厚`：
- *    `18 + 间隙 + 3 ≤ 24` ⇒ **`间隙 ≤ 3`**。
- *
- * 但 3dp 的间隙在视觉上读不出"徽标与条是两件东西"。于是本批的选择是：
- * **不把标记组塞进那 48dp**（它由 [AbMarkerLayerHeight] 的独立画布承载，向上多出 4dp），
- * 间隙取 **12dp** —— 与 [AbMarkerGlyphSize] 同档，读起来是"徽标浮在条上方一个字形宽"，
- * 而且 `12 + 18 + 3 = 33dp` 的标记组仍完整落在 56dp 画布内（从画布上沿算余 5dp）。
- *
- * 取值理由（12dp 而不是 demo 的 5dp）：5dp 在 18dp 的字母徽标下面太挤，字母牌会读成"贴着条"；
- * 12dp 与字形框同宽，是"两块独立控件"的最小呼吸量，也与项目 4/8/12/16 的间距档一致。
+ * 取值理由（12dp 而不是 demo 的 5dp）：5dp 在 18dp 的字母徽标下面太挤，字母牌会读成"贴着轨道"；
+ * 12dp 与字形框（[AbMarkerGlyphSize]）同宽，是"两块独立控件"的最小呼吸量，
+ * 也与项目 4/8/12/16 的间距档一致。
  */
 internal val AbRangeBarToMarkerGap: Dp = 12.dp
 
@@ -111,7 +106,13 @@ internal val AbMarkerTopOffset: Dp
     get() = AbRangeBarToMarkerGap + AbMarkerRadius
 
 /**
- * 标记组（区间条 + 竖线 + 徽标）的总高 = `徽标直径 + 间隙 + 条厚 = 18 + 12 + 3 = 33dp`。
+ * 分寸链三个组成部分之和 = `徽标直径 + 间隙 + 条厚 = 18 + 12 + 3 = 33dp`。
+ *
+ * **它不是绘制出来的包围盒**：实际画出来的标记组从轨道中线往上只占
+ * `[AbMarkerTopOffset] + [AbMarkerRadius] = 30dp`（徽标顶边到中线）—— 12dp 的间隙是"徽标下沿到
+ * **轨道中线**"的距离，3dp 的区间条落在这一段空隙**内部**（见 [abMarkerLayout]），所以三件东西
+ * 相加会比包围盒多出一个条厚。它存在的意义是回答"这三件东西合起来是什么量级"，
+ * 与 demo 文字里的"约 30dp"对齐（`docs/21` §1.2：demo 只给叙述、没有加总式）。
  *
  * ## 与滑杆那条 48dp 触控带的关系（本批实测结论）
  *
@@ -119,9 +120,9 @@ internal val AbMarkerTopOffset: Dp
  * `[AbMarkerTopOffset] + [AbMarkerRadius] = 21 + 9 = 30dp` —— **明确超出触控带 6dp**。
  * 也就是说：如果标记组还画在滑杆的 `height(48.dp)` 里，字母徽标的上半边会被那个 Box 裁掉。
  *
- * 本批的修法不是"把标记组压小到 24dp 以内"（那要求间隙 ≤ 3dp，徽标会贴着条、读成一块），
- * 而是**给它自己的画布**：[AbMarkerLayerHeight]（56dp，居中于触控带，上下各多 4dp）。
- * `30dp ≤ 28dp` 这条不等式**不成立**，所以画布本身也要更高 —— 见 [AbMarkerLayerHeight] 的取值。
+ * 本批的修法不是"把标记组压小到 24dp 以内"（那要求间隙 ≤ 3dp，徽标会贴着轨道、读成一块），
+ * 而是**给它自己的画布**：[AbMarkerLayerHeight]（64dp，居中于触控带，上下各多 8dp）。
+ * `30dp ≤ 24dp` 这条不等式**不成立**，所以画布本身也要更高 —— 见 [AbMarkerLayerHeight] 的取值。
  *
  * 于是"徽标可以向上溢出"由**布局**保证：不指望任何祖先不裁剪，也不把滑杆撑高
  * （撑高会让左右两端的时间文本跟着重新居中，那正是历史回归过的"进度行瞬移"）。
@@ -348,47 +349,82 @@ internal val AbMarkerSeamWidth: Dp = 1.dp
 internal data class AbMarkerLayout(
     /** 徽标（或合并块）中心 y：与轨道中线的距离就是 [AbMarkerTopOffset]。 */
     val markerCenterYPx: Float,
+    /** 徽标与轨道之间那条竖线的上端（= 徽标下沿）。 */
+    val connectorTopPx: Float,
+    /** 竖线的下端（= **轨道上沿**）：竖线因此把徽标"钉"在它所属的那条轨道上。 */
+    val connectorBottomPx: Float,
     /** 区间条的上沿 y。 */
     val barTopPx: Float,
     /** 区间条的下沿 y。 */
     val barBottomPx: Float,
-    /** 夸大虚线框的上沿 y（[AbRangeBandHeight] 的一半，仍以徽标中心为锚）。 */
+    /** 夸大虚线框的上沿 y（以**轨道中线**为锚，见 [AbRangeBandHeight]）。 */
     val bandTopPx: Float,
     /** 夸大虚线框的下沿 y。 */
     val bandBottomPx: Float,
 ) {
     /** 虚线框的竖直跨度（= [AbRangeBandHeight] 的像素值）。 */
     val bandHeightPx: Float get() = bandBottomPx - bandTopPx
+
+    /** 竖线的长度（徽标下沿 → 轨道上沿）。 */
+    val connectorHeightPx: Float get() = connectorBottomPx - connectorTopPx
 }
 
 /**
  * 由**轨道中线**与各尺寸（像素）推出标记组的竖直落点。
  *
- * 顺序即分寸链（见文件头的层序注释）：区间条在徽标**上方**一个 [AbRangeBarToMarkerGap]，
- * 徽标中心在轨道中线上方 [AbMarkerTopOffset]；夸大虚线框仍以徽标中心为锚上下各展
- * [AbRangeBandHeight] / 2（它表达的是"这一段被放大过"的跨度，与区间条不是同一件事）。
+ * 顺序即分寸链（见文件头的层序注释），从下往上：
  *
- * [markerOffsetPx] 必须由 [AbMarkerTopOffset] 过密度得到（调用方只做单位换算，不做算术）——
- * 这样"徽标抬高多少"只有一个来源。
+ *   · 徽标中心在轨道中线上方 [AbMarkerTopOffset]，下沿正好在 [AbRangeBarToMarkerGap] 处；
+ *   · 竖线从徽标下沿连到**轨道上沿**（`轨道中线 − [YingLiSliderTrackHeight] / 2`）——
+ *     徽标不再贴着轨道，这条线是"这枚徽标属于这条轨道上的哪个时刻"的唯一线索；
+ *   · 区间条落在"徽标下沿 → 轨道上沿"这段空隙的**正中**：既不贴轨道（会被读成轨道加粗），
+ *     也不贴徽标（会被读成徽标的一部分）；
+ *   · 夸大虚线框仍以**轨道中线**为锚上下各展 [AbRangeBandHeight] / 2 —— 它表达"这一段被放大过"
+ *     的跨度（该常量的取值理由就是"不许吃掉整行 48dp 触控带"），与徽标不是同一件事，
+ *     所以不跟着徽标上移。
+ *
+ * 全部 y 都落在 `AbMarkerLayerHeight` 那块 64dp 画布内（不含任何越界绘制）：画布中心与轨道中线
+ * 重合，最上面的笔迹是徽标顶边（`[AbMarkerTopOffset] + 半径 = 30dp < 32dp`）。
+ *
+ * 输入一律是**像素**，且由调用方只做单位换算、不做算术：这样"徽标抬高多少、条落在哪、竖线连到哪"
+ * 只有 [AbMarkerTopOffset] / [AbRangeBarToMarkerGap] / [AbRangeBarThickness] /
+ * [YingLiSliderTrackHeight] 这几个来源。**绘制侧与端点热区都调它**，两处因此不可能错位。
  */
 internal fun abMarkerLayout(
     trackCenterYPx: Float,
     markerOffsetPx: Float,
     markerRadiusPx: Float,
     barThicknessPx: Float,
-    barGapPx: Float,
+    trackThicknessPx: Float,
     bandHeightPx: Float,
 ): AbMarkerLayout {
     val markerCenterY = trackCenterYPx - markerOffsetPx
-    val barBottom = markerCenterY - markerRadiusPx - barGapPx
+    // 徽标下沿：中心 + 半径（= 轨道中线 − AbRangeBarToMarkerGap，两者由 AbMarkerTopOffset 同源）。
+    val connectorTop = markerCenterY + markerRadiusPx
+    // 轨道上沿：竖线连到这里为止 —— 再往下就是轨道本体的像素，连上去会读成"竖线插进轨道"。
+    val trackTop = trackCenterYPx - trackThicknessPx / 2f
+    // 区间条居中于"徽标下沿 → 轨道上沿"这段空隙。
+    val barCenter = (connectorTop + trackTop) / 2f
     return AbMarkerLayout(
         markerCenterYPx = markerCenterY,
-        barTopPx = barBottom - barThicknessPx,
-        barBottomPx = barBottom,
-        bandTopPx = markerCenterY - bandHeightPx / 2f,
-        bandBottomPx = markerCenterY + bandHeightPx / 2f,
+        connectorTopPx = connectorTop,
+        connectorBottomPx = trackTop,
+        barTopPx = barCenter - barThicknessPx / 2f,
+        barBottomPx = barCenter + barThicknessPx / 2f,
+        bandTopPx = trackCenterYPx - bandHeightPx / 2f,
+        bandBottomPx = trackCenterYPx + bandHeightPx / 2f,
     )
 }
+
+/**
+ * 徽标与轨道之间那条**竖线**的宽度：1.5dp。
+ *
+ * 依据：徽标上移之后它不再贴着轨道，这条线是"这枚徽标属于哪个时刻"的唯一线索。它必须细到读成
+ * "引线"而不是"又一截区间条"（[AbRangeBarThickness] = 3dp）：1.5dp 与仅 A 时的播放头幽灵竖线
+ * （[AbRangeGhostHeadWidth]）同一档，在屏幕上仍占满一个物理像素（3x 屏 ≈ 4.5px），
+ * 而 1px 级别的线在真机上会时隐时现。
+ */
+internal val AbMarkerConnectorWidth: Dp = 1.5.dp
 
 /**
  * **只设了 A** 时那条"预判区间"（区间条）的透明度：**28%**（demo 的 `opacity=".28"`）。

@@ -15,15 +15,17 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -206,7 +208,7 @@ class PlayerAbLoopScreenTest {
     }
 
     @Test
-    fun theProgressRowKeepsTheAbRangeAndTheCapsuleCarriesTheReadout() {
+    fun theProgressRowKeepsTheAbRangeAndCarriesTheReadout() {
         var session by mutableStateOf(
             AbLoopSession(state = AbLoopState(pointA = 12_000, pointB = 37_000), loopCount = 12),
         )
@@ -222,26 +224,25 @@ class PlayerAbLoopScreenTest {
         }
         composeRule.waitForIdle()
 
-        // 1) 胶囊**开着**：读数条住在首行，文案是 demo 的已锁定态（长破折号 + `Δ mm:ss` + 末尾计数）。
+        // 1) AB 工具**开着**：区间层与读数条都在场，且读数条**住在进度区第二行**
+        //    （有意偏离 demo 的"胶囊首行"，判定与算式见 `BottomPlaybackControls` 的读数条注释）。
+        //    文案是 demo 的已锁定态（长破折号 + `Δ mm:ss` + 末尾计数）。
         composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE).assertDisplayedSettled("AB 区间层")
-        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS).assertDisplayedSettled("AB 读数条")
-        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-            .assertTextContains("A 00:12 — B 00:37 · Δ 00:25 · 循环 ×12")
+        assertReadoutSegments("A 00:12", "—", "B 00:37", "·", "Δ 00:25", "·", "循环 ×12")
 
         // 2) 只设了 A：待落点文案在，时长与计数都不在（循环还没开始）。
         session = AbLoopSession(state = AbLoopState(pointA = 12_000))
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-            .assertTextContains("A 00:12 — B 待落点")
+        assertReadoutSegments("A 00:12", "—", "B 待落点")
 
         // 3) 一个点都没设：显示引导文案，**不留空白**（demo 的第 1 态）。
         session = AbLoopSession.EMPTY
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-            .assertTextContains("未设置循环 · 点 A 在播放头落点")
+        assertReadoutSegments("未设置循环 · 点 A 在播放头落点")
 
         // 4) 胶囊**关闭**：区间仍然画在进度条上（D3：关闭 ≠ 取消），
-        //    而数值读数条随胶囊一起收起 —— "轨道回答在哪、胶囊回答几点"的分工。
+        //    而数值读数条随工具一起收起 —— 读数条是 AB 工具的**数值落点**，
+        //    工具收起后"轨道回答在哪、胶囊回答几点"这条分工才成立。
         session = AbLoopSession(state = AbLoopState(pointA = 12_000, pointB = 37_000), loopCount = 12)
         mode = SlotMode.SCREENSHOT_CAPSULE_CLOSED
         composeRule.waitForIdle()
@@ -272,7 +273,7 @@ class PlayerAbLoopScreenTest {
         composeRule.setContent {
             YingLiTheme(darkTheme = true) {
                 PlayerScreen(
-                    state = stateFor(SlotMode.SCREENSHOT_CAPSULE_CLOSED, session = session, durationMillis = duration),
+                    state = stateFor(SlotMode.AB_LOOP, session = session, durationMillis = duration),
                     onBack = {}, onPlay = {}, onPause = {}, onSeek = {}, onReplay = {}, onRetry = {},
                     onRecovery = {}, videoSurface = {},
                 )
@@ -280,9 +281,8 @@ class PlayerAbLoopScreenTest {
         }
         composeRule.waitForIdle()
 
-        // 读数行：真实时长（25 秒 → `Δ 00:25`）与计数必须在场。
-        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-            .assertTextContains("A 10:00 — B 10:05 · Δ 00:05 · 循环 ×7")
+        // 读数行：真实时长（5 秒 → `Δ 00:05`）与计数必须在场。
+        assertReadoutSegments("A 10:00", "—", "B 10:05", "·", "Δ 00:05", "·", "循环 ×7")
 
         // 区间可见 + 标记合并：用**界面自己那一套**几何判定复核（同一函数、同一轨道宽度）。
         val track = trackWidthPx()
@@ -311,8 +311,7 @@ class PlayerAbLoopScreenTest {
         val normalEnd = normalStart + 1_800_000L
         session = AbLoopSession(state = AbLoopState(pointA = normalStart, pointB = normalEnd), loopCount = 7)
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-            .assertTextContains("A 10:00 — B 40:00 · Δ 30:00 · 循环 ×7")
+        assertReadoutSegments("A 10:00", "—", "B 40:00", "·", "Δ 30:00", "·", "循环 ×7")
         val normal = abRangeGeometry(
             trackWidthPx = track,
             fractionStart = normalStart.toFloat() / duration,
@@ -328,6 +327,69 @@ class PlayerAbLoopScreenTest {
             track * 1_800_000f / duration,
             normal.visualWidthPx,
             0.5f,
+        )
+    }
+
+    /**
+     * **本批的核心验收（标记组接线）**：区间条 / 竖线 / 徽标住在滑杆**之外**的 64dp 独立画布
+     *（`AbMarkerLayerHeight`）里，完整落在画布内、且**没有被任何祖先裁掉** —— 滑杆那条 48dp 触控带
+     * 只给到轨道中线以上 24dp，而标记组要从轨道中线往上占 30dp（溢出 6dp），画在滑杆里面必然被裁。
+     *
+     * 同时钉住两条交互：
+     *  1. **点按徽标 = 跳到该端点**（裁决 U6）：热区是滑杆的兄弟节点、排在它**之后**，命中时先
+     *     `consume` 掉这次 down，滑杆因此放手（否则同一次点按会被 down-seek 覆盖）；
+     *  2. **轨道空白处点按仍然 = seek**：热区只覆盖徽标那一点，不许把滑杆的 scrub 手势吃掉。
+     */
+    @Test
+    fun theAbMarkerGroupLivesInItsOwnUnclippedLayerAndItsBadgesSeek() {
+        val duration = 60_000L
+        var seeked: Long? = null
+        composeRule.setContent {
+            YingLiTheme(darkTheme = true) {
+                PlayerScreen(
+                    state = stateFor(
+                        SlotMode.AB_LOOP,
+                        AbLoopSession(state = AbLoopState(pointA = 12_000, pointB = 37_000), loopCount = 3),
+                        durationMillis = duration,
+                    ),
+                    onBack = {}, onPlay = {}, onPause = {}, onSeek = { seeked = it },
+                    onReplay = {}, onRetry = {}, onRecovery = {}, videoSurface = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        // 1) 独立画布：节点自身就是 AbMarkerLayerHeight 高，且已裁剪几何 = 未裁剪几何（没被裁）。
+        val marker = settler.bounds(
+            composeRule.onNodeWithTag(PlayerTestTags.AB_MARKER_LAYER),
+        ) { "AB 标记组" }
+        assertTrue("AB 标记组不在场：${marker.describe}", marker.displayed)
+        assertEquals(
+            "标记层必须是 AbMarkerLayerHeight（比滑杆触控带高，标记组才放得下）",
+            AbMarkerLayerHeight.value,
+            marker.unclipped.height.value,
+            0.5f,
+        )
+        assertTrue(
+            "标记组被祖先裁掉了（画布高 ${AbMarkerLayerHeight.value}dp）：${marker.describe}",
+            boundsAgree(marker),
+        )
+
+        // 2) 点按徽标 = 跳到该端点（走用户跳转）。这里注入**真实触摸**（而不是语义点击）：
+        //    徽标热区是手写的 down 消费，要验证的正是"它先于滑杆拿到这次 down 并跳端点"。
+        composeRule.onNodeWithTag(PlayerTestTags.AB_MARKER_POINT_A).performTouchInput { click(center) }
+        assertEquals("点 A 徽标必须跳到 A", 12_000L, seeked)
+        composeRule.onNodeWithTag(PlayerTestTags.AB_MARKER_POINT_B).performTouchInput { click(center) }
+        assertEquals("点 B 徽标必须跳到 B", 37_000L, seeked)
+
+        // 3) 轨道空白处点按仍然 = seek（徽标热区没有吃掉滑杆的手势）。
+        seeked = null
+        composeRule.onNodeWithTag(PlayerTestTags.PROGRESS).performTouchInput { click(center) }
+        composeRule.waitUntil(timeoutMillis = 3_000) { seeked != null }
+        val blankTap = seeked ?: error("轨道空白处点按没有 seek")
+        assertTrue(
+            "轨道空白处点按必须 seek 到点到的位置（而不是徽标那两个端点）：$blankTap",
+            blankTap != 12_000L && blankTap != 37_000L,
         )
     }
 
@@ -499,6 +561,28 @@ class PlayerAbLoopScreenTest {
             sample.clipped.height.value > 0f &&
             sample.clipped.width.value >= sample.unclipped.width.value - 0.5f &&
             sample.clipped.height.value >= sample.unclipped.height.value - 0.5f
+
+    /**
+     * 读数条的**逐子节点**断言（本批：读数条是 `Row { Text, Text, … }`）。
+     *
+     * 为什么不能再用"整行一个文本值"的断言：A / B 两个数值各自是**独立点击目标**
+     *（`AB_READOUT_POINT_A/B`，裁决 U6 的一部分），所以它们是**各自的节点**，整行节点自己
+     * 没有 `Text` 语义 —— 拿整串去比会报"节点有 7 个子节点、但自身没有文本"。
+     *
+     * 判据仍然逐字符地严：比对的是**有序**分段列表（段落文本、顺序、数量三者都必须一致），
+     * 而不是"存在某个包含某段的文本"。
+     */
+    private fun assertReadoutSegments(vararg expected: String) {
+        val node = composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS).fetchSemanticsNode()
+        val actual = node.children.mapNotNull { child ->
+            child.config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }
+        }
+        assertEquals(
+            "读数条分段必须逐段一致（顺序与数量都算）",
+            expected.toList(),
+            actual,
+        )
+    }
 
     /**
      * 进度条上 A–B 区间那一层的**轨道宽度**（px）。

@@ -473,8 +473,10 @@ fun PlayerScreen(
         // 截图模式激活期间中央三连不出现（需求三）：只加这一条，横竖屏/锁定/自动隐藏的既有
         // 条件仍然原样生效——`controlsOnScreen` 管的是"控件该不该在场"，这里管的是"在场时长什么样"。
         //
-        // **本批扩到"AB 胶囊打开时也不出现"**：真横屏（800×400dp）上 AB 胶囊比截图胶囊多一行读数条，
-        // 底栏整体更高，中央三连会正好压住胶囊里的读数行与 B 徽标（上一批的"真横屏档"实测）。
+        // **本批扩到"AB 胶囊打开时也不出现"**：真横屏（800×400dp）上 AB 工具打开时底栏比截图工具时
+        // 更高（读数条住在**进度区**、多占一行 `abReadoutBandHeight`；它不在胶囊里，见
+        // `BottomPlaybackControls` 的读数条注释），胶囊顶边因此更靠近竖直中线，中央三连会正好压住
+        // 胶囊与两枚徽标（上一批的"真横屏档"实测）。
         // 判据与截图工具**对称**，两处合并成一条纯函数（`hidesCenterTransportControlsForTool`）。
         val centerControlsOnScreen = controlsOnScreen && !hidesCenterTransportControlsForTool(
             screenshot = state.screenshot,
@@ -806,14 +808,24 @@ object PlayerTestTags {
     /** 进度条上的 A–B 区间高亮（含两端标记）：画在进度条自己那一行上。 */
     const val AB_RANGE = "player.ab.range"
     /**
-     * 进度条上的 **A–B 标记组**（区间条 / 竖线 + 徽标 / 夸大虚线 / 端点热区）。
+     * 进度条上的 **A–B 标记组**（区间条 / 竖线 + 徽标 / 夸大虚线）。
      *
-     * 它与 [AB_RANGE]（覆盖整行的压暗层）是**两个**节点：压暗必须住在滑杆隔离出来的离屏层里
+     * 它与 [AB_RANGE]（滑杆离屏层里的压暗层）是**两个**节点：压暗必须住在滑杆隔离出来的离屏层里
      *（`BlendMode.DstOut` 只允许作用在本行像素上），而标记组要向上溢出滑杆那条 48dp 触控带
-     *（见 `AbMarkerLayerHeight`）。instrumented 用本标记断言"徽标没有被裁掉"。
+     *（从轨道中线往上 30dp，画布见 `AbMarkerLayerHeight`），所以它是滑杆的**兄弟**节点。
+     * instrumented 用本标记断言"标记组完整落在画布内、没有被祖先裁掉"。
      */
     const val AB_MARKER_LAYER = "player.ab.marker_layer"
-    /** A–B 读数行（`A 06:12 — B 09:48 · Δ 03:36 · 循环 ×12`）：本批起住在 **AB 胶囊首行**。 */
+    /** 轨道上 A / B 两枚徽标各自的点击目标（点按 = 跳到该端点）。 */
+    const val AB_MARKER_POINT_A = "player.ab.marker.point_a"
+    const val AB_MARKER_POINT_B = "player.ab.marker.point_b"
+    /**
+     * A–B 读数行（`A 06:12 — B 09:48 · Δ 03:36 · 循环 ×12`），**进度区第二行**。
+     *
+     * **有意偏离 demo 的"胶囊首行"**：胶囊与截图胶囊同格同高（64dp），装不下
+     * `max(20dp 触控目标, 行高天条)` 这一行（1 倍字号 68dp、2 倍字号 80.2dp）—— 判定与算式写在
+     * `BottomPlaybackControls` 的读数条注释里。它是 AB 的**唯一**数值落点。
+     */
     const val AB_RANGE_LABELS = "player.ab.range.labels"
     /** 读数行里 A / B 两个数值各自的点击目标（跳转到该端点）。 */
     const val AB_READOUT_POINT_A = "player.ab.readout.point_a"

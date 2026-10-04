@@ -50,7 +50,6 @@ import seeyuer.yingli.player.domain.playback.DefaultPlaybackErrorMapper
 import seeyuer.yingli.player.domain.playback.AbLoopPlaybackControl
 import seeyuer.yingli.player.domain.playback.AbLoopSession
 import seeyuer.yingli.player.domain.playback.AbLoopSessionCommands
-import seeyuer.yingli.player.domain.playback.AbLoopState
 import seeyuer.yingli.player.domain.playback.AbPoint
 import seeyuer.yingli.player.domain.playback.AdvancedPlaybackController
 import seeyuer.yingli.player.domain.playback.PlaybackSpeed
@@ -523,21 +522,16 @@ class Media3PlaybackController(
     /**
      * 从 session extras 解码会话回流的 AB 状态。
      *
+     * 解码只有 [readAbLoopSession] 一处（服务端用同一对编解码发布状态）。
+     * **这里不许再自己判断"什么样的状态才算数"**：曾经这里要求 A、B 同时存在才构造区间，
+     * 于是"只设了 A"被丢成空区间 —— 用户按了「A 设置」（命令在会话侧确实被接受）、
+     * 但胶囊一直显示"A 未设置"、B 与清除一直禁用，而且因为命令成功，也没有任何拒绝提示。
+     *
      * 为什么用 extras 而不是再开一条自定义事件通道：AB 状态是"会话 → 客户端"的单向小状态，
-     * Media3 已经提供了 session extras 的变更通知（`MediaController.Listener.onExtrasChanged`），
-     * 再建一条通道只会多一处需要保持同步的地方。解码失败一律退回"无 AB"：
-     * 宁可少显示一个区间，也不要显示一个来路不明的区间。
+     * 同一份状态再建一条通道只会多一处需要保持同步的地方。
      */
     private fun updateAbLoopFromExtras(extras: Bundle) {
-        val pointA = extras.getString(AbLoopSessionCommands.EXTRA_POINT_A)?.toLongOrNull()
-        val pointB = extras.getString(AbLoopSessionCommands.EXTRA_POINT_B)?.toLongOrNull()
-        val count = extras.getString(AbLoopSessionCommands.EXTRA_LOOP_COUNT)?.toLongOrNull() ?: 0L
-        val state = if (pointA != null && pointB != null && pointA < pointB) {
-            AbLoopState(pointA = pointA, pointB = pointB)
-        } else {
-            AbLoopState()
-        }
-        val next = AbLoopSession(state = state, loopCount = count.coerceAtLeast(0))
+        val next = extras.readAbLoopSession()
         if (mutableAbLoop.value != next) mutableAbLoop.value = next
     }
 

@@ -52,6 +52,7 @@ import seeyuer.yingli.player.domain.security.VaultItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.data.security.VaultAwareDataSource
 import seeyuer.yingli.player.engine.media3.PlaybackMediaMetadata
+import seeyuer.yingli.player.engine.media3.toSessionExtras
 import seeyuer.yingli.player.engine.media3.toSessionResult
 
 class YingLiPlaybackService : MediaSessionService() {
@@ -269,14 +270,12 @@ class YingLiPlaybackService : MediaSessionService() {
      * 用 session extras 而不是另开一条自定义广播：AB 是"会话 → 客户端"的单向小状态，
      * extras 自带变更通知（`Player.EVENT_SESSION_EXTRAS_CHANGED`），
      * 客户端（`Media3PlaybackController`）据此更新投影，不需要新增一条同步通道。
+     *
+     * 编码只有 `toSessionExtras()` 一处（客户端用同一对编解码读回来）：两端各写一套
+     * "哪些字段要发 / 怎么重建状态"就会漂移，"只设了 A"被客户端丢成空区间就是这么来的。
      */
     private fun publishAbLoopExtras(session: AbLoopSession) {
-        val extras = Bundle().apply {
-            session.state.pointA?.let { putString(AbLoopSessionCommands.EXTRA_POINT_A, it.toString()) }
-            session.state.pointB?.let { putString(AbLoopSessionCommands.EXTRA_POINT_B, it.toString()) }
-            putString(AbLoopSessionCommands.EXTRA_LOOP_COUNT, session.loopCount.toString())
-        }
-        mediaSession.setSessionExtras(extras)
+        mediaSession.setSessionExtras(session.toSessionExtras())
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = mediaSession

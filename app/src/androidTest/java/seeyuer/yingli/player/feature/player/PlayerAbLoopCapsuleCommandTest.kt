@@ -2,6 +2,7 @@ package seeyuer.yingli.player.feature.player
 
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -10,6 +11,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import seeyuer.yingli.player.R
 import seeyuer.yingli.player.app.playback.PlaybackSessionClientBridge
 import seeyuer.yingli.player.core.common.DefaultAppDispatchers
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
@@ -203,6 +207,37 @@ class PlayerAbLoopCapsuleCommandTest {
         harness.awaitState { it.abLoop.pointA != null }
         composeRule.onNodeWithContentDescription(SET_B).assertIsEnabled()
         composeRule.onNodeWithContentDescription(CLEAR).assertIsEnabled()
+    }
+
+    /**
+     * 拒绝提示必须**看得见**：设点被拒时播放页上要真的出现一行提示。
+     *
+     * 为什么这条要单独存在：`aRejectedSetPointSurfacesAUserVisibleMessage` 断言的是
+     * "拒绝码 → 瞬时反馈事件"；而"事件 → 屏幕上真的有字"是**另一跳**。用户报的现象里
+     * 正好有一句"没有任何提示"，所以这一跳必须有自己的断言 —— 把"被拒那一刻"的 UI 输入
+     *（AB 胶囊开着 + 一条拒绝提示）直接摆到 `PlayerScreen` 上，断言文案在屏幕上可见。
+     */
+    @Test
+    fun aRejectedSetPointShowsItsMessageOnThePlayerPage() {
+        val expected = ApplicationProvider.getApplicationContext<Context>()
+            .getString(R.string.player_reject_ab_unavailable)
+        composeRule.setContent {
+            YingLiTheme(darkTheme = true) {
+                PlayerScreen(
+                    state = PlayerUiState(
+                        playback = PlaybackState.Paused(REQUEST, TIMELINE),
+                        abToolOpen = true,
+                    ),
+                    onBack = {}, onPlay = {}, onPause = {}, onSeek = {}, onReplay = {}, onRetry = {},
+                    onRecovery = {}, videoSurface = {},
+                    transientMessage = PlayerUiEvent.TransientMessage(R.string.player_reject_ab_unavailable),
+                )
+            }
+        }
+
+        // 提示与 AB 胶囊同屏：用户正是"在胶囊里设点被拒"的那一刻。
+        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertExists()
+        composeRule.onNodeWithText(expected).assertIsDisplayed()
     }
 
     // ---- 夹具 ----------------------------------------------------------------

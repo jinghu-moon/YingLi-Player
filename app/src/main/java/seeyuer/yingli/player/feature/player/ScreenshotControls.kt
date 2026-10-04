@@ -117,40 +117,47 @@ internal fun ScreenshotToolCapsule(
         // 否则按钮贴顶、下面空一圈（两枚胶囊住在同一格，位置差一像素都会看出来）。
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = ScreenshotCapsuleInnerPadding),
-            horizontalArrangement = Arrangement.spacedBy(PlayerScreenshotCapsuleButtonSpacing),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PlayerChromeIconButton(
-                icon = YingLiIcon.SEEK_BACKWARD,
-                contentDescription = stringResource(R.string.player_previous_frame),
-                onClick = onPreviousFrame,
-                enabled = armed,
-                tint = YingLiTheme.player.controlPrimary,
-                // 尺寸与工具托盘里的按钮**同一个常量**：胶囊取代的就是托盘行，
-                // 两边按钮圆径不一致会一眼看出"换了一套控件"。**不要在这里写死别的尺寸。**
-                size = PlayerScreenshotCapsuleButtonSize,
-            )
-            ScreenshotCaptureButton(
-                capturing = state is ScreenshotUiState.Capturing,
-                onCapture = onCapture,
-            )
-            PlayerChromeIconButton(
-                icon = YingLiIcon.SEEK_FORWARD,
-                contentDescription = stringResource(R.string.player_next_frame),
-                onClick = onNextFrame,
-                enabled = armed,
-                tint = YingLiTheme.player.controlPrimary,
-                size = PlayerScreenshotCapsuleButtonSize,
-            )
-            PlayerChromeIconButton(
-                icon = YingLiIcon.CLOSE,
-                contentDescription = stringResource(R.string.action_cancel),
-                onClick = onClose,
-                tint = YingLiTheme.player.controlPrimary,
-                size = PlayerScreenshotCapsuleButtonSize,
-            )
+        BoxWithConstraints {
+            Row(
+                modifier = Modifier.padding(
+                    horizontal = capsuleInnerPadding(
+                        maxWidth = maxWidth,
+                        buttonCount = ScreenshotCapsuleButtonCount,
+                    ),
+                ),
+                horizontalArrangement = Arrangement.spacedBy(PlayerScreenshotCapsuleButtonSpacing),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlayerChromeIconButton(
+                    icon = YingLiIcon.SEEK_BACKWARD,
+                    contentDescription = stringResource(R.string.player_previous_frame),
+                    onClick = onPreviousFrame,
+                    enabled = armed,
+                    tint = YingLiTheme.player.controlPrimary,
+                    // 尺寸与工具托盘里的按钮**同一个常量**：胶囊取代的就是托盘行，
+                    // 两边按钮圆径不一致会一眼看出"换了一套控件"。**不要在这里写死别的尺寸。**
+                    size = PlayerScreenshotCapsuleButtonSize,
+                )
+                ScreenshotCaptureButton(
+                    capturing = state is ScreenshotUiState.Capturing,
+                    onCapture = onCapture,
+                )
+                PlayerChromeIconButton(
+                    icon = YingLiIcon.SEEK_FORWARD,
+                    contentDescription = stringResource(R.string.player_next_frame),
+                    onClick = onNextFrame,
+                    enabled = armed,
+                    tint = YingLiTheme.player.controlPrimary,
+                    size = PlayerScreenshotCapsuleButtonSize,
+                )
+                PlayerChromeIconButton(
+                    icon = YingLiIcon.CLOSE,
+                    contentDescription = stringResource(R.string.action_cancel),
+                    onClick = onClose,
+                    tint = YingLiTheme.player.controlPrimary,
+                    size = PlayerScreenshotCapsuleButtonSize,
+                )
+            }
         }
     }
 }
@@ -546,20 +553,37 @@ internal val PlayerScreenshotCapsuleHeight: Dp
 internal val PlayerScreenshotCapsuleButtonSize = PlayerChromeButtonSize
 
 /**
- * 胶囊内边距 = (胶囊高度 - 按钮尺寸) / 2：水平方向也取同一个值，
+ * 胶囊内边距的**上界** = (胶囊高度 - 按钮尺寸) / 2：水平方向优先取同一个值，
  * 四周呼吸圈才是一致的（写死 4dp 会让左右比上下窄一半）。
+ *
+ * 它只是**上界**：横向还要放得下一排按钮，见 [capsuleInnerPadding]。
+ * 竖直方向的呼吸圈不受任何影响（按钮永远是 [PlayerScreenshotCapsuleButtonSize] 高、行内居中）。
  */
 internal val ScreenshotCapsuleInnerPadding: Dp
     get() = (PlayerScreenshotCapsuleHeight - PlayerScreenshotCapsuleButtonSize) / 2
 
+/** 截图胶囊里的按钮数量（上一帧 / 捕获 / 下一帧 / 取消）。 */
+private const val ScreenshotCapsuleButtonCount = 4
+
 /**
- * 胶囊内边距（**紧凑档**，4dp）：只给 AB 胶囊在"常规档 + 可读下限"放不下三段文字时用
- * （极窄屏 + 最大系统字号），见 [abCapsuleTextLayout]。
+ * 胶囊的**横向内边距**：优先 [ScreenshotCapsuleInnerPadding]（与竖直呼吸圈同值），
+ * 放不下一排按钮时按剩余宽度收窄。
  *
- * 竖直方向的"呼吸圈"不受影响（按钮永远是 [PlayerScreenshotCapsuleButtonSize] 高、行内居中），
- * 这里收窄的只是横向留白 —— 大字号下文字本来就占满按钮，4dp 的横向留白在观感上仍然成立。
+ * 为什么必须收窄而不是固定 8dp：一枚圆钮是 `48dp`（§3.2 的最小触控尺寸，**不可缩**），
+ * 四枚加三个 `12dp` 间距要 `228dp`，两侧再各留 8dp 就是 `244dp`。320dp 的窄屏底栏带宽只有
+ * `296dp`，还算放得下；但一旦有人再加一枚按钮、或出现更窄的可用宽度，固定内边距就会把胶囊
+ * **整体撑出屏幕**（`AuxiliaryToolCapsuleSlot` 是按顶边居中的，溢出的部分左右同时被裁）。
+ * 收窄内边距是这里唯一可以牺牲的量：它是留白，而按钮尺寸是触控尺寸。
+ *
+ * **两枚胶囊必须永远算出同一个值**：它们住在同一格里、由同一个槽位渲染，一旦各自算各自的
+ * （比如一枚取 8dp、另一枚取 4dp），用户切换工具时会看到胶囊宽度跳一下。所以这个函数是
+ * **唯一**入口，截图胶囊与 AB 胶囊都调它，`PlayerChromeLayoutMathTest` 直接钉住"同宽同值"。
  */
-internal val ScreenshotCapsuleInnerPaddingCompact = 4.dp
+internal fun capsuleInnerPadding(maxWidth: Dp, buttonCount: Int): Dp {
+    val content = PlayerScreenshotCapsuleButtonSize * buttonCount +
+        PlayerScreenshotCapsuleButtonSpacing * (buttonCount - 1).coerceAtLeast(0)
+    return ((maxWidth - content) / 2).coerceIn(0.dp, ScreenshotCapsuleInnerPadding)
+}
 
 /**
  * 胶囊内按钮之间的间距（12dp）。
@@ -567,16 +591,11 @@ internal val ScreenshotCapsuleInnerPaddingCompact = 4.dp
  * 比工具托盘里同组按钮的 [PlayerShortcutSpacing]（8dp）更大：托盘按钮之间的空隙外侧还有整行的
  * 空白可以"借"，而胶囊是一整块容器，同样的间距在胶囊里会明显更挤（用户实测反馈"按钮挤在一起"）。
  * 12dp 与项目里 8/12/16 那一档间距一致，不引入新数字。
+ *
+ * 它**不设紧凑档**：胶囊里现在是四枚定尺寸圆钮（截图胶囊与 AB 胶囊都是），间距是唯一能让
+ * 窄屏放下的可调量已经由 [capsuleInnerPadding] 承担；再开一档间距只会让两枚胶囊有两条路径。
  */
 internal val PlayerScreenshotCapsuleButtonSpacing = 12.dp
-
-/**
- * 胶囊内按钮之间的间距（**紧凑档**，4dp）：只给 AB 胶囊在"常规档 + 可读下限"放不下三段文字时用
- * （极窄屏 + 最大系统字号）。截图胶囊永远是四枚 48dp 圆钮，宽度固定，用不到这一档。
- *
- * 先收留白、再缩字号：大字号下留白本来就被文字淹没了，而字号有可读下限（见 [abCapsuleTextLayout]）。
- */
-internal val PlayerScreenshotCapsuleButtonSpacingCompact = 4.dp
 
 /**
  * 截图胶囊滑入/滑出（含淡入淡出）的时长（360ms）。

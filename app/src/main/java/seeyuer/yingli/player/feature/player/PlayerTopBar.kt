@@ -3,10 +3,8 @@ package seeyuer.yingli.player.feature.player
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,7 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -309,99 +306,14 @@ internal fun PlayerChromeIconButton(
 }
 
 /**
- * 带文字的胶囊按钮（AB 胶囊的 A / B / 清除）。
+ * **文字块**（进度行下方的 AB 区间读数行、帧数胶囊）的字号下限：正常机型用不到，
+ * 只在极窄屏 / 最大系统字号下兜底。与帧数胶囊的兜底同一档（10sp），
+ * 全项目只有这一个"仍算可读"的下限。
  *
- * **与 [PlayerChromeIconButton] 的分工**（改之前先读这段）：
- *  - [PlayerChromeIconButton] 是**定尺寸圆钮**：宽度永远等于 [PlayerChromeButtonSize]，
- *    内容只能是图标或"短到能塞进圆里"的值（倍速 `1.5x`）。图标按钮的宽度不携带信息。
- *  - 本组件是**弹性宽度**的文字按钮：高度仍然钉在 [PlayerChromeButtonSize]（48dp 是**最小触控高度**，
- *    不是固定宽度 —— 需求明确要求文字按钮宽度随内容/字号变化），宽度由文字决定。
- *    当可用宽度不够时它**缩字号**而不是把文字省略掉：`A 00:12` 被截成 `A 00…`
- *    就失去了"这是哪一个时间点"的信息，而字号小一点仍然完整可读。
- *
- * 视觉材质（底色 alpha、描边、胶囊圆角）与图标按钮、截图胶囊**同源**，全部来自上面那组常量，
- * 不在这里写第二份 alpha。
- *
- * 可用宽度由调用方通过 `Modifier.weight(...)` / 约束给出；这里只负责"在给出的宽度里放下文字"。
- */
-@Composable
-internal fun PlayerChromeTextButton(
-    label: String,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    filled: Boolean = false,
-    tint: Color = YingLiTheme.player.controlPrimary,
-    baseFontSize: TextUnit = androidx.compose.material3.MaterialTheme.typography.labelLarge.fontSize,
-    /** 左右内边距：常规档 / 紧凑档由调用方（胶囊的排版决策）给出，见 [abCapsuleTextLayout]。 */
-    horizontalPadding: Dp = PlayerChromeTextButtonHorizontalPadding,
-) {
-    val fontScale = LocalDensity.current.fontScale
-    // 局部的可用宽度（而不是整屏宽度）：按钮在自己的约束里再兜一次底 ——
-    // 调用方（胶囊）已经按整排文字算过一个统一字号并从 [baseFontSize] 传进来，
-    // 这里只负责"连单独一个标签都放不下"的极端情况。
-    BoxWithConstraints(modifier = modifier.height(PlayerChromeButtonSize)) {
-        val textWidth = maxWidth - horizontalPadding * 2
-        Surface(
-            onClick = onClick,
-            // **宽度不写死**：由文字 + 内边距决定（见上面的分工说明）。
-            modifier = Modifier.fillMaxHeight(),
-            enabled = enabled,
-            shape = PlayerChromeCapsuleShape,
-            color = if (filled) {
-                YingLiTheme.player.controlPrimary
-            } else {
-                YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlFillAlpha)
-            },
-            contentColor = if (filled) YingLiTheme.player.canvas else tint,
-            border = if (filled) {
-                null
-            } else {
-                BorderStroke(PlayerChromeControlBorderWidth, YingLiTheme.player.controlPrimary.copy(alpha = PlayerChromeControlBorderAlpha))
-            },
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = label,
-                    color = if (filled) YingLiTheme.player.canvas else tint,
-                    fontSize = playerChromeTextFontSizeSp(
-                        availableWidth = textWidth,
-                        labels = listOf(label),
-                        baseFontSize = baseFontSize,
-                        fontScale = fontScale,
-                    ),
-                    maxLines = 1,
-                    // 不换行、不省略：宽度由上面的字号适配保证，字号到底仍放不下时宁可整体裁掉一点，
-                    // 也不产出 `A 00…` 这种"看起来是别的意思"的省略号文案。
-                    softWrap = false,
-                    overflow = TextOverflow.Clip,
-                    modifier = Modifier
-                        .padding(horizontal = horizontalPadding)
-                        .semantics { this.contentDescription = contentDescription },
-                )
-            }
-        }
-    }
-}
-
-/**
- * 文字按钮左右内边距（常规档）：它同时也是算"文字可用宽度"时要扣掉的那部分（唯一一份）。
- */
-internal val PlayerChromeTextButtonHorizontalPadding = 12.dp
-
-/**
- * 文字按钮左右内边距（**紧凑档**）：只在"常规档 + 可读下限"仍然放不下三段文字时启用
- * （极窄屏 + 最大系统字号），见 [abCapsuleTextLayout]。
- *
- * 为什么是"收窄内边距"而不是继续缩字号：字号有可读下限，再往下缩就是拿可读性换排版；
- * 而大字号下文字本身就占了按钮的绝大部分，4dp 的横向内边距在视觉上仍然是"文字外面有一圈边"。
- */
-internal val PlayerChromeTextButtonCompactHorizontalPadding = 4.dp
-
-/**
- * 文字按钮/文字胶囊的字号下限：正常机型用不到，只在极窄屏 / 最大系统字号下兜底。
- * 与帧数胶囊的兜底同一档（10sp），全项目只有这一个"仍算可读"的下限。
+ * 名字里的"按钮"是历史遗留：它曾经也是 `PlayerChromeTextButton`（AB 胶囊里那三枚弹性宽度
+ * 文字按钮）的下限。那三枚按钮已经删掉 —— 胶囊里四枚一律是**定尺寸圆钮**
+ *（`PlayerChromeIconButton`，48dp），文字会把圆钮撑成椭圆（真机实测缺陷）。
+ * 常量保留是因为**读数行**仍然需要它：那才是文字真正该去的地方。
  */
 internal val PlayerChromeTextMinFontSize = 10.sp
 

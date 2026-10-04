@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -98,11 +99,13 @@ class PlayerAbLoopCapsuleCommandTest {
         val harness = CapsuleHarness(controller)
 
         // 1) 「A 设置」：必须是"用实时位置设上 A"，而不是什么都没发生。
-        composeRule.onNodeWithText(UNSET_A_LABEL).performClick()
+        composeRule.onNodeWithContentDescription(SET_A).performClick()
         harness.awaitState { it.abLoop.pointA == A_POSITION_MILLIS }
         assertEquals("A 必须设在实时位置上", A_POSITION_MILLIS, controller.pointA())
         assertNull("只设了 A 时 B 仍为空", controller.pointB())
         assertEquals("必须发出且只发出一次 SetAbPoint(A)", 1, controller.setPointCommands[AbPoint.A])
+        // 设上了 A → 那枚圆钮进入"已设置"状态（filled 的语义表达，可断言）。
+        composeRule.onNodeWithContentDescription(SET_A).assertIsSelected()
         // B 由禁用变为可用：这条只有"真实点击 + 真实状态回流"才能断言。
         composeRule.onNodeWithContentDescription(SET_B).assertIsEnabled()
         composeRule.onNodeWithContentDescription(CLEAR).assertIsEnabled()
@@ -156,7 +159,7 @@ class PlayerAbLoopCapsuleCommandTest {
         )
         val harness = CapsuleHarness(controller)
 
-        composeRule.onNodeWithText(UNSET_A_LABEL).performClick()
+        composeRule.onNodeWithContentDescription(SET_A).performClick()
         val message = harness.awaitMessage()
         assertNotNull("设点被拒必须给出瞬时反馈，而不是静默无效", message)
         assertNull("被拒的设点不得写进状态（否则就是看起来成功了）", controller.pointA())
@@ -199,11 +202,11 @@ class PlayerAbLoopCapsuleCommandTest {
         val controller = FakeAbController(startingPositionMillis = A_POSITION_MILLIS)
         val harness = CapsuleHarness(controller)
 
-        composeRule.onNodeWithText(UNSET_A_LABEL).assertIsEnabled()
+        composeRule.onNodeWithContentDescription(SET_A).assertIsEnabled()
         composeRule.onNodeWithContentDescription(SET_B).assertIsNotEnabled()
         composeRule.onNodeWithContentDescription(CLEAR).assertIsNotEnabled()
 
-        composeRule.onNodeWithText(UNSET_A_LABEL).performClick()
+        composeRule.onNodeWithContentDescription(SET_A).performClick()
         harness.awaitState { it.abLoop.pointA != null }
         composeRule.onNodeWithContentDescription(SET_B).assertIsEnabled()
         composeRule.onNodeWithContentDescription(CLEAR).assertIsEnabled()
@@ -406,7 +409,6 @@ class PlayerAbLoopCapsuleCommandTest {
         const val A_POSITION_MILLIS = 12_000L
         const val B_POSITION_MILLIS = 30_000L
 
-        const val UNSET_A_LABEL = "A 设置"
         const val SET_A = "设置 A 点"
         const val SET_B = "设置 B 点"
         const val CLEAR = "清除"

@@ -221,11 +221,8 @@
     <string name="player_next_frame">下一帧</string>
     <string name="player_ab_clear">清除</string>
     <string name="player_ab_close">关闭</string>
-    <string name="player_ab_point_unset">设置</string>
     <string name="player_ab_set_point_a">设置 A 点</string>
     <string name="player_ab_set_point_b">设置 B 点</string>
-    <string name="player_ab_point_a_value">A 点 %1$s</string>
-    <string name="player_ab_point_b_value">B 点 %1$s</string>
     <string name="player_ab_loop_count">循环 ×%1$d</string>
     <string name="player_playlist">播放列表</string>
     <string name="player_pip">画中画</string>

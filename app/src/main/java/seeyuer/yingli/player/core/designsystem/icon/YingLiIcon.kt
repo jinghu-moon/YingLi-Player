@@ -22,6 +22,7 @@ import composeicons.tabler.outline.Check
 import composeicons.tabler.outline.Crop
 import composeicons.tabler.outline.Dots
 import composeicons.tabler.outline.Download
+import composeicons.tabler.outline.Eraser
 import composeicons.tabler.outline.Eye
 import composeicons.tabler.outline.EyeOff
 import composeicons.tabler.outline.FileText
@@ -31,6 +32,8 @@ import composeicons.tabler.outline.GripVertical
 import composeicons.tabler.outline.Headphones
 import composeicons.tabler.outline.Home
 import composeicons.tabler.outline.LayoutGrid
+import composeicons.tabler.outline.LetterA
+import composeicons.tabler.outline.LetterB
 import composeicons.tabler.outline.List
 import composeicons.tabler.outline.Loader
 import composeicons.tabler.outline.Lock
@@ -105,6 +108,27 @@ enum class YingLiIcon(
      * 两条语义各有一个入口，谁也不欠谁。
      */
     AB2(IconProvider.TABLER),
+    /**
+     * AB 胶囊里"设 A 点"那枚圆钮的字形：Tabler `letter-a`（已解包
+     * `icons-tabler-0.1.0-local.1.aar` 核对，属性名就是 `LetterA` / `LetterB`）。
+     *
+     * 为什么用字形而不是在按钮里画文字：圆钮的宽度必须恒为 [PlayerChromeButtonSize]，
+     * 而文字会把按钮撑宽（真机实测"圆形按钮被文本撑成椭圆"正是它）。字形随按钮固定尺寸缩放，
+     * 宽度不携带信息，尺寸也就不会被内容改写。
+     *
+     * 它与 [AB2] 不是同一件事：[AB2] 是**入口**（托盘/顶栏"打开 AB 工具"），
+     * 这两个是**胶囊里的设点按钮**（A / B 各一枚）。同屏语义不同，字形因此也不同。
+     */
+    LETTER_A(IconProvider.TABLER),
+    LETTER_B(IconProvider.TABLER),
+    /**
+     * "清除 AB 区间"那枚圆钮的字形：Tabler `eraser`（已解包 aar 核对。
+     *
+     * 为什么不是 [CLOSE]（`x`）：关闭与清除在同一排里**语义相反**（D3：关闭 ≠ 取消），
+     * 共用同一枚字形会让用户以为它们做同一件事。橡皮擦表达"把设好的两点擦掉"，
+     * 与"收起胶囊"一眼可分。同一屏内不同语义不得共用图标（§3.4）。
+     */
+    ERASER(IconProvider.TABLER),
     PLAY_MODE_SEQUENCE(IconProvider.LOCAL_VECTOR),
     ARROWS_SHUFFLE(IconProvider.TABLER),
     REPEAT(IconProvider.TABLER),
@@ -177,6 +201,9 @@ val YingLiIcon.imageVector: ImageVector
         YingLiIcon.PAUSE -> TablerIcons.Outline.PlayerPause
         YingLiIcon.REPLAY -> TablerIcons.Outline.Refresh
         YingLiIcon.AB2 -> TablerIcons.Outline.AB2
+        YingLiIcon.LETTER_A -> TablerIcons.Outline.LetterA
+        YingLiIcon.LETTER_B -> TablerIcons.Outline.LetterB
+        YingLiIcon.ERASER -> TablerIcons.Outline.Eraser
         YingLiIcon.PLAY_MODE_SEQUENCE -> YingLiLocalIcons.PlayModeSequence
         YingLiIcon.ARROWS_SHUFFLE -> TablerIcons.Outline.ArrowsShuffle
         YingLiIcon.REPEAT -> TablerIcons.Outline.Repeat

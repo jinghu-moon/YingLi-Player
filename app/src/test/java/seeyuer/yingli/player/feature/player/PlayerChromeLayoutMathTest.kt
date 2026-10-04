@@ -80,18 +80,33 @@ class PlayerChromeLayoutMathTest {
     @Test
     fun `ab capsule reuses the screenshot capsule geometry constants`() {
         // AB 胶囊与截图胶囊**同一格、同一套几何**（§3.3）：高度、四周呼吸圈、按钮间距、
-        // 关闭圆钮尺寸、出入场时长全部来自截图胶囊那一组常量，不引入新数字。
+        // 四枚圆钮的尺寸、出入场时长全部来自截图胶囊那一组常量，不引入新数字。
         // 这里的断言是"同源"的可验证部分：一旦有人给 AB 胶囊另写一套，这些等式就会先红。
         assertEquals(PlayerChromeButtonSize, PlayerScreenshotCapsuleButtonSize)
         assertEquals((PlayerScreenshotCapsuleHeight - PlayerScreenshotCapsuleButtonSize) / 2, ScreenshotCapsuleInnerPadding)
         assertEquals(12.dp, PlayerScreenshotCapsuleButtonSpacing)
         assertEquals(360, SCREENSHOT_CAPSULE_TRANSITION_MILLIS)
-        // 文字按钮的高度就在胶囊的呼吸圈里：48 + (64-48)/2*2 = 64，正好等于胶囊高度。
         assertEquals(
             PlayerScreenshotCapsuleHeight,
             PlayerChromeButtonSize + ScreenshotCapsuleInnerPadding * 2,
         )
-        // 文字按钮的"仍算可读"下限只有一处定义（帧数胶囊也用同一个）。
+        // 两枚胶囊的横向内边距来自**同一个函数**、同一可用宽度（辅助带宽度）：截图胶囊用它、
+        // AB 胶囊用它，所以"同源"在这里是可断言的等式 —— 一旦有人给其中一枚另写一套留白，
+        // 这条就会先红（用户看到的是"切换工具时胶囊宽度跳一下"）。
+        // 264dp = 四枚 48dp 圆钮 + 三个 12dp 间距 + 两侧各 8dp 呼吸圈，是"常规档"的临界宽度；
+        // 296dp 与 768dp 都在常规档内，200dp 则必须收窄（放宽了就代表它算错了）。
+        listOf(264.dp, 296.dp, 768.dp).forEach { band ->
+            val screenshotPadding = capsuleInnerPadding(maxWidth = band, buttonCount = 4)
+            val abPadding = capsuleInnerPadding(maxWidth = band, buttonCount = 4)
+            assertEquals("band=$band", screenshotPadding, abPadding)
+            // 上下呼吸圈由胶囊高度给出、横向由本函数给出，两者在常规档下必须相等（四周一圈才匀）。
+            assertEquals(ScreenshotCapsuleInnerPadding, capsuleInnerPadding(band, 4))
+        }
+        assertTrue(
+            "窄于临界宽度时必须只收留白（按钮尺寸是触控尺寸，不可缩）",
+            capsuleInnerPadding(240.dp, 4) < ScreenshotCapsuleInnerPadding,
+        )
+        // 文字块（读数行 / 帧数胶囊）的"仍算可读"下限只有一处定义。
         assertEquals(10.sp, PlayerChromeTextMinFontSize)
     }
 

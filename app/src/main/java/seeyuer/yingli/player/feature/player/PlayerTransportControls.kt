@@ -42,11 +42,20 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -54,6 +63,7 @@ import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
 import seeyuer.yingli.player.core.designsystem.component.YingLiSlider
 import seeyuer.yingli.player.core.designsystem.component.YingLiSliderDefaults
+import seeyuer.yingli.player.core.designsystem.component.YingLiSliderThumbRadius
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.playback.PlaybackState
@@ -164,14 +174,6 @@ internal fun auxiliaryBandTransition(bandHold: Boolean): AuxiliaryBandTransition
 
 /** 时间文本最小宽度，保证播放中进度条长度不随时长位数跳动。 */
 private val PlayerTimeLabelMinWidth = 42.dp
-
-/**
- * AB 区间读数行里三段文字之间的间距。
- *
- * 取 8dp（比胶囊内的 12dp 紧一档）：这一行只是"读数"，字号适配之后要紧挨在一起才像一句话。
- * 它同时会从"可用宽度"里扣掉（见读数行的字号适配），否则在 2 倍字号下三段文字会互相压住。
- */
-private val AbReadoutGap = 8.dp
 
 /**
  * 拖动进度条时实时 seek 的**最小间隔**。
@@ -484,26 +486,111 @@ internal fun BottomPlaybackControls(
                 Box(Modifier.weight(1f)) {
                     if (duration != null && duration > 0 && abStart != null) {
                         val markerColor = YingLiTheme.colors.selectionStructural
-                        // A–B 区间高亮 + 两端标记：画在**进度条自己那一行**上（不是另起一行），
-                        // 与滑杆共用同一段水平几何（`padding(horizontal = 10.dp)` 对齐滑杆轨道）。
-                        // 单独挂 testTag：区间高亮是"AB 生效"最直观的读数，instrumented 要能断言它在场。
+                        // 合并标记中间那道缝的颜色与滑杆轨道同色（"空"），**在 Canvas 之外**取：
+                        // `YingLiTheme.player` 是 @Composable 属性，绘制作用域里读不到。
+                        val trackColor = YingLiTheme.player.track
+                        // A–B 区间高亮 + 两端标记：画在**进度条自己那一行**上（不是另起一行）。
+                        //
+                        // 几何走 `AbLoopMath.abRangeGeometry`（纯函数，有 JVM 单测）：这里只把
+                        // 需要的几个数字过一遍密度，**不在这里做任何判定**（最小宽度、中心锚定、
+                        // 越界夹取、是否合并、是否被夸大，全部由那个函数回答）。
+                        //
+                        // 左右内边距 = 滑杆圆钮半径：滑杆的轨道在它自己的坐标系里是
+                        // `[thumbRadius, width - thumbRadius]`（见 YingLiSlider 的绘制与
+                        // sliderTrackSpanPx），所以叠在同一行上的区间必须被夹进**同一段**轨道，
+                        // 否则端点会与圆钮错位（旧实现写死 10dp，与 7dp 的圆钮差 3dp）。
                         Canvas(
                             Modifier.matchParentSize()
-                                .padding(horizontal = 10.dp)
+                                .padding(horizontal = YingLiSliderThumbRadius)
                                 .testTag(PlayerTestTags.AB_RANGE),
                         ) {
-                            val startX = size.width * (abStart.toFloat() / duration).coerceIn(0f, 1f)
-                            val endX = abEnd?.let { size.width * (it.toFloat() / duration).coerceIn(0f, 1f) }
-                            if (endX != null) {
-                                drawRect(
-                                    color = markerColor.copy(alpha = 0.28f),
-                                    topLeft = androidx.compose.ui.geometry.Offset(startX, size.height * 0.4f),
-                                    size = androidx.compose.ui.geometry.Size((endX - startX).coerceAtLeast(0f), size.height * 0.2f),
-                                )
-                            }
-                            drawLine(markerColor, androidx.compose.ui.geometry.Offset(startX, 0f), androidx.compose.ui.geometry.Offset(startX, size.height), strokeWidth = 2.dp.toPx())
-                            if (endX != null) {
-                                drawLine(markerColor, androidx.compose.ui.geometry.Offset(endX, 0f), androidx.compose.ui.geometry.Offset(endX, size.height), strokeWidth = 2.dp.toPx())
+                            val markerRadiusPx = with(density) { AbMarkerRadius.toPx() }
+                            val geometry = abRangeGeometry(
+                                trackWidthPx = size.width,
+                                fractionStart = abStart.toFloat() / duration,
+                                fractionEnd = (abEnd ?: abStart).toFloat() / duration,
+                                minWidthPx = with(density) { MIN_AB_RANGE_WIDTH.toPx() },
+                                mergeThresholdPx = with(density) { AbMarkerMergeThreshold.toPx() },
+                                markerCenterYPx = size.height / 2f,
+                            )
+                            if (geometry.valid) {
+                                val bandHeight = with(density) { AbRangeBandHeight.toPx() }
+                                val cornerRadius = with(density) { AbRangeCornerRadius.toPx() }
+                                val bandTop = geometry.markerCenterYPx - bandHeight / 2f
+                                val bandSize = Size(geometry.visualWidthPx, bandHeight)
+                                val bandTopLeft = Offset(geometry.startPx, bandTop)
+                                // 区间色块：只设了 A 时不画（"只有标记、不循环"，与 §5.11 一致）。
+                                if (abEnd != null) {
+                                    drawRoundRect(
+                                        color = markerColor.copy(alpha = AbRangeFillAlpha),
+                                        topLeft = bandTopLeft,
+                                        size = bandSize,
+                                        cornerRadius = CornerRadius(cornerRadius, cornerRadius),
+                                    )
+                                    // **夸大必须可辨识**：画出来的宽度不等于真实宽度时，色块上下沿
+                                    // 改走虚线（实线 = 真实长度，虚线 = 为了看得见而放大过）。
+                                    // 为什么用虚线而不是换颜色/降透明度：颜色与透明度在这个项目里
+                                    // 已经各自有语义（强调色=生效、alpha=层级），再借用它们会让
+                                    // "这段被夸大"变成读不出来的第二含义；虚线是"非精确"的既有约定。
+                                    if (geometry.exaggerated) {
+                                        val stroke = with(density) { AbRangeDashStrokeWidth.toPx() }
+                                        val dash = with(density) { AbRangeDashLength.toPx() }
+                                        val inset = stroke / 2f
+                                        val effect = PathEffect.dashPathEffect(floatArrayOf(dash, dash))
+                                        listOf(bandTop + inset, bandTop + bandHeight - inset).forEach { y ->
+                                            drawLine(
+                                                color = markerColor,
+                                                start = Offset(geometry.startPx, y),
+                                                end = Offset(geometry.endPx, y),
+                                                strokeWidth = stroke,
+                                                pathEffect = effect,
+                                            )
+                                        }
+                                    }
+                                }
+                                if (geometry.merged && abEnd != null) {
+                                    // 合并标记：两枚标记太近（< AbMarkerMergeThreshold）时**不画两个圆**
+                                    // ——两个圆会糊成一个点，读不出"这里有个区间"。
+                                    // 改画**一枚小圆角块**（宽度容得下两枚标记并排：2 × 标记直径）+
+                                    // 中间一道缝，读起来就是"两枚标记被并到一起"。
+                                    drawRoundRect(
+                                        color = markerColor,
+                                        topLeft = Offset(
+                                            geometry.startPx,
+                                            geometry.markerCenterYPx - markerRadiusPx,
+                                        ),
+                                        size = Size(geometry.visualWidthPx, markerRadiusPx * 2),
+                                        cornerRadius = CornerRadius(cornerRadius, cornerRadius),
+                                    )
+                                    val seamWidth = with(density) { AbMarkerSeamWidth.toPx() }
+                                    val seamX = geometry.markerCenterXPx
+                                    drawLine(
+                                        // 缝用轨道色（同一行里的"空"），不是画一条浅色线：
+                                        // 它是"两枚标记之间的空隙"，视觉上就是把合并块切开。
+                                        // 颜色必须在 Canvas 之外取好：`YingLiTheme.player` 是
+                                        // @Composable 属性，绘制作用域里读不到。
+                                        color = trackColor,
+                                        start = Offset(seamX, geometry.markerCenterYPx - markerRadiusPx),
+                                        end = Offset(seamX, geometry.markerCenterYPx + markerRadiusPx),
+                                        strokeWidth = seamWidth,
+                                    )
+                                } else {
+                                    // 未合并：两端各一枚圆点。A 与 B 至少隔了
+                                    // AbMarkerMergeThreshold，所以两枚圆点**看得清是两枚**
+                                    //（这正是"标记不重叠"那条验收的可见形式）。
+                                    drawCircle(
+                                        color = markerColor,
+                                        radius = markerRadiusPx,
+                                        center = Offset(geometry.startPx, geometry.markerCenterYPx),
+                                    )
+                                    if (abEnd != null) {
+                                        drawCircle(
+                                            color = markerColor,
+                                            radius = markerRadiusPx,
+                                            center = Offset(geometry.endPx, geometry.markerCenterYPx),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -544,64 +631,76 @@ internal fun BottomPlaybackControls(
                 )
                     }
                     if (hasAbMarkers) {
-                        // 区间读数行：左端 A、中间"循环 ×N"、右端 B。
-                        // 计数只在**区间完整**（A、B 都设了）时出现：只设了 A 时循环还没开始，
-                        // 显示 `循环 ×0` 会让人以为"已经在循环但一次没跑"。
+                        // ── 区间读数行：`A 00:12 → B 00:17 · 5.0s · 循环 ×12` ────────────────────
+                        // 它是**唯一**显示 AB 数值的地方（胶囊里的按钮已经不再带时间文字：
+                        // 文字会把圆钮撑成椭圆，见 AbLoopToolCapsule）。三段各自的显示条件由
+                        // 纯函数 `abReadoutSegments` 决定（有单测）：两端时刻设了就显示，
+                        // "区间时长 + 循环次数"只在区间完整时出现（只设 A 时循环还没开始，
+                        // 显示 `循环 ×0` 会让人以为"已经在循环但一次没跑"）。
                         //
-                        // 字号走与 AB 胶囊**同一套适配**（playerChromeTextFontSizeSp）：
-                        // 系统字号放大 / 窄屏下三段文字会比整屏还宽，硬排在 SpaceBetween 里
-                        // 会互相压住、两端被裁（2 倍字号的真机截图证实过）。这里按可用宽度统一缩字号，
-                        // 并保留可读下限 —— 与胶囊里的按钮同一条口径。
-                        val abReadoutA = abStart?.let { "A ${formatDuration(it)}" }.orEmpty()
-                        val abReadoutCount = if (abStart != null && abEnd != null) {
-                            stringResource(R.string.player_ab_loop_count, abLoopCount)
-                        } else {
-                            ""
-                        }
-                        val abReadoutB = abEnd?.let { "B ${formatDuration(it)}" }.orEmpty()
-                        val abReadoutTexts = listOf(abReadoutA, abReadoutCount, abReadoutB).filter { it.isNotEmpty() }
-                        BoxWithConstraints(
-                            modifier = Modifier.fillMaxWidth().testTag(PlayerTestTags.AB_RANGE_LABELS),
-                        ) {
+                        // **区间时长必须显式写出来**：短区间被进度条放大之后（见 AbLoopMath），
+                        // 它的渲染长度不再代表真实长度，真实长度只能在文字上有一个落点。
+                        //
+                        // 字号沿用 `playerChromeTextFontSizeSp`（与帧数胶囊同一套模型）：
+                        // 整行文本按可用宽度反推一个统一字号、下限 10sp —— 窄屏 / 2 倍字号下
+                        // 这一行会比整屏还宽，硬排就会被裁（旧实现三段时间隔断言过这件事）。
+                        val arrow = AbReadoutArrow
+                        val separator = AbReadoutSeparator
+                        // 文案必须在**Composable 上下文里**取好再传进去：纯函数不碰资源，
+                        // 计数的事实来源仍然是会话侧的 `AbLoopSession.loopCount`。
+                        val loopCountLabel = stringResource(R.string.player_ab_loop_count, abLoopCount)
+                        val segments = abReadoutSegments(
+                            pointAMillis = abStart,
+                            pointBMillis = abEnd,
+                            loopCountLabel = loopCountLabel,
+                            arrow = arrow,
+                            separator = separator,
+                        )
+                        // 整行文本与"这一段文字在 1sp 下有多宽"必须来自**同一份**字符串：
+                        // 排序、箭头、分隔符都由 abReadoutSegments 决定，这里只是把它们连起来，
+                        // 不重新拼一遍（重拼就会与纯函数算出来的东西漂移）。
+                        val readoutText = segments.texts.joinToString(" ")
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                             val abReadoutFontSize = playerChromeTextFontSizeSp(
-                                availableWidth = maxWidth - AbReadoutGap * (abReadoutTexts.size - 1).coerceAtLeast(0),
-                                labels = abReadoutTexts,
+                                availableWidth = maxWidth,
+                                labels = listOf(readoutText),
                                 baseFontSize = MaterialTheme.typography.labelLarge.fontSize,
                                 fontScale = LocalDensity.current.fontScale,
                             )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(AbReadoutGap, Alignment.CenterHorizontally),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = abReadoutA,
-                                    color = YingLiTheme.player.controlPrimary,
-                                    style = playerTimeTextStyle(),
-                                    fontSize = abReadoutFontSize,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                )
-                                if (abReadoutCount.isNotEmpty()) {
-                                    Text(
-                                        text = abReadoutCount,
-                                        color = YingLiTheme.player.controlSecondary,
-                                        style = playerTimeTextStyle(),
-                                        fontSize = abReadoutFontSize,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        modifier = Modifier.testTag(PlayerTestTags.AB_LOOP_COUNT),
-                                    )
-                                }
-                                Text(
-                                    text = abReadoutB,
-                                    color = YingLiTheme.player.controlPrimary,
-                                    style = playerTimeTextStyle(),
-                                    fontSize = abReadoutFontSize,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                )
-                            }
+                            val abReadoutIntervalColor = YingLiTheme.player.controlSecondary
+                            Text(
+                                text = buildAnnotatedString {
+                                    segments.texts.forEachIndexed { index, part ->
+                                        if (index > 0) append(" ")
+                                        // 计数那一段用次文字色：它和"区间多长"同段（`5.0s · 循环 ×12`），
+                                        // 但只有次数是**会一直变**的那个数字，压一档色阶才不会抢走时刻的注意力。
+                                        val style = if (index == segments.loopCountIndex) {
+                                            SpanStyle(color = abReadoutIntervalColor)
+                                        } else {
+                                            SpanStyle(color = Color.Unspecified)
+                                        }
+                                        withStyle(style) { append(part) }
+                                    }
+                                },
+                                style = playerTimeTextStyle(),
+                                color = YingLiTheme.player.controlPrimary,
+                                fontSize = abReadoutFontSize,
+                                maxLines = 1,
+                                // 不换行、不省略：宽度由上面的字号适配保证（下有 10sp 下限），
+                                // 省略号会把"区间多长"这一段吃掉，而那正是这个数字存在的意义。
+                                softWrap = false,
+                                overflow = TextOverflow.Clip,
+                                textAlign = TextAlign.Center,
+                                // testTag 挂在**文字本身上**（而不是外层 BoxWithConstraints）：
+                                // 语义树里"文本"在承载它的那个节点上，把 tag 挂在外层会得到一个
+                                // 有 tag 但没有文本的父节点 —— instrumented 就只能去数子节点
+                                //（`onChildren().filterToOne(hasText(...))`），脆，而且断言不出
+                                // "这一整行长什么样"。挂在这里，`onNodeWithTag(AB_RANGE_LABELS)`
+                                // 拿到的就是这一整句话。
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag(PlayerTestTags.AB_RANGE_LABELS),
+                            )
                         }
                     }
                 }

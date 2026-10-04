@@ -375,6 +375,18 @@ fun YingLiSegmentedControl(
     }
 }
 
+/**
+ * 滑杆轨道的视觉厚度与圆钮半径（**唯一**一份定义）。
+ *
+ * 为什么必须是公开常量而不是留在参数默认值里：轨道两端的**可取值区间**是
+ * `[圆钮半径, 轨道宽 − 圆钮半径]`（见 [sliderTrackSpanPx] 与 `YingLiSlider` 的绘制），
+ * 任何"必须在轨道坐标系里画东西"的叠加层（进度条上的 A–B 区间与两端标记）都得用**同一段**
+ * 几何，否则叠加层会与圆钮错位。播放页的 AB 标记几何（`AbLoopMath`）正是从这两个值推出的，
+ * 所以它们不能再是散落在两处的字面量。
+ */
+val YingLiSliderTrackHeight: Dp = 4.dp
+val YingLiSliderThumbRadius: Dp = 7.dp
+
 @Composable
 fun YingLiSlider(
     value: Float,
@@ -385,8 +397,8 @@ fun YingLiSlider(
     enabled: Boolean = true,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     onValueChangeFinished: (() -> Unit)? = null,
-    trackHeight: Dp = 4.dp,
-    thumbRadius: Dp = 7.dp,
+    trackHeight: Dp = YingLiSliderTrackHeight,
+    thumbRadius: Dp = YingLiSliderThumbRadius,
     colors: YingLiSliderColors = YingLiSliderDefaults.colors(),
 ) {
     var draggingValue by remember { mutableStateOf<Float?>(null) }

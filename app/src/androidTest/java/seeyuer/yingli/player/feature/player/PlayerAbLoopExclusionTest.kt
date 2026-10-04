@@ -2,8 +2,8 @@ package seeyuer.yingli.player.feature.player
 
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -53,6 +53,17 @@ class PlayerAbLoopExclusionTest {
     @get:Rule
     val composeRule = createComposeRule()
 
+    /**
+     * 几何读数的等稳定器（见 [BoundsSettler]）：`assertIsDisplayed()` 读的是带裁剪的
+     * `boundsInWindow`，在刚重排过的那一帧会误报"不在场"（实测）。等布局稳定那一帧再判，
+     * 判据仍然是框架自己那一套。
+     */
+    private val settler by lazy { BoundsSettler(composeRule.mainClock) { composeRule.waitForIdle() } }
+
+    private fun SemanticsNodeInteraction.assertDisplayedSettled(describe: String) {
+        settler.assertDisplayed(this) { describe }
+    }
+
     @Test
     fun aLateCaptureResultNeverRendersAPreviewCardNextToTheAbCapsule() {
         val gateway = GatedScreenshotGateway()
@@ -82,7 +93,7 @@ class PlayerAbLoopExclusionTest {
         composeRule.waitUntil(TIMEOUT_MILLIS) {
             projected.value.abToolOpen && projected.value.screenshot == ScreenshotUiState.Idle
         }
-        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertIsDisplayed()
+        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertDisplayedSettled("AB 胶囊")
         composeRule.onAllNodesWithTag(PlayerTestTags.SCREENSHOT_CAPSULE).assertCountEquals(0)
 
         // 现在那次捕获才回来：文件已落盘，但结果必须被丢弃。
@@ -92,7 +103,7 @@ class PlayerAbLoopExclusionTest {
         assertEquals(ScreenshotUiState.Idle, projected.value.screenshot)
         // 关键断言：预览卡与 AB 胶囊**不同时出现**。
         composeRule.onAllNodesWithTag(PlayerTestTags.SCREENSHOT_PREVIEW).assertCountEquals(0)
-        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertIsDisplayed()
+        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertDisplayedSettled("AB 胶囊")
     }
 
     @Test
@@ -117,17 +128,21 @@ class PlayerAbLoopExclusionTest {
         composeRule.waitUntil(TIMEOUT_MILLIS) { projected.value.screenshot == ScreenshotUiState.Armed }
         composeRule.runOnIdle { viewModel.captureScreenshot() }
         composeRule.waitUntil(TIMEOUT_MILLIS) { projected.value.screenshot is ScreenshotUiState.Preview }
-        composeRule.onNodeWithTag(PlayerTestTags.SCREENSHOT_PREVIEW).assertIsDisplayed()
+        composeRule.onNodeWithTag(PlayerTestTags.SCREENSHOT_PREVIEW).assertDisplayedSettled("截图预览卡")
         val before = (projected.value.screenshot as ScreenshotUiState.Preview).remainingMillis
 
         composeRule.runOnIdle { viewModel.openAbTool() }
         composeRule.waitUntil(TIMEOUT_MILLIS) { projected.value.abToolOpen }
 
         // Preview 分支：**保留**预览卡与倒计时（那是用户已经拿到的结果），只退出截图工具模式。
-        composeRule.onNodeWithTag(PlayerTestTags.SCREENSHOT_PREVIEW).assertIsDisplayed()
-        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertIsDisplayed()
+        // 注意：预览卡倒计时只有 3 秒（`PREVIEW_DURATION_MILLIS`），这一段里的每一次断言都必须
+        // 保持"一次读数"的开销 —— 这也是 [BoundsSettler.assertDisplayed] 要"便宜"的原因
+        //（"连续两帧一致"的等稳定写法实测每帧 300~800ms，会把倒计时耗光）。
+        composeRule.onNodeWithTag(PlayerTestTags.SCREENSHOT_PREVIEW).assertDisplayedSettled("截图预览卡")
+        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertDisplayedSettled("AB 胶囊")
         // 截图工具模式退出 = 底栏三段回来（AB 胶囊住的辅助带就在其中）。
-        composeRule.onNodeWithTag(PlayerTestTags.PORTRAIT_CONTROLS).assertIsDisplayed()
+        composeRule.onNodeWithTag(PlayerTestTags.PORTRAIT_CONTROLS).assertDisplayedSettled("竖屏底栏")
+
         composeRule.waitUntil(TIMEOUT_MILLIS) {
             (projected.value.screenshot as? ScreenshotUiState.Preview)?.remainingMillis?.let { it < before } == true
         }

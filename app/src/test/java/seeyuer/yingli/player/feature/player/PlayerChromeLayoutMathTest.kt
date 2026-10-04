@@ -1,5 +1,6 @@
 package seeyuer.yingli.player.feature.player
 
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
@@ -68,6 +69,54 @@ class PlayerChromeLayoutMathTest {
             ScreenshotCapsuleInnerPadding,
         )
         assertTrue("呼吸圈不许为 0（胶囊会贴上按钮顶点）", ScreenshotCapsuleInnerPadding > 0.dp)
+    }
+
+    /**
+     * **本批的底栏高度账（重算）**：读数行从"进度区第二行"搬到了读数条，占位高度不再来自
+     * `labelLarge.lineHeight`（那个值可能是 [TextUnit.Unspecified]），而是来自
+     * [abReadoutBandHeight] = `主题字号 × 1.15`，不低于 [PlayerPortraitControlsSpacing]。
+     *
+     * 两条硬约束（缺一不可）：
+     *  1. **1 倍字号下它恰好等于一个间距档（16dp）**：所以进度区槽位（按钮行 + 读数行）
+     *     与上一批逐值相同，**常规机型的几何完全不变**（这正是"进度行不瞬移"的算式）；
+     *  2. **系统字号放大时它跟着变高**：2 倍字号 → 32.2dp，读数条不会被压成半行。
+     */
+    @Test
+    fun `the readout band is one spacing at normal type and grows with the system font scale`() {
+        val baseFontSize = 14.sp
+        assertEquals(16.1f, abReadoutBandHeight(baseFontSize, fontScale = 1f).value, 0.01f)
+        // 2 倍系统字号：字号 28sp × 1.15 = 32.2dp。
+        assertEquals(32.2f, abReadoutBandHeight(baseFontSize, fontScale = 2f).value, 0.01f)
+        // 主题没声明字号 / 空行：退化为间距档，绝不给 0（那会把读数行压成一条线）。
+        assertEquals(PlayerPortraitControlsSpacing, abReadoutBandHeight(TextUnit.Unspecified, fontScale = 1f))
+        val slotBefore = PlayerChromeButtonSize + 16.1.dp
+
+        // 进度区槽位 = 按钮行 + 读数行天条：1 倍字号下与上一批（按钮行 + lineHeight 16dp）逐值相同。
+        val slotAfter = PlayerChromeButtonSize + abReadoutBandHeight(baseFontSize, fontScale = 1f)
+        assertEquals(slotBefore, slotAfter)
+        // 而 2 倍字号下它必须变高（否则读数条被压扁）。
+        assertTrue(
+            "系统字号放大时进度区槽位必须跟着变高",
+            PlayerChromeButtonSize + abReadoutBandHeight(baseFontSize, fontScale = 2f) > slotAfter,
+        )
+    }
+
+    /**
+     * **两枚胶囊仍然等高**（本批没有让 AB 胶囊长高一行：读数条留在进度区，见交付报告的"未完成项"）。
+     *
+     * 所以"辅助带满高 = 胶囊高 + 间距"这条既有算式**逐值不变**，底栏三段的竖直位置也不变。
+     */
+    @Test
+    fun `both tool capsules still share one height and the band math is unchanged`() {
+        assertEquals(PlayerChromeButtonSize + PlayerPortraitControlsSpacing, PlayerScreenshotCapsuleHeight)
+        assertEquals(PlayerScreenshotCapsuleHeight + PlayerPortraitControlsSpacing, PlayerAuxiliaryBandHeight)
+        assertEquals(64.dp, PlayerScreenshotCapsuleHeight)
+        assertEquals(80.dp, PlayerAuxiliaryBandHeight)
+        // 托盘按钮的最终位置仍由"带子满高 − 间距 − 按钮尺寸"给出（离按钮行一个间距）。
+        assertEquals(
+            PlayerPortraitControlsSpacing,
+            PlayerAuxiliaryBandHeight - (PlayerScreenshotCapsuleHeight - PlayerChromeButtonSize) - PlayerChromeButtonSize,
+        )
     }
 
     @Test

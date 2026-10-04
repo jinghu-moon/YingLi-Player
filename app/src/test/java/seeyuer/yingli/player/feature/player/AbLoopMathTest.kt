@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.vector.VectorPath
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import seeyuer.yingli.player.core.designsystem.component.YingLiSliderThumbRadius
@@ -40,6 +41,7 @@ class AbLoopMathTest {
         trackWidthPx: Float,
         fractionStart: Float,
         fractionEnd: Float?,
+        head: Float? = null,
     ) = abRangeGeometry(
         trackWidthPx = trackWidthPx,
         fractionStart = fractionStart,
@@ -47,7 +49,18 @@ class AbLoopMathTest {
         markerDiameterPx = markerDiameterPx,
         minMarkerGapPx = TestMarkerGapPx,
         markerCenterYPx = centerY,
+        fractionHead = head,
+        barMinWidthPx = barMinWidthPx,
     )
+
+    /**
+     * 测试用的预判条最小宽度（px）：**直接取真实常量的数值** [AbRangeBarThickness]。
+     *
+     * 不另拍一个数：预判条的"最小可辨识宽度 = 自身厚度"这条关系（见 [abRangeBarMinWidthPx]）
+     * 必须在测试里也成立，否则断言就与绘制侧脱钩了。像素域里没有密度换算，
+     * 所以这里取 dp 的**数值**（3px），与其余用例用整数像素造输入的做法一致。
+     */
+    private val barMinWidthPx = AbRangeBarThickness.value
 
     // ---- 徽标尺寸的推导 ------------------------------------------------------
 
@@ -123,6 +136,153 @@ class AbLoopMathTest {
         assertTrue("区间带不许吃掉整行：$AbRangeBandHeight", AbRangeBandHeight <= 32.dp)
         // 徽标比轨道明显（否则看不见）。
         assertTrue(AbMarkerRadius > YingLiSliderTrackHeight / 2)
+    }
+
+    // ---- 标记组的竖直几何（本批：徽标上移到轨道上方）----------------------------
+
+    /**
+     * 标记组的竖直分寸链：**从轨道中线往上**依次是徽标（直径 18dp，中心抬高
+     * [AbMarkerTopOffset]）、一个 12dp 的间隙、3dp 厚的区间条。
+     *
+     * 这一条把"徽标上移 + 区间条在徽标上方"整条链钉住：任何一处改了间距或厚度，这里先红。
+     * 同时钉住三个**来源口径**：
+     *  · 区间条厚度取剖面里自洽的那一档 **3dp**（`docs/21` §2.1：右侧标注的 5dp 量的是
+     *    "徽标下沿 → 循环层上沿"的**间距**，不是厚度）；
+     *  · 间隙取 **12dp**（**有意偏离** demo 的 5dp）：5dp 在 18dp 的字母牌下面太挤，
+     *    12dp 与字形框同宽、也与项目 4/8/12/16 的间距档一致；
+     *  · 标记组总高 **33dp**，与 demo 文字里的"约 30dp"同一量级（demo 只给叙述、没有加总式）。
+     */
+    @Test
+    fun `the marker group stacks the badge above the range bar with a scripted offset`() {
+        assertEquals(3f, AbRangeBarThickness.value, 0.001f)
+        assertEquals(AbRangeBarThickness / 2, AbRangeBarCornerRadius)
+        assertEquals(12f, AbRangeBarToMarkerGap.value, 0.001f)
+        assertEquals(AbRangeBarToMarkerGap + AbMarkerRadius, AbMarkerTopOffset)
+        assertEquals(21f, AbMarkerTopOffset.value, 0.001f)
+        assertEquals(AbMarkerDiameter + AbRangeBarToMarkerGap + AbRangeBarThickness, AbMarkerGroupHeight)
+        assertEquals(33f, AbMarkerGroupHeight.value, 0.001f)
+    }
+
+    /**
+     * **徽标必须能向上溢出滑杆那条 48dp 触控带 —— 真机核对结论（本批）**。
+     *
+     * 逐项验算（所有输入都来自上面那组常量，不是另拍的数）：
+     *  · 滑杆触控带 48dp、轨道落在它的中线上 ⇒ 中线到上沿 **24dp**；
+     *  · 标记组从轨道中线往上占 `[AbMarkerTopOffset] + [AbMarkerRadius] = 21 + 9 = 30dp`；
+     *  · `30dp > 24dp` ⇒ 标记组**超出触控带 6dp**，画在 `height(48.dp)` 的 Box 里必然
+     *    被裁掉徽标的上半部分。
+     *
+     * 所以本批把它移到滑杆之外的自带画布（[AbMarkerLayerHeight]，64dp、居中于触控带）：
+     * `64/2 = 32dp > 30dp`，余量 2dp。这条测试同时钉住"溢出存在"与"画布容得下"两件事 ——
+     * 谁把间隙调大、或把画布调小，都会先在这里红。
+     */
+    @Test
+    fun `the marker group overflows the slider touch band and needs a taller layer`() {
+        val touchBandHalfHeight = PlayerChromeButtonSize / 2
+        assertEquals(24f, touchBandHalfHeight.value, 0.001f)
+        val markerExtentAboveTrack = AbMarkerTopOffset + AbMarkerRadius
+        assertEquals(21f, AbMarkerTopOffset.value, 0.001f)
+        assertEquals(9f, AbMarkerRadius.value, 0.001f)
+        assertEquals(30f, markerExtentAboveTrack.value, 0.001f)
+        assertTrue(
+            "标记组必须真的溢出滑杆触控带（否则这套分层是多余设计）：$markerExtentAboveTrack > $touchBandHalfHeight",
+            markerExtentAboveTrack > touchBandHalfHeight,
+        )
+        assertEquals(
+            "溢出量（徽标顶边超触控带上沿多少）",
+            6f,
+            (markerExtentAboveTrack - touchBandHalfHeight).value,
+            0.001f,
+        )
+        // 画布上沿在"轨道中线上方 画布高/2"处：必须容得下标记组（余量 2dp）。
+        val layerTopAboveTrack = AbMarkerLayerHeight / 2
+        assertEquals(32f, layerTopAboveTrack.value, 0.001f)
+        assertTrue(
+            "标记组顶边 $markerExtentAboveTrack 必须落在标记层画布内（画布上沿 $layerTopAboveTrack）",
+            markerExtentAboveTrack < layerTopAboveTrack,
+        )
+        assertEquals(
+            "画布余量",
+            2f,
+            (layerTopAboveTrack - markerExtentAboveTrack).value,
+            0.001f,
+        )
+    }
+
+    // ---- 仅 A：预判区间条与幽灵竖线 -------------------------------------------
+
+    /**
+     * 只设了 A 时，几何必须给出那条**预判区间条**（28% 的那条）与**播放头幽灵竖线**的落点。
+     *
+     * 三种相对位置都要覆盖：播放头在 A 之后、正好在 A 上、在 A 之前 —— 最后一种是 demo 特意纠正的
+     * 一种画法（起止按 `min(aX, gx)` 排，**不是**"从 A 往回什么都不画"）。
+     */
+    @Test
+    fun `a lone point A predicts the range bar up to the playhead and marks the playhead`() {
+        // 播放头在 A 之后：条画在 [A, 播放头]。
+        val ahead = geometry(trackWidthPx = 1000f, fractionStart = 0.3f, fractionEnd = null, head = 0.5f)
+        assertFalse(ahead.complete)
+        assertEquals(300f, ahead.predictedStartPx!!, 0.01f)
+        assertEquals(500f, ahead.predictedEndPx!!, 0.01f)
+        assertEquals(500f, ahead.headCenterXPx!!, 0.01f)
+
+        // 只设 A 不动播放头：真实宽度为 0，但"预判条"仍有最小可辨识宽度（不许什么都不画）。
+        val samePlace = geometry(trackWidthPx = 1000f, fractionStart = 0.3f, fractionEnd = null, head = 0.3f)
+        assertEquals(300f, samePlace.predictedStartPx!!, 0.01f)
+        assertEquals(300f + AbRangeBarThickness.value, samePlace.predictedEndPx!!, 0.01f)
+
+        // 播放头在 A **之前**：条画在 [播放头, A]（demo 的 Math.min(aX, gx)）。
+        val behind = geometry(trackWidthPx = 1000f, fractionStart = 0.3f, fractionEnd = null, head = 0.1f)
+        assertEquals(100f, behind.predictedStartPx!!, 0.01f)
+        assertEquals(300f, behind.predictedEndPx!!, 0.01f)
+        assertEquals(100f, behind.headCenterXPx!!, 0.01f)
+
+        // 幽灵竖线贴右端时不许越出轨道：末端位置被夹在轨道内。
+        val atEnd = geometry(trackWidthPx = 1000f, fractionStart = 0.3f, fractionEnd = null, head = 1.4f)
+        assertEquals(1000f, atEnd.headCenterXPx!!, 0.01f)
+        assertEquals(1000f, atEnd.predictedEndPx!!, 0.01f)
+        assertTrue("预判条不许越出轨道右端", atEnd.predictedStartPx!! >= 0f)
+    }
+
+    /** 不传 `fractionHead` 时，预判条退化为"A 处的最小宽度条"（绘制侧的兜底路径）。 */
+    @Test
+    fun `a lone point A without a playhead still shows the minimum bar at A`() {
+        val g = geometry(trackWidthPx = 1000f, fractionStart = 0.3f, fractionEnd = null)
+        assertEquals(300f, g.predictedStartPx!!, 0.01f)
+        assertEquals(300f + AbRangeBarThickness.value, g.predictedEndPx!!, 0.01f)
+        assertEquals(300f, g.headCenterXPx!!, 0.01f)
+    }
+
+    /** 区间**完整**时，三个"预判"字段必须是 `null`：定下来的区间不该再跟着播放头变。 */
+    @Test
+    fun `a complete range carries no prediction fields`() {
+        val g = geometry(trackWidthPx = 1000f, fractionStart = 0.2f, fractionEnd = 0.6f, head = 0.9f)
+        assertTrue(g.complete)
+        assertNull(g.predictedStartPx)
+        assertNull(g.predictedEndPx)
+        assertNull(g.headCenterXPx)
+    }
+
+    /**
+     * 预判条的透明度是**独立的一档**（28%），必须与"区间外压暗"的 0.55 分开：
+     * 前者是"还没激活的预判"，后者是"区间外的亮度"，两者语义不重叠、也不允许合并成一个数。
+     */
+    @Test
+    fun `the inactive prediction alpha is its own tier and does not collapse into the dim alpha`() {
+        assertEquals(0.28f, AbRangeInactiveAlpha, 0.0001f)
+        assertEquals(0.55f, AbRangeGhostHeadAlpha, 0.0001f)
+        assertTrue(
+            "预判条必须比幽灵竖线更淡（条是范围、线是锚点）：$AbRangeInactiveAlpha vs $AbRangeGhostHeadAlpha",
+            AbRangeInactiveAlpha < AbRangeGhostHeadAlpha,
+        )
+        assertTrue("预判条必须明显淡于已锁定：$AbRangeInactiveAlpha", AbRangeInactiveAlpha < 0.5f)
+        // 幽灵竖线的宽度：1.5dp，比区间条厚（3dp）窄一个量级，不会读成"又一截条"。
+        assertEquals(1.5f, AbRangeGhostHeadWidth.value, 0.001f)
+        assertTrue(AbRangeGhostHeadWidth < AbRangeBarThickness)
+        // 它与压暗透明度**是两个不同的量**（名字与用途都不同）：一个作用在"还没激活的条"，
+        // 一个作用在"区间外的像素"。这里只钉住它们各自有定义、且预判条更淡。
+        assertEquals(AbRangeOutsideAlpha, AbRangeGhostHeadAlpha)
+        assertTrue(AbRangeInactiveAlpha < AbRangeOutsideAlpha)
     }
 
     /**

@@ -464,6 +464,14 @@ fun YingLiSlider(
                             .pointerInput(valueRange) {
                                 awaitEachGesture {
                                     val down = awaitFirstDown(requireUnconsumed = false)
+                                    // 这次按下已经被**上层叠加层**认领（播放页的 A–B 端点热区就在滑杆
+                                    // 正上方，它按下即跳到该端点并 consume）：滑杆必须放弃这次手势，
+                                    // 否则同一次点按会先跳端点、再被 down-seek 覆盖成"点在圆钮左边一点"。
+                                    //
+                                    // 判据取 `isConsumed` 而不是 `requireUnconsumed = true`：后者会让
+                                    // 本控件在"down 被顺手消费"的情况下**完全不进入手势循环**，
+                                    // 连拖动都收不到（旧实现的两个 detector 互消费就是这么坏的）。
+                                    if (down.isConsumed) return@awaitEachGesture
                                     fun updateFromTouch(x: Float) {
                                         val next = valueFromFraction(
                                             sliderFractionFromTouch(x, size.width.toFloat(), thumbRadiusPx),
@@ -515,7 +523,7 @@ fun YingLiSlider(
                     cap = StrokeCap.Round,
                 )
             }
-            // ③④ 叠加层（播放页的 A–B 区间内外亮度 + 端点徽标）。
+            // ③④ 叠加层（播放页的 A–B 区间内外亮度）。
             trackOverlay?.invoke(this)
             // ⑤ 滑块：永远最后画。"现在播到哪"是这一行唯一的**位置**指示，不允许被任何叠加层压暗。
             Canvas(Modifier.fillMaxSize()) {

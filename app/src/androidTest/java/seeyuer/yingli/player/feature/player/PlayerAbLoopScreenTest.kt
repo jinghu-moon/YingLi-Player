@@ -15,7 +15,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -206,40 +206,48 @@ class PlayerAbLoopScreenTest {
     }
 
     @Test
-    fun theProgressRowShowsTheAbRangeAndLoopCountEvenAfterTheCapsuleIsClosed() {
+    fun theProgressRowKeepsTheAbRangeAndTheCapsuleCarriesTheReadout() {
         var session by mutableStateOf(
             AbLoopSession(state = AbLoopState(pointA = 12_000, pointB = 37_000), loopCount = 12),
         )
+        var mode by mutableStateOf(SlotMode.AB_LOOP)
         composeRule.setContent {
             YingLiTheme(darkTheme = true) {
                 PlayerScreen(
-                    // 胶囊**关闭**：区间与计数仍然必须是可见的（D3：关闭 ≠ 取消）。
-                    state = stateFor(SlotMode.SCREENSHOT_CAPSULE_CLOSED, session = session),
+                    state = stateFor(mode, session = session),
                     onBack = {}, onPlay = {}, onPause = {}, onSeek = {}, onReplay = {}, onRetry = {},
                     onRecovery = {}, videoSurface = {},
                 )
             }
         }
-
-        // 进场动画（胶囊 360ms 横滑 / 三段 240ms 淡入）先跑完再断言几何与可见性。
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertDoesNotExist()
-        // A–B 区间高亮 + 两端标记画在进度条那一行上。
+        // 1) 胶囊**开着**：读数条住在首行，文案是 demo 的已锁定态（长破折号 + `Δ mm:ss` + 末尾计数）。
         composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE).assertDisplayedSettled("AB 区间层")
-        val labels = composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-        labels.assertDisplayedSettled("AB 读数行")
-        // 本批定稿的读数行：两端时刻 + **真实区间时长** + 循环计数，连成一句。
-        // 区间 25 秒（12s→37s）在 60 秒的测试时长上是一段**正常区间**，所以必须原样显示 25.0s。
+        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS).assertDisplayedSettled("AB 读数条")
         composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-            .assertTextEquals("A 00:12 → B 00:37 · 25.0s · 循环 ×12")
+            .assertTextContains("A 00:12 — B 00:37 · Δ 00:25 · 循环 ×12")
 
-        // 只设了 A：区间还不完整 → 不出现时长也不出现计数（否则会读成"已经在循环但一次没跑"），
-        // 但 A 的读数照旧出现。
+        // 2) 只设了 A：待落点文案在，时长与计数都不在（循环还没开始）。
         session = AbLoopSession(state = AbLoopState(pointA = 12_000))
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE).assertDisplayedSettled("只设 A 时的区间层")
-        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS).assertTextEquals("A 00:12")
+        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
+            .assertTextContains("A 00:12 — B 待落点")
+
+        // 3) 一个点都没设：显示引导文案，**不留空白**（demo 的第 1 态）。
+        session = AbLoopSession.EMPTY
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
+            .assertTextContains("未设置循环 · 点 A 在播放头落点")
+
+        // 4) 胶囊**关闭**：区间仍然画在进度条上（D3：关闭 ≠ 取消），
+        //    而数值读数条随胶囊一起收起 —— "轨道回答在哪、胶囊回答几点"的分工。
+        session = AbLoopSession(state = AbLoopState(pointA = 12_000, pointB = 37_000), loopCount = 12)
+        mode = SlotMode.SCREENSHOT_CAPSULE_CLOSED
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertDoesNotExist()
+        composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE).assertDisplayedSettled("胶囊关闭时的区间层")
+        composeRule.onAllNodesWithTag(PlayerTestTags.AB_RANGE_LABELS).assertCountEquals(0)
     }
 
     /**
@@ -272,9 +280,9 @@ class PlayerAbLoopScreenTest {
         }
         composeRule.waitForIdle()
 
-        // 读数行：真实时长（5.0s）与计数必须在场。
+        // 读数行：真实时长（25 秒 → `Δ 00:25`）与计数必须在场。
         composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-            .assertTextEquals("A 10:00 → B 10:05 · 5.0s · 循环 ×7")
+            .assertTextContains("A 10:00 — B 10:05 · Δ 00:05 · 循环 ×7")
 
         // 区间可见 + 标记合并：用**界面自己那一套**几何判定复核（同一函数、同一轨道宽度）。
         val track = trackWidthPx()
@@ -304,7 +312,7 @@ class PlayerAbLoopScreenTest {
         session = AbLoopSession(state = AbLoopState(pointA = normalStart, pointB = normalEnd), loopCount = 7)
         composeRule.waitForIdle()
         composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-            .assertTextEquals("A 10:00 → B 40:00 · 30:00 · 循环 ×7")
+            .assertTextContains("A 10:00 — B 40:00 · Δ 30:00 · 循环 ×7")
         val normal = abRangeGeometry(
             trackWidthPx = track,
             fractionStart = normalStart.toFloat() / duration,
@@ -443,28 +451,34 @@ class PlayerAbLoopScreenTest {
             )
         }
 
-        // 进度行上的读数行（本批起是**一整句**：两端时刻 + 真实时长 + 计数）必须横向放得下，
-        // 并且纵向有足够行高（字号放大时槽位若还是 16dp，这一行会被压掉一半 ——
-        // 真机 2 倍字号截图先暴露过，横向的 clipped/unclipped 断言抓不到"自己被压扁"）。
+        // 读数条（本批：住在**进度区第二行**）必须横向放得下，并且纵向有足够行高。
+        //
+        // 可用宽度 = 进度区带宽（辅助带宽度与它同宽，都是底栏减两侧内边距）；
+        // 纵向天条 = `abReadoutBandHeight`（主题字号 × 1.15，2 倍字号下是 32.2dp）
+        // —— 字号 2 倍时若槽位还是 16dp，这一行会被压掉一半（真机 2 倍字号截图先暴露过，
+        // 横向的 clipped/unclipped 断言抓不到"自己被压扁"）。
         val readout = composeRule.onNodeWithTag(PlayerTestTags.AB_RANGE_LABELS)
-        val readoutFontSize = playerChromeTextFontSizeSp(
-            availableWidth = band.width,
-            labels = listOf("A 00:12 → B 00:37 · 25.0s · 循环 ×12"),
-            baseFontSize = 14.sp,
+        val availableWidth = band.width
+        val readoutBandHeight = abReadoutBandHeight(
+            fontSize = 14.sp,
             fontScale = config.fontScale,
         )
-        val readoutSample = settler.bounds(readout) { "${config.name}: 读数行" }
-        assertTrue("${config.name}: 读数行不在场：${readoutSample.describe}", readoutSample.displayed)
+        val readoutSample = settler.bounds(readout) { "${config.name}: 读数条" }
+        assertTrue("${config.name}: 读数条不在场：${readoutSample.describe}", readoutSample.displayed)
         assertTrue(
-            "${config.name}: 读数行被横向裁掉了：${readoutSample.describe}",
-            readoutSample.clipped.width.value >= readoutSample.unclipped.width.value - 0.5f,
+            "${config.name}: 读数条被裁掉了：${readoutSample.describe}",
+            boundsAgree(readoutSample),
         )
-        // 行高必须容得下这个字号：一行的实际高度不能小于字号本身（否则就是被压扁了）。
-        val minimumLineHeight = readoutFontSize.value * config.fontScale
+        // 行高必须容得下这一行（行高天条与读数条自身高度都要 ≥ 下限）。
         assertTrue(
-            "${config.name}: 读数行被压扁了：height=${readoutSample.unclipped.height.value}" +
-                " < 字号 ${readoutFontSize.value}sp × ${config.fontScale}",
-            readoutSample.unclipped.height.value >= minimumLineHeight - 0.5f,
+            "${config.name}: 读数条被压扁了：height=${readoutSample.unclipped.height.value}" +
+                " < 天条 ${readoutBandHeight.value}dp",
+            readoutSample.unclipped.height.value >= readoutBandHeight.value - 0.5f,
+        )
+        // 而且它不许越出底栏带宽。
+        assertTrue(
+            "${config.name}: 读数条越出进度区带宽 ${availableWidth}：${readoutSample.unclipped}",
+            readoutSample.unclipped.width.value <= availableWidth.value + 1f,
         )
     }
 

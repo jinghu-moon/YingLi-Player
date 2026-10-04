@@ -224,6 +224,12 @@
     <string name="player_ab_set_point_a">设置 A 点</string>
     <string name="player_ab_set_point_b">设置 B 点</string>
     <string name="player_ab_loop_count">循环 ×%1$d</string>
+    <!-- AB 胶囊首行读数条：未设置态的引导文案（demo 的第 1 态，**不留空白**）。 -->
+    <string name="player_ab_readout_none">未设置循环 · 点 A 在播放头落点</string>
+    <!-- 只设了 A 时读数条中段（`A 06:12 — B 待落点`）。 -->
+    <string name="player_ab_readout_pending_b">B 待落点</string>
+    <!-- 区间时长前缀：`Δ 03:36`。Δ 是数学符号，不进时间格式（那两个数字由 formatAbDelta 给）。 -->
+    <string name="player_ab_delta">Δ</string>
     <string name="player_playlist">播放列表</string>
     <string name="player_pip">画中画</string>
     <string name="player_speed_state">播放速度：%1$s</string>

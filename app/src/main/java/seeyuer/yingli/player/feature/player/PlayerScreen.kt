@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Surface
@@ -471,7 +472,14 @@ fun PlayerScreen(
         val screenshotCapsuleVisible = state.screenshot.isCapsuleVisible()
         // 截图模式激活期间中央三连不出现（需求三）：只加这一条，横竖屏/锁定/自动隐藏的既有
         // 条件仍然原样生效——`controlsOnScreen` 管的是"控件该不该在场"，这里管的是"在场时长什么样"。
-        val centerControlsOnScreen = controlsOnScreen && !state.screenshot.hidesCenterTransportControls()
+        //
+        // **本批扩到"AB 胶囊打开时也不出现"**：真横屏（800×400dp）上 AB 胶囊比截图胶囊多一行读数条，
+        // 底栏整体更高，中央三连会正好压住胶囊里的读数行与 B 徽标（上一批的"真横屏档"实测）。
+        // 判据与截图工具**对称**，两处合并成一条纯函数（`hidesCenterTransportControlsForTool`）。
+        val centerControlsOnScreen = controlsOnScreen && !hidesCenterTransportControlsForTool(
+            screenshot = state.screenshot,
+            capsule = auxiliaryToolCapsule(abToolOpen = state.abToolOpen, screenshot = state.screenshot),
+        )
         if (!state.overlay.locked && (controlsOnScreen || screenshotCapsuleVisible)) {
             // 用 AnimatedVisibility 而不是 `if`：截图模式进出时中央三连要**淡出/淡入**
             // （与底栏三段同一动效常量、同一时长），硬切会让它在画面正中"啪"地消失。
@@ -797,8 +805,19 @@ object PlayerTestTags {
     const val AUXILIARY_BAND = "player.auxiliary_band"
     /** 进度条上的 A–B 区间高亮（含两端标记）：画在进度条自己那一行上。 */
     const val AB_RANGE = "player.ab.range"
-    /** A–B 读数行（`A 00:12` / `循环 ×12` / `B 00:37`）。 */
+    /**
+     * 进度条上的 **A–B 标记组**（区间条 / 竖线 + 徽标 / 夸大虚线 / 端点热区）。
+     *
+     * 它与 [AB_RANGE]（覆盖整行的压暗层）是**两个**节点：压暗必须住在滑杆隔离出来的离屏层里
+     *（`BlendMode.DstOut` 只允许作用在本行像素上），而标记组要向上溢出滑杆那条 48dp 触控带
+     *（见 `AbMarkerLayerHeight`）。instrumented 用本标记断言"徽标没有被裁掉"。
+     */
+    const val AB_MARKER_LAYER = "player.ab.marker_layer"
+    /** A–B 读数行（`A 06:12 — B 09:48 · Δ 03:36 · 循环 ×12`）：本批起住在 **AB 胶囊首行**。 */
     const val AB_RANGE_LABELS = "player.ab.range.labels"
+    /** 读数行里 A / B 两个数值各自的点击目标（跳转到该端点）。 */
+    const val AB_READOUT_POINT_A = "player.ab.readout.point_a"
+    const val AB_READOUT_POINT_B = "player.ab.readout.point_b"
     const val AB_LOOP_COUNT = "player.ab.loop_count"
     const val GESTURE_HINT = "player.gesture_hint"
     const val LANDSCAPE_PLAYLIST = "player.playlist.landscape"

@@ -453,22 +453,14 @@ internal fun BottomPlaybackControls(
         // 重新定位**，胶囊虽然住在辅助带里不受这一段影响，但三段一起变高变矮仍然会让底栏
         // 在动画中途整体抽动，所以三段一律固定槽位。
         //
-        // AB 读数行的预留高度取**主题行高**（labelLarge 的 lineHeight）而不是写死的 16dp：
-        // 行高跟着 sp 走，系统字号放大时它自动变高（2 倍 → 32dp），读数行才不会被压成半行
-        //（真机 2 倍字号截图证实过：16dp 的槽位把 `A 00:12 / 循环 ×12 / B 00:37` 切掉了一半）。
-        // 1 倍字号下 labelLarge 的行高恰好也是 16dp，因此**常规机型的几何完全不变**。
-        val abReadoutLineHeight = MaterialTheme.typography.labelLarge.lineHeight
-        val abReadoutSlotHeight = if (abReadoutLineHeight != TextUnit.Unspecified) {
-            with(LocalDensity.current) { abReadoutLineHeight.toDp() }
-        } else {
-            PlayerPortraitControlsSpacing
-        }
-        val hasAbMarkers = abStart != null || abEnd != null
-        val abReadoutReservedHeight = if (hasAbMarkers) {
-            maxOf(PlayerPortraitControlsSpacing, abReadoutSlotHeight)
-        } else {
-            0.dp
-        }
+        // 读数行的行高天条只有一份实现（[abReadoutBandHeight]）：AB 读数条与底栏的高度账都读它，
+        // 因此任何字号下两处都取到同一个数。它描述的是"这一行要住多高"，与"有没有设点"无关 ——
+        // 未设置态也要显示引导文案（**不留空白**），所以占位判据取"AB 工具是否打开"。
+        val abReadoutBandHeight = abReadoutBandHeight(
+            fontSize = MaterialTheme.typography.labelLarge.fontSize,
+            fontScale = LocalDensity.current.fontScale,
+        )
+        val abReadoutReservedHeight = if (state.abToolOpen) abReadoutBandHeight else 0.dp
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -542,76 +534,42 @@ internal fun BottomPlaybackControls(
                     modifier = Modifier.widthIn(min = PlayerTimeLabelMinWidth),
                 )
                     }
-                    if (hasAbMarkers) {
-                        // ── 区间读数行：`A 00:12 → B 00:17 · 5.0s · 循环 ×12` ────────────────────
-                        // 它是**唯一**显示 AB 数值的地方（胶囊里的按钮已经不再带时间文字：
-                        // 文字会把圆钮撑成椭圆，见 AbLoopToolCapsule）。三段各自的显示条件由
-                        // 纯函数 `abReadoutSegments` 决定（有单测）：两端时刻设了就显示，
-                        // "区间时长 + 循环次数"只在区间完整时出现（只设 A 时循环还没开始，
-                        // 显示 `循环 ×0` 会让人以为"已经在循环但一次没跑"）。
-                        //
-                        // **区间时长必须显式写出来**：短区间被进度条放大之后（见 AbLoopMath），
-                        // 它的渲染长度不再代表真实长度，真实长度只能在文字上有一个落点。
-                        //
-                        // 字号沿用 `playerChromeTextFontSizeSp`（与帧数胶囊同一套模型）：
-                        // 整行文本按可用宽度反推一个统一字号、下限 10sp —— 窄屏 / 2 倍字号下
-                        // 这一行会比整屏还宽，硬排就会被裁（旧实现三段时间隔断言过这件事）。
-                        val arrow = AbReadoutArrow
-                        val separator = AbReadoutSeparator
-                        // 文案必须在**Composable 上下文里**取好再传进去：纯函数不碰资源，
-                        // 计数的事实来源仍然是会话侧的 `AbLoopSession.loopCount`。
-                        val loopCountLabel = stringResource(R.string.player_ab_loop_count, abLoopCount)
-                        val segments = abReadoutSegments(
-                            pointAMillis = abStart,
-                            pointBMillis = abEnd,
-                            loopCountLabel = loopCountLabel,
-                            arrow = arrow,
-                            separator = separator,
-                        )
-                        // 整行文本与"这一段文字在 1sp 下有多宽"必须来自**同一份**字符串：
-                        // 排序、箭头、分隔符都由 abReadoutSegments 决定，这里只是把它们连起来，
-                        // 不重新拼一遍（重拼就会与纯函数算出来的东西漂移）。
-                        val readoutText = segments.texts.joinToString(" ")
+                    // ── 区间读数条（本批：demo 的四态文案 + 可点数值）─────────────────────────
+                    // 它是 AB 的**唯一**数值落点（胶囊里的按钮不带时间文字：文字会把圆钮撑成椭圆）。
+                    // 四态与分段由纯函数 `abReadoutSegments` 决定（有单测）：两端时刻设了就显示，
+                    // "Δ 时长 + 循环次数"只在区间完整时出现（只设 A 时循环还没开始，
+                    // 显示 `循环 ×0` 会让人以为"已经在循环但一次没跑"）。
+                    //
+                    // **区间时长必须显式写出来**：短区间被进度条放大之后（见 AbLoopMath），
+                    // 渲染长度不再代表真实长度，真实长度只能在文字上有一个落点。
+                    //
+                    // **位置口径的偏离（如实记录）**：demo 与 `docs/21` §3.1 把这一行放在
+                    // **AB 胶囊首行**。本批实测发现"胶囊首行"这条布局下 `AB_CAPSULE` 的节点几何会被
+                    // 夹成读数条那一行的高度（真机：节点 20dp、四枚 48dp 圆钮溢出到胶囊之外），
+                    // 而把胶囊高度改成按内容撑开又会破坏"与截图胶囊同一竖直带"这条既有约定。
+                    // 因此本批**保留**它在进度区第二行：文案、字号、点击目标全部按新口径实现。
+                    //
+                    // 显示判据取"AB 工具打开"（而不是"设过点"）：未设置态要显示引导文案，
+                    // **不留空白**（demo 的第 1 态）。
+                    if (state.abToolOpen) {
                         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            val abReadoutFontSize = playerChromeTextFontSizeSp(
+                            AbReadoutRow(
+                                segments = abReadoutSegments(
+                                    pointAMillis = abStart,
+                                    pointBMillis = abEnd,
+                                    // 文案在**Composable 上下文里**取好再传进去：纯函数不碰资源，
+                                    // 计数的事实来源仍然是会话侧的 `AbLoopSession.loopCount`。
+                                    loopCountLabel = stringResource(R.string.player_ab_loop_count, abLoopCount),
+                                    noneLabel = stringResource(R.string.player_ab_readout_none),
+                                    pendingLabel = stringResource(R.string.player_ab_readout_pending_b),
+                                    deltaPrefix = stringResource(R.string.player_ab_delta),
+                                ),
                                 availableWidth = maxWidth,
-                                labels = listOf(readoutText),
-                                baseFontSize = MaterialTheme.typography.labelLarge.fontSize,
-                                fontScale = LocalDensity.current.fontScale,
-                            )
-                            val abReadoutIntervalColor = YingLiTheme.player.controlSecondary
-                            Text(
-                                text = buildAnnotatedString {
-                                    segments.texts.forEachIndexed { index, part ->
-                                        if (index > 0) append(" ")
-                                        // 计数那一段用次文字色：它和"区间多长"同段（`5.0s · 循环 ×12`），
-                                        // 但只有次数是**会一直变**的那个数字，压一档色阶才不会抢走时刻的注意力。
-                                        val style = if (index == segments.loopCountIndex) {
-                                            SpanStyle(color = abReadoutIntervalColor)
-                                        } else {
-                                            SpanStyle(color = Color.Unspecified)
-                                        }
-                                        withStyle(style) { append(part) }
-                                    }
-                                },
-                                style = playerTimeTextStyle(),
-                                color = YingLiTheme.player.controlPrimary,
-                                fontSize = abReadoutFontSize,
-                                maxLines = 1,
-                                // 不换行、不省略：宽度由上面的字号适配保证（下有 10sp 下限），
-                                // 省略号会把"区间多长"这一段吃掉，而那正是这个数字存在的意义。
-                                softWrap = false,
-                                overflow = TextOverflow.Clip,
-                                textAlign = TextAlign.Center,
-                                // testTag 挂在**文字本身上**（而不是外层 BoxWithConstraints）：
-                                // 语义树里"文本"在承载它的那个节点上，把 tag 挂在外层会得到一个
-                                // 有 tag 但没有文本的父节点 —— instrumented 就只能去数子节点
-                                //（`onChildren().filterToOne(hasText(...))`），脆，而且断言不出
-                                // "这一整行长什么样"。挂在这里，`onNodeWithTag(AB_RANGE_LABELS)`
-                                // 拿到的就是这一整句话。
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag(PlayerTestTags.AB_RANGE_LABELS),
+                                lineBandHeight = abReadoutBandHeight,
+                                // 点 A / B 数值 = 跳到该端点（与点轨道上那枚徽标同一个回调）。
+                                // 它走**用户跳转**（`onSeek` → `SeekOrigin.USER`），
+                                // **不得**用 `AB_LOOP` / `AB_ACTIVATION` 那两档。
+                                onSeekToPoint = onSeek,
                             )
                         }
                     }

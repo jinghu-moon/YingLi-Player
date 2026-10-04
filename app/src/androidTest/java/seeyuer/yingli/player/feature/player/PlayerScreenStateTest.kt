@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
@@ -253,6 +256,51 @@ class PlayerScreenStateTest {
         // `centerControlsExposePreviousAndNext` 覆盖"回来了"这一半。
         composeRule.onAllNodesWithContentDescription("上一项").assertCountEquals(0)
         composeRule.onAllNodesWithContentDescription("下一项").assertCountEquals(0)
+    }
+
+    /**
+     * **需求 D**：真横屏 + AB 胶囊打开时，画面中央三连**不在场**。
+     *
+     * 上一批的"真横屏档"暴露：800×400dp 下 AB 胶囊比截图胶囊多一行读数条（读数条住胶囊首行），
+     * 底栏整体更高，中央三连正好压住胶囊里的读数行与 B 徽标。处理与截图工具**对称** ——
+     * 两者都是"这一刻用户在读数值 / 定位到某一帧"，中央三连与这个目标无关。
+     *
+     * 与 `armedScreenshotRendersTheToolCapsuleWithoutTheCenterControls` 是同一条判据的两个入口
+     * （`hidesCenterTransportControlsForTool`）。
+     */
+    @Test
+    fun landscapeAbCapsuleHidesTheCenterControls() {
+        var abToolOpen by mutableStateOf(true)
+        composeRule.setContent {
+            YingLiTheme(darkTheme = true) {
+                Box(Modifier.fillMaxWidth().aspectRatio(800f / 400f)) {
+                    PlayerScreen(
+                        state = PlayerUiState(
+                            playback = PlaybackState.Playing(REQUEST, TIMELINE),
+                            title = "测试影片",
+                            abToolOpen = abToolOpen,
+                        ),
+                        onBack = {}, onPlay = {}, onPause = {}, onSeek = {}, onReplay = {}, onRetry = {},
+                        onRecovery = {}, videoSurface = {},
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        // 这一档必须是**真横屏**（否则断言的就不是横屏那条路径）。
+        composeRule.onNodeWithTag(PlayerTestTags.LANDSCAPE_CONTROLS).assertSettledDisplayed("横屏：底栏")
+        composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).assertSettledDisplayed("横屏：AB 胶囊")
+        composeRule.onAllNodesWithTag(PlayerTestTags.LANDSCAPE_CENTER_CONTROLS).assertCountEquals(0)
+        composeRule.onAllNodesWithContentDescription("上一项").assertCountEquals(0)
+        composeRule.onAllNodesWithContentDescription("下一项").assertCountEquals(0)
+
+        // 关掉胶囊：中央三连回来（只加这一条判据，横竖屏/锁定/自动隐藏的既有条件不变）。
+        abToolOpen = false
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(PlayerTestTags.LANDSCAPE_CENTER_CONTROLS)
+            .assertSettledDisplayed("横屏：胶囊关闭后的中央三连")
     }
 
     /**

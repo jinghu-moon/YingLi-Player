@@ -89,6 +89,27 @@ internal fun ScreenshotUiState.hidesCenterTransportControls(): Boolean =
     this is ScreenshotUiState.Armed || this is ScreenshotUiState.Capturing
 
 /**
+ * 画面中央的三连此时是否应该被**工具**挡住：截图工具激活，**或辅助带里住着任何一枚工具胶囊**。
+ *
+ * 与 [ScreenshotUiState.hidesCenterTransportControls] 的关系：后者是"截图工具"这一条单独成立时的
+ * 判据（历史口径，屏幕层与测试都在用），本函数把**AB 胶囊**也纳进来，两条口径合并成一条。
+ *
+ * ## 为什么 AB 胶囊打开时也要隐藏中央三连
+ *
+ * 真横屏（800 × 400dp）上 AB 胶囊比截图胶囊**多一行读数条**（读数条住胶囊首行），底栏因此整体更高：
+ * 胶囊顶边会顶到竖直中线附近，中央三连正好压住读数行与 B 徽标（上一批"真横屏档"实测暴露）。
+ * 与截图工具**对称**处理：两者都是"这一刻用户在读数值 / 定位到某一帧"，中央三连与这个目标无关，
+ * 而且会盖住用户正在读的那一行。
+ *
+ * **只管"在场时长什么样"，不管"该不该在场"**：横竖屏、锁定、控件自动隐藏这些既有条件仍由调用方
+ * （`overlay.controlsVisible`、`overlay.locked`、`playback.hasTransportControls()`）判断。
+ */
+internal fun hidesCenterTransportControlsForTool(
+    screenshot: ScreenshotUiState,
+    capsule: AuxiliaryToolCapsule,
+): Boolean = screenshot.hidesCenterTransportControls() || capsule != AuxiliaryToolCapsule.NONE
+
+/**
  * 截图工具胶囊的**内容**，出入场动画由外层负责（见 `BottomPlaybackControls` 的
  * `screenshotTool` 插槽）：它占用竖屏「更多」工具托盘行的位置，从右向左滑入并停在这一行中间。
  *

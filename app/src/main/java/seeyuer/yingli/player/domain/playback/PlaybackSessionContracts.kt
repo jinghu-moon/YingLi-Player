@@ -198,9 +198,23 @@ private fun hasFrameSeparation(startMillis: Long, endMillis: Long, frameRate: Fl
 /**
  * A-B 循环的域规则（纯函数，JVM 可测）。
  *
- * **A/B 互换**（D7）：在 A 之前按 A 只是普通操作；按在 B 之后说明用户是在倒着划区间，
- * 此刻把新旧两点互换才符合"先设的那端当 B"的直觉。**位置 == B 时拒绝**：互换会立刻
- * 产生 `A == B`，违反 [AbLoopState] 的 `pointA < pointB` 不变量，宁可不改状态也不制造非法区间。
+ * ## B 侧：`max(播放头, A + 1s)` 兜底（本批口径）
+ *
+ * 在 A 之前（或离 A 不足 1 秒）按 B，**不再拒绝、也不再互换**，而是把 B 取到
+ * `max(播放头, A + 1s)` —— demo 的事实口径（`docs/21` 口径 3）。理由是一个真实缺陷：
+ * 用户把播放头停在 A 附近按 B 时，"拒绝"会让区间永远设不上，而用户完全不知道阈值在哪。
+ * 1 秒的兜底把"按了 B 却什么也没发生"变成"B 落在 A 之后 1 秒处"，语义仍然正确。
+ *
+ * 兜底值随后按**名义帧率吸附**（[snapAbMillisToFrame]，D5/D13），再**夹到片长**
+ * （[AbLoopLimiter.setPoint] 的 `durationMillis`），最后校验"至少一帧间距"（[hasFrameSeparation]）——
+ * 夹完之后仍不足一帧（例如 A 已经贴在片尾）才**拒绝**，并由会话把拒绝码回流成用户可见的提示。
+ *
+ * ## A 侧：压过 B 就互换、恰好等于 B 就拒绝（保留既有口径）
+ *
+ * demo 未定义 A 侧（它只写了"重设 A 到播放头；若压过 B，B 回到待落点"），所以这条是本项目的补齐：
+ * 按在 B 之后说明用户是在倒着划区间，此刻把新旧两点互换才符合"先设的那端当 B"的直觉；
+ * **位置 == B 时拒绝**：互换会立刻产生 `A == B`，违反 [AbLoopState] 的 `pointA < pointB` 不变量，
+ * 宁可不改状态也不制造非法区间。
  *
  * **不在这里做任何"把用户 seek 钳回区间内"的事**：D8-A 明确允许循环期间拖到区间外
  *（阶段 0 裁决保留），钳制属于被删掉的旧语义。
@@ -208,16 +222,22 @@ private fun hasFrameSeparation(startMillis: Long, endMillis: Long, frameRate: Fl
 class AbLoopLimiter(private val fallbackFrameRate: Float = AB_LOOP_FALLBACK_FRAME_RATE) {
     init { require(fallbackFrameRate > 0) }
 
+    /**
+     * 设点。[durationMillis] 是**片长**（未知时传 null）：只有 B 侧用它做"夹到片长"，
+     * 因为 `A + 1s` 的兜底值在片尾附近可能越界 —— 越界的 B 会立刻触发循环回跳，
+     * 那既不是用户要的区间，也会让引擎反复 seek 到片尾。
+     */
     fun setPoint(
         state: AbLoopState,
         point: AbPoint,
         positionMillis: Long,
         frameRate: Float?,
+        durationMillis: Long? = null,
     ): AbLoopSetPointResult {
         val position = snapAbMillisToFrame(positionMillis.coerceAtLeast(0), frameRate).coerceAtLeast(0)
         return when (point) {
             AbPoint.A -> setPointA(state, position, frameRate)
-            AbPoint.B -> setPointB(state, position, frameRate)
+            AbPoint.B -> setPointB(state, position, frameRate, durationMillis)
         }
     }
 
@@ -237,13 +257,30 @@ class AbLoopLimiter(private val fallbackFrameRate: Float = AB_LOOP_FALLBACK_FRAM
         )
     }
 
-    private fun setPointB(state: AbLoopState, position: Long, frameRate: Float?): AbLoopSetPointResult {
+    /**
+     * B 侧规则（见类文档）：兜底 `max(位置, A + 1s)` → 吸附到帧（已在 [setPoint] 里对位置做过，
+     * 兜底值这里再做一次）→ 夹到片长 → 校验至少一帧间距，不满足就拒绝。
+     */
+    private fun setPointB(
+        state: AbLoopState,
+        position: Long,
+        frameRate: Float?,
+        durationMillis: Long?,
+    ): AbLoopSetPointResult {
         val start = state.pointA
             ?: return AbLoopSetPointResult.Rejected(PlaybackCommandRejection.INVALID_AB_RANGE)
-        if (!hasFrameSeparation(start, position, frameRate)) {
+        // 兜底：不超过 A + 1s。用 max 而不是"拒绝/互换"，见类文档。
+        val withFallback = maxOf(position, start + AB_POINT_B_MIN_GAP_MILLIS)
+        // 兜底值也要吸附到帧：`A + 1s` 落在一个半帧的位置上时，区间长度就不再是整帧数，
+        // 而"至少一帧"的校验必须在**吸附之后**做，否则会出现"校验通过但吸附后塌成一帧"。
+        val snapped = snapAbMillisToFrame(withFallback, frameRate)
+        // 夹到片长：B 越界会让引擎在片尾反复回跳。
+        val clamped = if (durationMillis != null) snapped.coerceAtMost(durationMillis) else snapped
+        if (!hasFrameSeparation(start, clamped, frameRate)) {
+            // 夹完之后仍不足一帧（A 已经贴在片尾）：拒绝，并由会话回流成用户可见提示。
             return AbLoopSetPointResult.Rejected(PlaybackCommandRejection.INVALID_AB_RANGE)
         }
-        return AbLoopSetPointResult.Applied(AbLoopState(pointA = start, pointB = position))
+        return AbLoopSetPointResult.Applied(AbLoopState(pointA = start, pointB = clamped))
     }
 
     fun clear(): AbLoopState = AbLoopState()
@@ -252,6 +289,15 @@ class AbLoopLimiter(private val fallbackFrameRate: Float = AB_LOOP_FALLBACK_FRAM
     fun frameDurationMillis(frameRate: Float?): Long =
         ceil((1_000f / (frameRate?.takeIf { it > 0f } ?: fallbackFrameRate)).coerceAtLeast(1f)).toLong()
 }
+
+/**
+ * 设 B 时"播放头早于 A"的兜底间隔：**1 秒**（`docs/21` 口径 3 的 `A + 1s`）。
+ *
+ * 为什么不是一个帧间隔：兜底要产生一个**用户看得出来**的区间。一帧（33ms）在进度条上不可见，
+ * 用户按了 B 之后会以为"没生效"；1 秒既在进度条上看得见，又在读数条上读得出（`Δ 00:01`）。
+ * 它是**下限**而不是目标值：播放头在 A + 1s 之后时，B 就落在播放头上。
+ */
+const val AB_POINT_B_MIN_GAP_MILLIS = 1_000L
 
 sealed interface AbLoopSetPointResult {
     data class Applied(val state: AbLoopState) : AbLoopSetPointResult
@@ -276,6 +322,11 @@ sealed interface AbLoopEvent {
         val point: AbPoint,
         val positionMillis: Long,
         val frameRate: Float?,
+        /**
+         * 片长（未知时 null）：**只有 B 侧用它做"夹到片长"**——`max(播放头, A + 1s)` 的兜底值
+         * 在片尾附近可能越界，越界的 B 会让引擎在片尾反复回跳（见 [AbLoopLimiter.setPoint]）。
+         */
+        val durationMillis: Long? = null,
     ) : AbLoopEvent
     data object Clear : AbLoopEvent
     data object MediaChanged : AbLoopEvent
@@ -286,7 +337,13 @@ data class AbLoopUpdate(val state: AbLoopState, val rejection: PlaybackCommandRe
 class AbLoopReducer(private val limiter: AbLoopLimiter = AbLoopLimiter()) {
     fun reduce(state: AbLoopState, event: AbLoopEvent): AbLoopUpdate = when (event) {
         is AbLoopEvent.SetPoint -> when (
-            val result = limiter.setPoint(state, event.point, event.positionMillis, event.frameRate)
+            val result = limiter.setPoint(
+                state,
+                event.point,
+                event.positionMillis,
+                event.frameRate,
+                event.durationMillis,
+            )
         ) {
             is AbLoopSetPointResult.Applied -> AbLoopUpdate(result.state)
             is AbLoopSetPointResult.Rejected -> AbLoopUpdate(state, result.rejection)

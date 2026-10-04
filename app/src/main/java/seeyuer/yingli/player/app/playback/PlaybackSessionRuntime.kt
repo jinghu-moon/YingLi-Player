@@ -516,6 +516,10 @@ class PlaybackSessionRuntime(
                 // 把 A 设在了 0ms）。这条判定就是缺陷 1 的原始现场。
                 positionMillis = engine.currentPositionMillis(),
                 frameRate = frameRate,
+                // 片长取**引擎 timeline 的时长**（会话快照里的 `timeline.durationMillis` 就是它的投影，
+                // 位置那一侧才需要绕开快照、直读引擎）。B 侧的"夹到片长"必须按真时长算，
+                // 否则片尾附近设 B 会把 B 放到片尾之外，引擎随即在片尾反复回跳。
+                durationMillis = snapshot.value.timeline.durationMillis,
             ),
         )
         val rejection = update.rejection

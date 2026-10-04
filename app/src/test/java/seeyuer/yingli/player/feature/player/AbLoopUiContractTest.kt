@@ -4,6 +4,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import seeyuer.yingli.player.core.model.media.MediaItemId
@@ -116,33 +117,48 @@ class AbLoopUiContractTest {
         }
     }
 
-    // ---- 读数行文本 -----------------------------------------------------------
+    // ---- 读数行文本（本批起住在 **AB 胶囊首行**）-------------------------------
 
     @Test
     fun `the readout shows both times the real interval duration and the loop count`() {
-        // 本批定稿格式：`A 00:12 → B 00:17 · 5.0s · 循环 ×12`
+        // 本批定稿格式：`A 00:12 — B 00:17 · Δ 00:05 · 循环 ×12`
+        // 三处都是 demo 的事实口径：区间两端用**长破折号** `—`（U+2014，不是 en dash，也不是旧箭头）、
+        // `·` 作次级分隔、时长写成 `Δ mm:ss`；`循环 ×N` 按 D9 附在末尾（demo 没有它）。
         val segments = abReadoutSegments(
             pointAMillis = 12_000,
             pointBMillis = 17_000,
             loopCountLabel = "循环 ×12",
+            deltaPrefix = "Δ",
         )
-        assertEquals("A 00:12 → B 00:17 · 5.0s · 循环 ×12", segments.texts.joinToString(" "))
-        // "区间时长 + 循环次数"是同一段（用 `·` 分隔），它只在区间完整时存在：
-        // 4 段 = A / 箭头 / B / （时长 · 循环次数）。
-        assertEquals(4, segments.texts.size)
-        assertEquals("· 5.0s · 循环 ×12", segments.texts[segments.intervalIndex])
-        assertEquals(segments.intervalIndex, segments.loopCountIndex)
+        assertEquals("A 00:12 — B 00:17 · Δ 00:05 · 循环 ×12", segments.texts.joinToString(" "))
+        // 七段：A / `—` / B / `·` / `Δ …` / `·` / `循环 ×N`。
+        // **`Δ` 与计数必须分成两段**（旧实现把它们合成一段，于是"区间时长"会被跟着上一档次色）：
+        // 它们回答的问题不同，而且只有计数是"会一直变"的那个数。
+        assertEquals(7, segments.segments.size)
+        assertEquals("Δ 00:05", segments.segments[4].text)
+        assertEquals(AbReadoutSegmentKind.DELTA, segments.segments[4].kind)
+        assertEquals("循环 ×12", segments.segments[6].text)
+        assertEquals(AbReadoutSegmentKind.LOOP_COUNT, segments.segments[6].kind)
+        // A / B 两段各自带着"跳到哪"的时刻：它们就是读数条里的独立点击目标。
+        assertEquals(AbReadoutSegmentKind.POINT_A, segments.segments[0].kind)
+        assertEquals(12_000L, segments.segments[0].pointMillis)
+        assertEquals(AbReadoutSegmentKind.POINT_B, segments.segments[2].kind)
+        assertEquals(17_000L, segments.segments[2].pointMillis)
+        // 分隔符是**区间范围**的写法：长破折号，不是箭头。
+        assertEquals("—", AbReadoutRangeSeparator)
+        assertEquals(AbReadoutRangeSeparator, segments.segments[1].text)
     }
 
     @Test
     fun `a one minute or longer interval reads as mm ss exactly like the endpoints`() {
-        // 125.4s 已经不是"短区间"：它走第二档，与端点同源（`02:05`），不再写成 `125.4s`。
+        // 125.4s 走与端点同源的 `mm:ss`（`02:05`），不再写成 `125.4s`。
         val segments = abReadoutSegments(
             pointAMillis = 0,
             pointBMillis = 125_400,
             loopCountLabel = "循环 ×1",
+            deltaPrefix = "Δ",
         )
-        assertEquals("A 00:00 → B 02:05 · 02:05 · 循环 ×1", segments.texts.joinToString(" "))
+        assertEquals("A 00:00 — B 02:05 · Δ 02:05 · 循环 ×1", segments.texts.joinToString(" "))
     }
 
     @Test
@@ -153,31 +169,74 @@ class AbLoopUiContractTest {
             pointAMillis = 600_000,
             pointBMillis = 2_400_000,
             loopCountLabel = "循环 ×3",
+            deltaPrefix = "Δ",
         )
-        assertEquals("A 10:00 → B 40:00 · 30:00 · 循环 ×3", segments.texts.joinToString(" "))
+        assertEquals("A 10:00 — B 40:00 · Δ 30:00 · 循环 ×3", segments.texts.joinToString(" "))
     }
 
+    /**
+     * **仅 A** 那一态：中段是"B 待落点"，不是箭头、也不是空。
+     *
+     * 箭头（旧实现的 `→`）在只设了一端时"指向虚空"，而 demo 的第 2 态给的是明确的待落点文案。
+     * 循环计数与时长都不出现：循环还没开始，显示 `循环 ×0` 会让人以为"已经在循环但一次没跑"。
+     */
     @Test
     fun `an incomplete interval shows the points it has and no duration or count`() {
-        // 只设了 A：循环还没开始，显示 `循环 ×0` 会让人以为"已经在循环但一次没跑"，
-        // 时长同理（没有 B 就没有区间长度）。
-        val onlyA = abReadoutSegments(pointAMillis = 12_000, pointBMillis = null, loopCountLabel = "循环 ×0")
-        assertEquals("A 00:12", onlyA.texts.joinToString(" "))
-        assertEquals(-1, onlyA.intervalIndex)
-        assertEquals(-1, onlyA.loopCountIndex)
+        val onlyA = abReadoutSegments(
+            pointAMillis = 12_000,
+            pointBMillis = null,
+            loopCountLabel = "循环 ×0",
+            pendingLabel = "B 待落点",
+            deltaPrefix = "Δ",
+        )
+        assertEquals("A 00:12 — B 待落点", onlyA.texts.joinToString(" "))
+        // 三段：A / `—` / `B 待落点`（分隔符在——三种状态的骨架一致，用户切换设置时整行不会跳）。
+        assertEquals(3, onlyA.segments.size)
+        assertEquals(
+            listOf(
+                AbReadoutSegmentKind.POINT_A,
+                AbReadoutSegmentKind.PUNCTUATION,
+                AbReadoutSegmentKind.HINT,
+            ),
+            onlyA.segments.map { it.kind },
+        )
+        // `B 待落点` 不是点击目标：没有 B 可跳。
+        assertNull("待落点不是点击目标", onlyA.segments[2].pointMillis)
+        assertTrue(
+            "只设了 A 时不允许出现 Δ 或计数",
+            onlyA.segments.none {
+                it.kind == AbReadoutSegmentKind.DELTA || it.kind == AbReadoutSegmentKind.LOOP_COUNT
+            },
+        )
 
-        // 只设了 B（理论上不该出现，但纯函数不能因此崩掉）：箭头不出现（它指向虚空）。
-        val onlyB = abReadoutSegments(pointAMillis = null, pointBMillis = 37_000, loopCountLabel = "循环 ×0")
+        // 只设了 B（理论上不该出现，但纯函数不能因此崩掉）：没有 A 就没有"从哪到哪"，中段不出现。
+        val onlyB = abReadoutSegments(
+            pointAMillis = null,
+            pointBMillis = 37_000,
+            loopCountLabel = "循环 ×0",
+            pendingLabel = "B 待落点",
+            deltaPrefix = "Δ",
+        )
         assertEquals("B 00:37", onlyB.texts.joinToString(" "))
-        assertEquals(-1, onlyB.intervalIndex)
     }
 
+    /**
+     * **未设置**那一态：必须显示**引导文案**，不留空白（demo 的第 1 态）。
+     *
+     * 旧实现里"一个点都没设"= 整行不显示，用户对着一条空轨道只能猜"这里能不能设点"。
+     */
     @Test
-    fun `nothing is set means no readout at all`() {
-        val segments = abReadoutSegments(pointAMillis = null, pointBMillis = null, loopCountLabel = "循环 ×0")
-        assertTrue(segments.texts.isEmpty())
-        assertEquals(-1, segments.intervalIndex)
-        assertEquals(-1, segments.loopCountIndex)
+    fun `the empty state shows the guidance copy instead of a blank line`() {
+        val segments = abReadoutSegments(
+            pointAMillis = null,
+            pointBMillis = null,
+            loopCountLabel = "循环 ×0",
+            noneLabel = "未设置循环 · 点 A 在播放头落点",
+        )
+        assertEquals(1, segments.segments.size)
+        assertEquals("未设置循环 · 点 A 在播放头落点", segments.texts.joinToString(" "))
+        assertEquals(AbReadoutSegmentKind.HINT, segments.segments.single().kind)
+        assertNull("引导文案不是点击目标", segments.segments.single().pointMillis)
     }
 
     @Test
@@ -211,37 +270,32 @@ class AbLoopUiContractTest {
         assertEquals("--:--", formatDuration(null))
     }
 
+    /**
+     * 区间时长只有**一档**：与端点、进度行两端同一份格式化（`mm:ss`，1 小时起 `hh:mm:ss` 且补零）。
+     *
+     * **有意偏离 demo**（demo 的 `fmtP` 在 1 小时以上不补零，输出 `1:03:36`）：同一个进度区里
+     * "端点 / 区间"必须逐字符同源，补零与不补零混用会让两处看起来像两种格式。
+     * **另一处有意偏离**：旧实现不足 60s 时用一位小数秒（`5.0s`），本批统一到 `mm:ss` ——
+     * demo 的事实就是 `Δ 03:36` 这一种写法，`Δ` 本身已经声明了"这是时长"。
+     */
     @Test
-    fun `interval under a minute rounds to the nearest tenth of a second and never goes negative`() {
-        assertEquals("5.0s", formatAbIntervalDuration(5_000))
-        assertEquals("5.0s", formatAbIntervalDuration(4_950))
-        assertEquals("5.1s", formatAbIntervalDuration(5_050))
-        assertEquals("0.0s", formatAbIntervalDuration(0))
+    fun `the interval duration has exactly one format and it is the same as the progress row`() {
+        assertEquals("00:05", formatAbDelta(5_000))
+        assertEquals("00:00", formatAbDelta(0))
         // 越界输入（不该出现）不许产出 `-1.0s` 这种读不通的文案。
-        assertEquals("0.0s", formatAbIntervalDuration(-500))
-    }
-
-    @Test
-    fun `the two interval formats switch exactly at sixty seconds`() {
-        // 边界是"说出名字"的常量：`>= 60_000ms` 走 `mm:ss`。
-        // 59_999ms 仍在第一档 —— 它四舍五入之后就是 `60.0s`（一位小数秒的边界形态）。
-        assertEquals("60.0s", formatAbIntervalDuration(AbIntervalDurationSecondsFormatThresholdMillis - 1))
-        assertEquals("01:00", formatAbIntervalDuration(AbIntervalDurationSecondsFormatThresholdMillis))
-    }
-
-    @Test
-    fun `a one minute or longer interval uses the same formatter as the progress row`() {
-        assertEquals("01:00", formatAbIntervalDuration(60_000))
-        assertEquals("10:00", formatAbIntervalDuration(600_000))
-        assertEquals("30:00", formatAbIntervalDuration(1_800_000))
-        // **不另写小时格式**：一小时以上直接走 formatDuration，也就是 `hh:mm:ss`（小时补零）。
-        // 旧实现这里会输出 `60:00`（分钟位超过 59），与端点读数一起都要靠心算。
-        assertEquals("01:00:00", formatAbIntervalDuration(3_600_000))
-        assertEquals("01:30:00", formatAbIntervalDuration(5_400_000))
-        // 同源不是"看起来像"：长区间这一档必须逐字符等于 formatDuration 的输出。
-        listOf(60_000L, 125_400L, 600_000L, 1_800_000L, 3_600_000L, 5_400_000L, 5_700_000L).forEach { millis ->
-            assertEquals(formatDuration(millis), formatAbIntervalDuration(millis))
-        }
+        assertEquals("00:00", formatAbDelta(-500))
+        // 短区间也走 `mm:ss`（不再是 `5.0s`）：格式只到秒，**截断**而不是四舍五入
+        //（与端点、进度行两端同一份实现）。
+        assertEquals("00:04", formatAbDelta(4_950))
+        assertEquals("00:05", formatAbDelta(5_050))
+        listOf(0L, 5_000L, 25_000L, 59_999L, 60_000L, 125_400L, 600_000L, 1_800_000L, 3_600_000L, 5_400_000L)
+            .forEach { millis ->
+                assertEquals("同源不是'看起来像'：${millis}ms", formatDuration(millis), formatAbDelta(millis))
+            }
+        // **一小时以上沿用我们的补零口径**（`Δ 01:35:00`），不采纳 demo 的 `1:03:36`。
+        assertEquals("01:00:00", formatAbDelta(3_600_000))
+        assertEquals("01:30:00", formatAbDelta(5_400_000))
+        assertEquals("01:35:00", formatAbDelta(95 * 60_000L))
     }
 
     @Test
@@ -276,40 +330,85 @@ class AbLoopUiContractTest {
     }
 
     /**
-     * 读数行的字号只能有一个来源：`playerChromeTextFontSizeSp`（与帧数胶囊同一套模型）。
+     * 读数条的字号只走一个出口：[abReadoutFontSizeSp]。它按**读数条自己的宽度模型**
+     *（[abReadoutWidthDp]）反推，并保证"算出来的字号确实放得下整行 + 两枚数值点击目标"。
      *
-     * 这一条守着一个**跨模块**的一致性：AB 读数行用的是**整行**文本，所以只要
-     * "算出的字号确实放得下整行"成立，窄屏 / 2 倍字号下就不会被裁。
-     *
-     * 起点取 `236dp`：整行在 1 倍字号下需要约 225dp，比它更窄时字号已经撞到 10sp 下限
-     *（那种组合下的行为由下一条用例单独断言，不在这里假装放得下）。
+     * 起点取 `320dp`（比 360dp 竖屏的进度区带宽 336dp 略窄）：那一档 13sp 上限放得下 ——
+     * 窄屏的行为（字号落到 10sp 下限）由断言覆盖，不在这里假装放得下。
      */
     @Test
     fun `the readout font size always fits the whole readout line`() {
-        listOf(236.dp, 320.dp, 336.dp, 400.dp).forEach { available ->
-            val labels = listOf("A 00:12 → B 00:17 · 5.0s · 循环 ×12")
-            val fontSize = playerChromeTextFontSizeSp(available, labels, 14.sp)
-            assertTrue(
-                "available=$available fontSize=$fontSize",
-                playerChromeTextEstimatedWidthDp(labels, fontSize).value <= available.value + 0.01f,
+        val complete = abReadoutSegments(
+            pointAMillis = 12_000,
+            pointBMillis = 37_000,
+            loopCountLabel = "循环 ×12",
+            deltaPrefix = "Δ",
+        )
+        val text = complete.texts.joinToString(" ")
+        listOf(320.dp, 400.dp, 600.dp).forEach { available ->
+            val fontSize = abReadoutFontSizeSp(
+                availableWidth = available,
+                text = text,
+                chipBudget = AbValueTapTargetWidth * 2,
+                baseFontSize = 14.sp,
             )
+            assertTrue(
+                "available=$available fontSize=$fontSize：算出的字号必须真的放得下（含两枚 32dp 点击目标）",
+                abReadoutWidthDp(text, fontSize).value + AbValueTapTargetWidth.value * 2 <= available.value + 0.01f,
+            )
+            // 13sp 是上限，而且它**压过主题字号**（labelLarge 14sp）。
+            assertTrue("字号不许超过 demo 的 13sp 上限：$fontSize", fontSize.value <= 13f)
         }
-    }
-
-    @Test
-    fun `a readable floor keeps the readout from shrinking into nothing`() {
-        // 极窄屏 + 大字号：字号被 10sp 下限托住 —— 宁可溢出（由上游裁剪）也不缩到看不清。
-        // 这是本项目唯一的"仍算可读"下限，与帧数胶囊共用同一个常量。
         assertEquals(
-            10.sp,
-            playerChromeTextFontSizeSp(
-                availableWidth = 40.dp,
-                labels = listOf("A 00:12 → B 00:17 · 5.0s · 循环 ×12"),
+            "宽到 600dp：13sp 的整行放得下 → 取到上限（而不是主题的 14sp）",
+            13.sp,
+            abReadoutFontSizeSp(
+                availableWidth = 600.dp,
+                text = text,
+                chipBudget = AbValueTapTargetWidth * 2,
                 baseFontSize = 14.sp,
             ),
         )
+        // 数值点击目标的宽度下限（32dp）与端点徽标的热区是**同一个常量**：两处热区必须同档。
+        assertEquals(32.dp, AbValueTapTargetWidth)
+    }
+
+    /**
+     * 极窄屏 / 2 倍系统字号：字号被 10sp 下限托住 —— 宁可溢出（由上游裁剪）也不缩到看不清。
+     *
+     * 这是全项目唯一的"仍算可读"下限（与帧数胶囊共用同一个常量）。
+     */
+    @Test
+    fun `a readable floor keeps the readout from shrinking into nothing`() {
+        val text = abReadoutSegments(
+            pointAMillis = 12_000,
+            pointBMillis = 37_000,
+            loopCountLabel = "循环 ×12",
+            deltaPrefix = "Δ",
+        ).texts.joinToString(" ")
+        assertEquals(
+            10.sp,
+            abReadoutFontSizeSp(
+                availableWidth = 40.dp,
+                text = text,
+                chipBudget = AbValueTapTargetWidth * 2,
+                baseFontSize = 14.sp,
+            ),
+        )
+        // 2 倍系统字号：整行需要的宽度翻倍，字号随之变小（但仍然不破下限）。
+        val zoomed = abReadoutFontSizeSp(
+            availableWidth = 320.dp,
+            text = text,
+            chipBudget = AbValueTapTargetWidth * 2,
+            baseFontSize = 14.sp,
+            fontScale = 2f,
+        )
+        assertTrue("2 倍系统字号下必须缩小：$zoomed", zoomed.value < 13f)
         assertEquals(PlayerChromeTextMinFontSize, 10.sp)
     }
+
+    /** 读数行的验收句（本批格式；字号模型与 instrumented 断言共用同一句）。 */
+    private val ReadoutLine = "A 00:12 — B 00:37 · Δ 00:25 · 循环 ×12"
 
     private fun preview() = ScreenshotUiState.Preview(
         displayName = "frame.jpg",

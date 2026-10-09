@@ -165,7 +165,7 @@
 - **权限不能只保存一个永久布尔值**；每次关键操作前重新检查系统实际授权。
 - **部分授权（`READ_MEDIA_VISUAL_USER_SELECTED`）时媒体范围会变化**；**失去授权或 URI 不可读时任务进入需处理/失败状态，不得把它当作空文件或重复文件删除**。
 - **不为实现「全部视频」而默认申请 `MANAGE_EXTERNAL_STORAGE`**。
-- **目标 SDK 36 的 `MediaStore` 批量授权请求单次 URI 数量上限为 2000**，批量源文件删除必须分块并逐块记录授权结果。
+- **目标 SDK 36 的 `MediaStore` 批量授权请求单次 URI 数量上限为 2000**，批量源文件删除必须分块并逐块记录授权结果。**已实测确认（§20.2.4）**：该上限对 `createTrashRequest()` 与 `createDeleteRequest()` 同样适用，2001 条抛 `IllegalArgumentException: URI list restricted to 2000 per request`。
 - **首版不自动调用 FFmpeg 作为隐藏回退**（与 `phase-14-experiment-ledger.md` 的 No-Go 一致）。
 - **故障注入测试清单**（复制前/中/未写库时杀进程、DB 已提交但源删除未落库时杀进程、`IS_PENDING` 未清除时杀进程、物理删除成功但 DB 更新前杀进程、撤销授权、移除存储卷、空间不足、I/O 异常、同一媒体上压缩与移入并发、到期清理与恢复并发）。
 
@@ -619,14 +619,14 @@ enum class ProcessingProjectType { CLIP, COMPRESS, CONVERT, DEDUPLICATE }
 
 | # | 严重度 | 现象 | 后果 | 修法 |
 |---|---|---|---|---|
-| **G1** | **严重** | `Media3TranscodeEngine.kt:79-84` 构造 `Transformer` 时只调用 `setLooper` / `setVideoMimeType` / `setAudioMimeType` / `addListener`，**没有 `setEncoderFactory`**。实际码率由 Media3 `DefaultEncoderFactory.getSuggestedBitrate()` 按设备能力推导 | `compatible_mp4`（8 Mbps）与 `balanced_mp4`（5 Mbps）在 `TranscodeContracts.kt:96-103` 里唯一差别是 `targetVideoBitrate` 与输出文件名；两者 `maximumLongEdge` 都是 1920、编码格式都是 AVC/AAC，因此**产出文件的体积完全相同**。`targetVideoBitrate` 只在 `TranscodeContracts.kt:204` 参与空间估算。**三档预设目前只有两档真实存在** | `DefaultEncoderFactory.Builder().setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(...).build())`，配合 `Transformer.Builder.setEncoderFactory(...)`；音频同理用 `AudioEncoderSettings` |
+| **G1** | **严重** | `Media3TranscodeEngine.kt:79-84` 构造 `Transformer` 时只调用 `setLooper` / `setVideoMimeType` / `setAudioMimeType` / `addListener`，**没有 `setEncoderFactory`**。实际码率由 Media3 `DefaultEncoderFactory.getSuggestedBitrate()` 按设备能力推导 | `compatible_mp4`（8 Mbps）与 `balanced_mp4`（5 Mbps）在 `TranscodeContracts.kt:96-103` 里唯一差别是 `targetVideoBitrate` 与输出文件名；两者 `maximumLongEdge` 都是 1920、编码格式都是 AVC/AAC，因此**产出文件的体积完全相同**。`targetVideoBitrate` 只在 `TranscodeContracts.kt:204` 参与空间估算。**三档预设目前只有两档真实存在**。**已成真机实测（2026-10-09，§20.1.2）**：`compatible_mp4` 与 `balanced_mp4` 输出**字节完全相同（473 598）**，请求 2.5 Mbps 的 `space_saver_mp4` 反而输出 **505 710 字节**（比 8 Mbps 的更大） | `DefaultEncoderFactory.Builder().setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(...).build())`，配合 `Transformer.Builder.setEncoderFactory(...)`；音频同理用 `AudioEncoderSettings`。**注意 §20.1.5：本设备全分辨率硬件编码器只报 VBR/CBR，`BITRATE_MODE_CQ` 不可用** |
 | **G2** | **严重** | `Media3TranscodeEngine.kt:51-53` 只要 `plan.changes` 含 `HDR_TO_SDR` 就直接返回 `Failed("HDR_TONE_MAPPING_UNAVAILABLE")`；而 `AndroidMediaCapabilityProbe.kt:114` 把 `supportsHdr` 硬编码为 `false`，导致 `TranscodeContracts.kt:195-197` 对**每一个 HDR 源**都生成 `HDR_TO_SDR` | **HDR 视频在当前实现下完全无法转码**——必然进入 `HDR_TO_SDR`，然后必然失败。这与 F13（tone mapping 自 API 29 可用、minSdk 31）矛盾，也与 `docs/06-feature-roadmap.md:428` "提交前分析 HDR" 的要求矛盾 | `Composition.Builder.setHdrMode(HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_MEDIACODEC)`（API 31+ 设备支持时）或 `..._USING_OPEN_GL`（兜底）；`supportsHdr` 改为实测（`MediaCodecInfo.CodecCapabilities.profileLevels` 查 HEVC Main10 + `ColorInfo`） |
 | **G3** | 高 | `PlatformClipEngine.kt:207-213` 的白名单是 `setOf("video/avc", "video/hevc", "video/mp4v-es", "audio/mp4a-latm", "audio/mpeg")`，输出固定 `MUXER_OUTPUT_MPEG_4`，且必须带时间区间 | VP9/Opus/AV1 源走不了快速通道；无法输出 WebM/Ogg；无法做"整文件换容器"。**没有「格式转换」入口** | 白名单改为**由目标 muxer 的 `getSupportedSampleMimeTypes()` 反查**（F12 已经提供了这个能力），而不是写死一张表；`fastCut` 的时间区间参数改为可选，支持整文件 remux |
 | **G4** | 中 | `media3-muxer` 是 `media3-transformer` 的传递依赖，未在 `gradle/libs.versions.toml:35-40` 显式声明；`Transformer.Builder.setMuxerFactory` 未被调用 | F11 给出的"应用内 muxer 超集"完全没用上 | 显式声明 `androidx.media3:media3-muxer`；实现一个 `Muxer.Factory` 适配器把 `WebmMuxer.Builder` / `OggMuxer.Builder` / `AacMuxer` 接进 `setMuxerFactory`（F12） |
 | **G5** | **文档级（已证伪的旧表述）** | `TranscodeContracts.kt:189-194` 已为 `EXTRA_AUDIO_TRACKS_REMOVED` 与 `SUBTITLES_NOT_EMBEDDED` 置 `requiresConfirmation = true`，满足 Q498"不静默丢轨"。**这部分是正确的。** 但 `docs/architecture/phase-11-transcode-contract.md` 与本设计初稿都写过"保留多音轨需要 `Composition.Builder.setSequences(...)` 构造多条 `EditedMediaItemSequence`" | **这条是错的。** `Composition.sequences` 的官方原文是："`MediaItem` instances from different sequences that are overlapping in time will be **mixed** in the output."——多条序列是**混音**，不是保留为多条独立轨道。再叠加 Transformer 的硬边界原文"**The output can contain at most one video track and one audio track. Other track types are ignored.**"，结论是 **Transformer 路径上多音轨保留在结构上不可能** | 当前"丢多音轨 + 要求确认"的行为**是正确的产品边界**，不是待修缺陷。**契约文档里那句错误的技术说明必须删掉**，否则会误导后续实现者去做一件 Transformer 做不到的事。**同时也要把"多轨需要 API 26+"的旧说法一并删掉**（那是平台 `MediaMuxer` 的限制，Media3 `Mp4Muxer` 没有，见 F25） |
 | **G6** | **严重（新发现）** | `Media3TranscodeEngine.kt` 注册的 `Transformer.Listener` 只处理成功与失败，**没有覆写 `onFallbackApplied(Composition, TransformationRequest, TransformationRequest)`**。而 F18 说明：请求了不支持的编码 mime 时，Transformer 会**静默回退**到它支持的 mime，并且**只通过这个回调通知** | 如果 planner 或 UI 请求了设备不支持的编码格式（最典型：HEVC——F9/F23 已证明 HEVC 编码器不是平台必需项），Transformer 会**产出 H.264 文件并报告成功**。用户以为得到了 HEVC（更小），实际得到 AVC。这与 Q498"不静默丢轨"、Q500"不静默降质"是**同一类错误**，而且更隐蔽 | 覆写 `onFallbackApplied`，把回退记入 `TranscodeChangeCode`（新增 `VIDEO_CODEC_FALLBACK` / `AUDIO_CODEC_FALLBACK`，`requiresConfirmation = true`）；**或在 build 之前用 `Muxer.Factory.getSupportedSampleMimeTypes()` + 编码器探测把不可能的组合挡掉**（F19）。**两者都要做** |
-| **G7** | **待实测（新发现）** | `Transformer.Builder.setPortraitEncodingEnabled` **默认 `false`**（F20），此时竖屏视频会被**先旋转 90° 再编码**，方向靠输出文件的旋转元数据表达。一个 1080×1920 的竖屏源，在 `maximumLongEdge = 1920` 的预设下，**输出编码尺寸会是 1920×1080（横向）**，而 `MediaExtractorOutputVerifier` 比对的是 `KEY_WIDTH`/`KEY_HEIGHT` 与 planner 算出的 `targetWidth`/`targetHeight` | 验证器可能对**每一个竖屏源**都返回 `DIMENSION_MISMATCH`，或反之——若 planner 也按旋转后的语义计算，则又可能与用户预期（"长边 1920"）不符。二者必有一个是错的，但**当前没有任何证据表明是哪一边** | 先实测（竖屏源 + 三档预设），确认输出 `KEY_WIDTH`/`KEY_HEIGHT` 与旋转元数据的实际取值，再决定是让 planner 按"编码尺寸"计算目标、还是让 verifier 按"显示尺寸"比对。**在实测之前不得凭推断改任何一边**（AGENTS.md 禁止臆测性修改） |
-| **G8** | **文档级** | `Media3TranscodeEngine` 提交成功后只返回成功，不回报编码器**实际使用**的码率与尺寸。而 F23 只保证"支持动态可调码率"，不保证实际值等于请求值；`VideoEncoderSettings` 也可能被编码器按 profile/level 约束调整 | G1 修复之后，"预设码率真的生效了"仍然**只能靠输出体积间接推断**，无法直接断言 | 不做额外抽象——用 `MediaExtractor` 在 verifier 里读输出的 `KEY_BIT_RATE` 与尺寸即可（F22 已证明 extractor 读这些键没有障碍）。这属于验证器的职责扩展，不新增实体 |
+| **G7** | **已实测裁定**（见 §20.1.1） | ~~`Transformer.Builder.setPortraitEncodingEnabled` **默认 `false`**（F20），此时竖屏视频会被**先旋转 90° 再编码**，方向靠输出文件的旋转元数据表达。一个 1080×1920 的竖屏源，在 `maximumLongEdge = 1920` 的预设下，**输出编码尺寸会是 1920×1080（横向）**~~。**实测推翻了这个前提**：`maximumLongEdge = 1920` 对 1080×1920 的源**不触发缩放**，输出仍是 `1080×1920` + `rotation=0`。**旋转只在真正触发缩放时出现**：`space_saver_mp4`（长边 1280）产出 `1280×720` + `rotation=90`。而 `MediaExtractorOutputVerifier` 比对的是 `KEY_WIDTH`/`KEY_HEIGHT` 与 planner 算出的 `targetWidth`/`targetHeight` | 验证器**只在缩放路径上**误报：`space_saver_mp4` 对竖屏源返回 `DIMENSION_MISMATCH`，而 `compatible_mp4` / `balanced_mp4` 通过。**不是"每个竖屏源都误报"** | **已裁定：planner 对、verifier 错。** planner 的目标尺寸是**显示语义**（`720×1280` 正是用户预期），输出旋转后恰好等于该值 ⇒ **verifier 缺一次按 `KEY_ROTATION ∈ {90,270}` 的转置比较**。修法属阶段 1（不属阶段 0）。**planner 保持显示语义不动。**⚠ 带旋转元数据的**横向源**仍未测，补测前不得据此改 planner |
+| **G8** | **文档级** | `Media3TranscodeEngine` 提交成功后只返回成功，不回报编码器**实际使用**的码率与尺寸。而 F23 只保证"支持动态可调码率"，不保证实际值等于请求值；`VideoEncoderSettings` 也可能被编码器按 profile/level 约束调整 | G1 修复之后，"预设码率真的生效了"仍然**只能靠输出体积间接推断**，无法直接断言 | 不做额外抽象，但**原定的读取途径已被实测否掉**（§20.1.3）：本设备输出的 MP4 视频轨**读不到 `KEY_BIT_RATE`**（源与全部输出均为 `null`）。改为「输出**字节数 ÷ 时长**」得到的平均码率或 Transformer 侧回报，**并必须写明该口径受内容复杂度影响、不等于请求码率，断言需设容差**。尺寸的读回仍用 `MediaExtractor`（**但要先按 `KEY_ROTATION` 换算，见 G7 / §20.1.1**）。这属于验证器的职责扩展，不新增实体 |
 | **G9** | **严重** | AB 循环与导出切片**零连接**：播放页没有"导出当前 A–B"动作；`ProcessingViewModel.createProject`（`ProcessingViewModel.kt:134-149`）永远只造 `ClipSegment(id, 0, minOf(duration, DEFAULT_SEGMENT_MILLIS), "Clip 1")` | 用户必须在处理页手工重建刚才已经选好的区间；**即使从处理页，用户也无法直接得到一个指定区间** | §9 的 `ClipProject.forRange(...)` 纯工厂 + 播放页入口 |
 | **G10** | 中 | 临时状态与持久实体的边界没有守卫 | 把 `AbLoopState` 直接带进 `ClipProject` 是最自然的违反方式（C1） | 在入队前一次性固化，并让固化后的对象**不含任何 AB 类型**（编译期即可保证） |
 | **G11** | 中（能力边界） | `PlatformClipEngine.probe` 的白名单 `FAST_MP4_MIME_TYPES` 不含 VP9 / Opus / Vorbis / AV1，因此 WebM(VP9+Opus) 源的快速导出会返回 `FAST_CONTAINER_UNSUPPORTED` | 与 §4.5 / §4.6 的"封装层需走手写管线"是同一件事；**缺口不在引擎，而在播放页入口没有据此路由** | 与 G3 合并修复（白名单改为 muxer 反查） |
@@ -923,7 +923,7 @@ duplicate_ignores(
 
 | 后端 | 期限语义（必须原样写进 UI） | 必须披露 |
 |---|---|---|
-| R1 | 「由系统管理，通常约 30 天；到期后系统在设备空闲时删除。**应用不能延长或缩短这个期限**」 | 恢复资格取决于系统是否已删除；`DATE_EXPIRES` 可能为 null（不可读时 UI 不显示剩余天数） |
+| R1 | 「由系统管理，通常约 30 天；到期后系统在设备空闲时删除。**应用不能延长或缩短这个期限**」 | 恢复资格取决于系统是否已删除；`DATE_EXPIRES` **未移入时为 `null`，已移入时可读且实测为 `date_added + 恰好 30 天`**（§20.2.1）；UI 据此显示剩余天数，`null` 时不显示 |
 | R2 | 「应用保留 %1$d 天；到期后立即禁止恢复，后台尽快物理删除」 | 副本占用与源文件相近的空间；**卸载应用会删除这些副本，卸载后不可恢复** |
 
 **[待决 D2]** 三种可选的收口方式：
@@ -1157,7 +1157,7 @@ stateDiagram-v2
 
 **[待决 D3]** 推荐 **C2 先做 + C1 作为后续评估**：理由是资料文件 8 自己承认「后台周期任务不保证在截止秒数启动」，而 C2 已经能保证「恢复资格严格」这个**唯一必须严格的部分**（因为它是纯 DB 判定，不需要后台执行）。物理删除的延迟对 R1 无影响（系统自己会删），对 R2 只影响空间占用，不是正确性问题。**若采纳 C2，必须在文档与 UI 中明说「物理清理在下次打开应用时执行」**（见 D7）。
 
-**R1 的期限来源**：`MediaStore.DATE_EXPIRES`（只读）。UI 必须在不可读时不显示剩余天数（资料文件 6：**「只有数据来源能够可靠提供时才展示，不要假设所有文件都统一保留 30 天」**）。
+**R1 的期限来源**：`MediaStore.DATE_EXPIRES`（只读）。**已实测（§20.2.1）**：未移入时为 `null`，移入后为 `date_added + 恰好 30 天`，恢复后回到 `null` —— 因此「可读时显示剩余天数、`null` 时不显示」是**精确可判**的，不是保守取舍。仍遵循资料文件 6：**「只有数据来源能够可靠提供时才展示，不要假设所有文件都统一保留 30 天」**。
 
 **到期清理的幂等性**（资料文件 8 §8.6）：同一文件被重复清理时不能删除无关文件；「文件已不存在、目标身份已核实」**不应反复报告为未知错误**，应视为清理成功。
 
@@ -1558,7 +1558,7 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 
 **0-B 最小验证（只做验证工程/测试用例）**
 
-1. **G7 实测**：竖屏源 × 三档预设，记录输出的 `KEY_WIDTH`/`KEY_HEIGHT` 与旋转元数据实际取值。**这一步必须在阶段 1 的第 1 步之前完成，因为它的结果决定后面代码怎么写。**
+1. ~~**G7 实测**：竖屏源 × 三档预设，记录输出的 `KEY_WIDTH`/`KEY_HEIGHT` 与旋转元数据实际取值。~~ **已完成（2026-10-09）**，见 §20.1.1：**planner 对，verifier 缺一次按 `KEY_ROTATION` 的转置比较**；旋转只在触发缩放的预设上出现。⚠ 带旋转元数据的**横向源**仍未测。
 2. R1 对**本应用创建**与**其他应用创建**的视频的移入/恢复/永久删除路径；`DATE_EXPIRES` 是否可读（U1）。
 3. API 31 与 API 36 两端的差异。
 4. SAF 树来源在 R1 下的行为（U2）。
@@ -1568,6 +1568,8 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 8. `MediaStore.createTrashRequest()` 是否有 2000 URI 上限（U3）。
 
 **退出条件**：**任何失败路径都不丢失唯一副本**；授权拒绝行为正确；恢复与清理在目标 API / 代表性真机（Xiaomi M2012K11AC，Android 13 / API 33，**需先解决 MIUI 的 `INSTALL_FAILED_USER_RESTRICTED`**，U7）上可验证。**若不通过，先修正架构，不进入大规模实现。**
+
+> **U7 已解除（2026-10-09）**：在 Xiaomi 25102RKBEC（Android 16 / API 36）上 `adb install -r -t` 主 APK 与测试 APK 均返回 `Success`，instrumentation 正常执行（`OK (2 tests)`）。**MIUI 的安装限制不再是阻塞项**，§15.3 的整个设备矩阵从"未验证"转为"可验证"。若仍要在交班清单里保留一台 API 33 真机，那是**覆盖面**要求，不是**许可**要求。详见 §20.1。
 
 ### 14.2 阶段 1：转码链路修复
 
@@ -1665,7 +1667,7 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 
 | 目标 | 改前基线（必须先绿） | 改后新增 |
 | --- | --- | --- |
-| G7 实测 | — | **不是单测**：竖屏源实测记录表，写进 §20 |
+| G7 实测 | — | **已完成（2026-10-09）**：竖屏源实测记录表见 **§20.1.1**；原始快照 `docs/architecture/evidence/stage0/stage0-g7-portrait.json`；取证测试 `TranscodeDeviceCapabilityMeasurementTest.kt` |
 | G1 码率 | `TranscodeContractsTest.kt` 现有全部用例 | 断言 `OutputTarget.videoBitrate` 出现在构造出的 `VideoEncoderSettings` 中；断言 `Compatible` 与 `Balanced` 的编码参数**不再相等** |
 | G2 HDR | 断言 `HDR_TO_SDR` 在 `supportsHdr=false` 时 `requiresConfirmation=true` | 断言 `supportsHdr=true` 时不产生 `HDR_TO_SDR`；断言 planner 为 HDR 源选择 tone-map 模式而非拒绝 |
 | G3/G11 白名单 | `ClipContractsTest.kt` 现有全部用例 | 断言白名单来自 muxer 查询；断言 VP9/Opus 源可走 remux；断言被删除的硬编码表不存在（防止回退） |
@@ -1701,9 +1703,9 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 
 ### 15.3 设备测试（instrumentation）
 
-当前 `docs/architecture/phase-11-14-tdd-report.md` 记录真机 Xiaomi M2012K11AC 被 MIUI 以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝，`connectedDebugAndroidTest` **不计为通过**（U7）。在设备测试恢复前，以下矩阵属于**未验证**，不得声称通过：
+当前 `docs/architecture/phase-11-14-tdd-report.md` 记录真机 Xiaomi M2012K11AC 被 MIUI 以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝，`connectedDebugAndroidTest` **不计为通过**（U7）。**该阻塞已于 2026-10-09 解除**：Xiaomi 25102RKBEC（Android 16 / API 36）上 `adb install -r -t` 与 instrumentation 均正常。以下矩阵现在**全部可执行**，但**除已标注"已完成"的项外，其余仍未验证，不得声称通过**：
 
-- **竖屏源 × 三档预设**：记录输出 `KEY_WIDTH`/`KEY_HEIGHT` 与旋转元数据（G7 的唯一证据来源）。
+- **竖屏源 × 三档预设**：**已完成**，见 §20.1.1 —— 输出 `KEY_WIDTH`/`KEY_HEIGHT` 与旋转元数据的实测值已记录（唯一证据来源）。
 - SDR 源 × 三档预设：验证产出体积随码率单调下降，且 verifier 读回的 `KEY_BIT_RATE` 与预设一致（G1 + G8 的外部证据）。
 - **请求 HEVC 但设备无 HEVC 编码器**：验证 `onFallbackApplied` 被触发、用户收到确认而非静默拿到 H.264（G6）。
 - HDR10 源：验证 tone mapping 产出 SDR 且颜色未错标；在 MediaCodec 路径不可用的设备上验证抛 `ExportException` 后的用户可见行为（G2）。
@@ -1789,9 +1791,9 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 
 | # | 待确认 | 为什么不确定 | 怎么确认 |
 |---|---|---|---|
-| U1 | `DATE_EXPIRES` 在 API 31 / 36 上是否总能读到、值是多少 | 只有 AOSP 源码说明「约 30 天」，未在真机验证 | 阶段 0-B 第 2 项 |
+| U1 | `DATE_EXPIRES` 在 API 31 / 36 上是否总能读到、值是多少 | **已在 API 36 实测闭合（§20.2.1）**：可投影、未移入时为 `null`、移入后为 `date_added + 2 592 000`（**恰好 30 天**）、恢复后回到 `null`。⚠ **API 31 未测**（本工作区只有 API 36 真机） | ~~阶段 0-B 第 2 项~~ 已完成（仅 API 36） |
 | U2 | SAF 树来源的文件在 R1 下的行为 | SAF 文件可能同时在 MediaStore 中（若不在 `.nomedia` 目录）；未验证 | 阶段 0-B 第 4 项 |
-| U3 | `MediaStore.createDeleteRequest()` 单次上限 2000 是否适用于 `createTrashRequest()` | 资料只提到批量删除的 2000 上限 | 官方文档复核 + 阶段 0-B 第 8 项 |
+| U3 | `MediaStore.createDeleteRequest()` 单次上限 2000 是否适用于 `createTrashRequest()` | **已实测闭合（§20.2.4）**：**适用于 `createTrashRequest()`**；2001 条抛 `IllegalArgumentException`，消息逐字 `URI list restricted to 2000 per request`（两个 API 同一条错误） | ~~官方文档复核 + 阶段 0-B 第 8 项~~ 已完成 |
 | U4 | 本项目 `LibraryDao` 的 `@RawQuery` 是否全部带 `observedEntities = [TrashEntryEntity::class]` | 只确认了 `observePage`/`observeCount` 带，`page`/`count`/`folders` 不带 | 读 `RoomLibraryRepositories.kt` 全文 |
 | U5 | `settings_trash_retention` 的默认值与被谁读取 | **已解决**：默认 30（`data/preferences/ThemeRepository.kt:55`）；被 `MediaContainer.kt:213` 注入、`SettingsScreen.kt:191` 显示、`YingLiAppViewModel.kt:67` 写入、`RoomBackupGateway.kt:184,206` 备份恢复 | — |
 | U6 | `AndroidFileOperationGateway` 是否被压缩/转码链路使用（决定删除 R3 的影响面） | **已解决**：只被 `DefaultLibraryMutationRepository` 使用（`FileOperationContracts.kt:31`、`AndroidFileOperationGateway.kt:15,20,23`、`DefaultLibraryMutationRepository.kt:6,16`、`MediaContainer.kt:29,213`）⇒ **影响面仅限回收站** | — |
@@ -1864,6 +1866,84 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 | "导出切片与压缩/转换是两件互不相关的事" | **更正**：AB 循环区间导出与转码共用同一套可达性结论——WebM(VP9+Opus) 源在两条路径上都只能走手写管线或精确模式（G11） | `PlatformClipEngine.probe` 白名单；§4.5 / §4.6 |
 | "`Ignore(groupId)` 是正确的「忽略此组」实现" | **更正**：`dao.deleteGroup(groupId)` 会在下次扫描时重建同一组，用户反复看到（G26）。必须用 `duplicate_ignores` 的成员数语义 | `RoomDuplicateRepository.kt` |
 | "压缩与转码是两个独立功能，需要两套引擎" | **更正**：两者是同一操作空间的两个目标函数；**两个引擎的理由是 F18（编码层 vs 封装层）**，不是功能差异 | F18；§4.1、§4.6 |
+| "G7 的两种可能：要么 verifier 对所有竖屏源误报，要么 planner 的语义与用户预期不符" | **已实测裁定**：**planner 是对的，verifier 少了一步按 `KEY_ROTATION` 换算到显示尺寸的比较**。详见 §20.1.1 | 阶段 0 真机快照（§20.1） |
+| "G8 可用 `MediaExtractor` 读输出的 `KEY_BIT_RATE` 断言码率生效" | **本设备不可行**：源与全部输出的视频轨 `KEY_BIT_RATE` 均为 `null`。需改用"输出字节数 ÷ 时长"或引擎侧回报，**且须说明口径差异** | §20.1.3 |
+| "`supportsHdr` 一律不宣称只是保守取舍" | **实测证伪**：设备存在 HEVC Main10 + `COLOR_FormatYUVP010(54)` + 专用 HDR 编码器 `c2.qti.hevc.encoder.hdr`。硬编码 `false` 是**错的** | §20.1.4 |
+
+### 20.1 阶段 0 真机实测（2026-10-09）
+
+**设备**：Xiaomi 25102RKBEC，SoC **SM8850**，**Android 16 / API 36**，arm64-v8a。
+**方法**：新增 instrumented 取证测试 [`TranscodeDeviceCapabilityMeasurementTest.kt`](../app/src/androidTest/java/seeyuer/yingli/player/data/processing/transcode/TranscodeDeviceCapabilityMeasurementTest.kt)，跑通后用 `adb pull` 取出两份 JSON 快照，原文存于 `docs/architecture/evidence/stage0/`（`stage0-encoder-capability.json` / `stage0-g7-portrait.json`）。
+
+**它不是行为契约测试**：断言只覆盖"测量本身有效"（拿到编码器、生成可解码竖屏源、三档预设都跑完），**不对 G7 的结论下断言** —— 结论是被记录的事实，不是被强制的期望。这与 §14.1 的"0-B 只做验证工程"、§15.3 的"设备测试恢复前该矩阵属于未验证"一致。
+
+**前置阻塞已解除**：`docs/architecture/phase-11-14-tdd-report.md` 记录的 MIUI `INSTALL_FAILED_USER_RESTRICTED`（U7）**在本设备上已不存在** —— `adb install -r -t` 主 APK 与测试 APK 均返回 `Success`，instrumentation 正常执行（`OK (2 tests)`）。§15.3 的整个设备矩阵因此**从"未验证"转为"可验证"**。
+
+#### 20.1.1 G7 已裁定：planner 对，verifier 少一步旋转换算
+
+竖屏源 `1080×1920`（`KEY_ROTATION = 0`；`MediaMetadataRetriever` 同样报 1080×1920 / rot 0），3 秒，`video/avc`：
+
+| 预设 | `maximumLongEdge` | planner 目标 | 输出 `KEY_WIDTH×KEY_HEIGHT` | 输出 `KEY_ROTATION` | 旋转后的显示尺寸 | verifier |
+| --- | ---: | --- | --- | ---: | --- | --- |
+| `compatible_mp4` | 1920 | `1080x1920` | `1080×1920` | 0 | `1080×1920` | `valid = true` |
+| `balanced_mp4` | 1920 | `1080x1920` | `1080×1920` | 0 | `1080×1920` | `valid = true` |
+| `space_saver_mp4` | 1280 | `720x1280` | **`1280×720`** | **90** | **`720×1280`** | `valid = false`，`DIMENSION_MISMATCH` |
+
+**结论**（三档预设必须合起来看；只看任一档都会得出错误结论）：
+
+1. **不触发缩放时**（源长边 1920 ≤ 预设 1920）：编码尺寸 = 显示尺寸 = planner 目标，`rotation = 0`。
+2. **触发缩放时**（预设 1280）：`Presentation.createForWidthAndHeight(720, 1280, LAYOUT_SCALE_TO_FIT)` 使 Transformer 输出**转置后的横向编码尺寸 `1280×720`**，方向改由 `KEY_ROTATION = 90` 表达。
+3. **旋转后的 `720×1280` 恰好等于 planner 目标** ⇒ 输出在播放语义上**是正确的**。
+4. ⇒ G7 设想的两条路里，正确的是"**verifier 拿编码尺寸去比 planner 的显示语义目标**"。这**不是**"语义二选一"的设计分歧，而是 verifier 缺一次 `KEY_ROTATION` 换算。
+5. **修法（属阶段 1，不属阶段 0）**：verifier 读完 `KEY_WIDTH`/`KEY_HEIGHT` 后，若 `KEY_ROTATION ∈ {90, 270}` 先转置，再与 `targetWidth`/`targetHeight` 比较。**planner 保持显示语义不动** —— 它算出的 `720×1280` 正是用户预期。
+
+⚠ **本次未覆盖**：只测了"自然竖屏、rotation 0"的源。**"带旋转元数据的横向源"（如编码 1920×1080 且 `rotation=90`）未测**；那条路径下 planner 读的是编码尺寸而用户预期是显示尺寸，可能仍不一致。**补测之前不得据此改 planner。**
+
+#### 20.1.2 G1 由静态审查升级为可执行证据
+
+| 预设 | 请求视频码率 | 输出字节数 |
+| --- | ---: | ---: |
+| `compatible_mp4` | 8 000 000 | **473 598** |
+| `balanced_mp4` | 5 000 000 | **473 598** |
+| `space_saver_mp4` | 2 500 000 | **505 710** |
+
+- `compatible_mp4` 与 `balanced_mp4` 的**输出字节数完全相同（473 598）**，`outputFacts` 逐字段相同。两个不同码率的预设产出**逐字节相同**的结果，**与测试语料无关**。
+- 请求 **2.5 Mbps** 的 `space_saver_mp4` 产出 **505 710 字节，反而比请求 8 Mbps 的更大**。
+- ⇒ G1 的结论（"预设码率根本没接进编码器，实际码率由 `DefaultEncoderFactory.getSuggestedBitrate()` 按设备能力推导"）**已被真机确认**，且后果比静态分析更重：**三档预设在码率维度上完全不生效**。
+- ⚠ **语料限制**：本次合成源是近乎静态的条纹画面（源文件仅 **74 776 字节** / 3 秒 1080p），故输出体积是源的 6 倍多，**绝对数值不代表真实影片**。上表的效力只在"不同码率预设产出字节相同"这一**比较**上。
+
+#### 20.1.3 G8 的修法被实测否掉
+
+源与三份输出的视频轨 `MediaFormat` 中，**`KEY_BIT_RATE` 一律为 `null`**。G8 原定的"用 `MediaExtractor` 读输出 `KEY_BIT_RATE` 断言预设码率真的生效"**在这台设备 / 这条 MP4 路径上不可行**。可选替代（留给阶段 1 步骤 1 一并定）：输出**字节数 ÷ 时长**得到的平均码率，或 Media3 `Transformer` 侧的实际编码参数回报。**三者口径不同**（平均码率受内容复杂度影响，不等于请求码率），断言必须设容差并写明依据。
+
+#### 20.1.4 G2：`supportsHdr = false` 被实测证伪
+
+- 生产 `AndroidMediaCapabilityProbe` 报告的**全部 14 个编码器** `supportsHdr` 均为 `false` —— 那是 `app/src/main/java/seeyuer/yingli/player/data/processing/transcode/AndroidMediaCapabilityProbe.kt:113` 的硬编码。
+- 实测（`colorFormats` 含 **54 = `COLOR_FormatYUVP010`**）：
+
+| 编码器 | 尺寸上限 | 10-bit 色彩格式 | bitrateModes |
+| --- | --- | --- | --- |
+| `c2.qti.hevc.encoder` | 128–8192 | 有 | VBR, CBR |
+| `OMX.qcom.video.encoder.hevc` | 128–8192 | 有 | VBR, CBR |
+| **`c2.qti.hevc.encoder.hdr`** | **128–4096** | 有 | VBR, CBR |
+| `c2.qti.avc.encoder` | 128–8192 | 有 | VBR, CBR |
+| `c2.qti.hevc.encoder.cq` | **128–512** | 有 | **CQ** |
+
+- ⇒ **该设备的 HEVC 10-bit / HDR 编码能力真实存在**（还有一个名字里就写着 `hdr` 的编码器），"一律不宣称 HDR"的硬编码**已经错了**。阶段 1 步骤 3（G2）的 `supportsHdr` 必须改为实测推导。
+- **一处方法学自我更正（留此存档）**：我最初用 `caps.profileLevels.any { it.profile == HEVCProfileMain10 }` 作第二个 HDR 信号，它在 **AVC** 编码器上也返回 `true`。原因：**`AVCProfileMain == HEVCProfileMain10 == 0x02`（`MediaCodecInfo.CodecProfileLevel` 常量撞号）**。该判据**只对 `video/hevc` 有效**，不得跨 mime 使用。实测数据也必须逐条自检。
+
+#### 20.1.5 编码器清单与 `BitrateMode`（T1 的直接输入）
+
+- **硬件**：`video/avc`（8192²）、`video/hevc`（8192² / 4096²，另有 `.hdr` 变体）、`video/apv`（8192²，API 36 新编码）、`video/x-mvhevc`（4096²，60fps）。
+- **仅软件**：`video/av01`（≤2048²）、`video/x-vnd.on2.vp9`（≤2048²）、`video/x-vnd.on2.vp8`、`video/mp4v-es`、`video/3gpp`。
+- **共性**：`widthAlignment = heightAlignment = 2`（与 planner 的 `even()` = `and -2` 一致）；AVC/HEVC 硬件编码器的 `portrait1920x1080Supported` 与 `landscape1920x1080Supported` 均为 `true`；`diagnostics` 为空集。
+- **关键约束**：全分辨率硬件编码器只报 **`VBR` / `CBR`**，**没有 `CQ`**；唯一的 `CQ` 编码器尺寸上限仅 **128–512**。⇒ 本设备全分辨率压缩的 `VideoEncoderSettings.BitrateMode` **只能在 VBR / CBR 中选**，T1 不得假设 `BITRATE_MODE_CQ` 可用。
+
+#### 20.1.6 阶段 0 仍未闭合
+
+- **试编超时行为**（`Service.onTimeout`，F24）：属阶段 1 步骤 4，本次未测。§15.3 已写明"若无法跑到 6 小时，记为未验证，**不得用缩短时限假装通过**"。
+- **回收站 R1/R2 的 8 项**（§14.1 的 0-B 第 2–8 条）：**第 2/5/8 条已做（§20.2）**；第 3 条（API 31 与 36 差异）因本工作区只有 API 36 真机而**未验证**；第 4 条（SAF 树来源）需用户手动选择目录，**未验证**；第 6 条（R2 复制期间流式 SHA-256、失败/空间不足/进程被杀不丢源文件）**未做**；第 7 条（`expiresAt` 严格边界）属域逻辑，归阶段 4 的 JVM 单测。
+- **带旋转元数据的横向源**：见 20.1.1 的 ⚠。
 
 **方法论教训**（对后续取证同样适用）：
 
@@ -1872,6 +1952,86 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 - `javap` 在本工作区被 DSH 沙箱拒绝执行；读 Android/Media3 API 应优先查 `developer.android.com/.../*.md.txt` 或 `raw.githubusercontent.com` 源码。
 - 本工作区 shell 无外网，只有 `web_fetch` 可用；`android.googlesource.com` 与 `Invoke-WebRequest` 直连 `raw.githubusercontent.com` 均因 TLS 问题不可用。
 - 单个 `compress` summary 有字符上限，超限会整批失败；超大范围必须先按逻辑边界拆成多个更小的 range 再批量提交。
+
+### 20.2 阶段 0-B 回收站平台行为实测（2026-10-09）
+
+**取证测试**：`app/src/androidTest/java/seeyuer/yingli/player/data/processing/recycle/RecycleBinPlatformBehaviorMeasurementTest.kt`（4 个用例，类 KDoc 明确**不下产品断言**，只把实测值写成 JSON；唯一硬断言是测量本身有效）。
+**快照出口**：`app/src/androidTest/java/seeyuer/yingli/player/Stage0EvidenceRecorder.kt` → `getExternalFilesDir(null)` + logcat tag `YingLiStage0`。
+**原始证据**：`docs/architecture/evidence/stage0/stage0-recycle-*-{noperm,readmediavideo,allfiles}.json`（三配置 × 4 份）。
+**设备**：Xiaomi 25102RKBEC，Android 16 / API 36。**三种配置各 4 个用例全部 `OK (4 tests)`。**
+
+| 配置 | `READ_MEDIA_VIDEO` | `MANAGE_EXTERNAL_STORAGE` | 含义 |
+|---|---|---|---|
+| `noperm` | 否 | 否 | 零权限路径 |
+| `readmediavideo` | 是 | 否 | **产品真实的授权状态** |
+| `allfiles` | 是 | 是 | 对照：all-files 被授予时会发生什么 |
+
+⚠ **取证前提事故（必须记住，否则数据是假的）**：首轮结果被污染 —— `app/src/main/AndroidManifest.xml:6-8` 声明了 `MANAGE_EXTERNAL_STORAGE`，设备上该 appop 处于 `allow`，于是 `isExternalStorageManager()` 为 true，**他应用媒体的直接 update 返回 `ok`**，这不是真实行为。`adb shell pm revoke <pkg> android.permission.MANAGE_EXTERNAL_STORAGE` **不可用**（`SecurityException: Permission ... is not a changeable permission type`）；必须 **`adb shell appops set <pkg> MANAGE_EXTERNAL_STORAGE deny` 且同时 `adb shell appops set --uid <pkg> MANAGE_EXTERNAL_STORAGE deny`**（`appops get` 里同时存在两条同名条目）。另：标签必须由 `-e configTag <tag>` **显式传入**，不得从权限状态推导——否则三次运行落到同一文件名互相覆盖（第一版就因此丢了两份证据）。`adb shell cmd media_scanner scan` 在 API 36 上返回 `cmd: Can't find service: media_scanner`，不可用。
+
+#### 20.2.1 U1 — `DATE_EXPIRES`（已闭合，仅 API 36）
+
+- **列可投影**：`cursorColumns` 含 `date_expires`；三种配置的 `defaultQueryError` / `trashedOnlyQueryError` / `includeTrashedQueryError` **全为 `null`**。
+- 未移入时 `date_expires = null`（`rowsWithNonZeroDateExpires = 0`）。
+- 对本应用自有媒体直接置 `IS_TRASHED = 1` 后：`date_expires = date_added + 2592000`。**四组独立测量全部精确等于 2 592 000 秒**（`1794115554-1791523554`、`1794115551-1791523551`、`1794115553-1791523553`、`1794115325-1791523325`）。
+- 恢复（`IS_TRASHED = 0`）后 `date_expires` **回到 `null`**。
+- ⇒ 本机保留期**恰好 30 天**。§12 表中「`DATE_EXPIRES` 可能为 null（不可读时 UI 不显示剩余天数）」应改述为「**未移入时为 null；已移入时可读且为 `trashedAt + 30 天`**」。§11 的「R1 期限来源」同此。
+
+#### 20.2.2 零权限路径（`noperm`）—— 反直觉但决定性
+
+- 查询**不抛异常，静默返回空**：`defaultCount = 0`、`trashedOnlyCount = 0`、`includeTrashedCount = 0`、`firstRowRaw = {}`。⇒ **「查询返回空」不能区分「库里没有视频」与「没有读权限」**，UI 必须用权限状态而不是空结果来解释。
+- 但**自有媒体的移入/恢复闭环完全可用**：`setTrashedTrue = "ok"`；移入后 `visibleInDefaultQueryWhileTrashed = 0`；`visibleInTrashedQueryWhileTrashed = 1`；`setTrashedFalse = "ok"`；`visibleInDefaultQueryAfterRestore = 1`。
+- `singleOwnTrashRequest` → `{ "ok": true, "intentSenderNull": false, "creatorPackage": "com.android.providers.media.module" }`（`IntentSender` 成形）。
+- ⇒ **对自己创建的视频，移入/恢复系统回收站不需要任何权限**；但**无法枚举媒体库**（`singleForeignTrashRequest = null`，因为可见行数为 0、找不到他应用 URI）。
+- 对设计的含义：回收站条目可以从**应用自己的数据库**（`trash_entries`）驱动，即使在某次运行中读权限被撤销，用户仍能把文件从系统回收站捞回来。
+
+#### 20.2.3 他应用媒体必须走授权请求（`readmediavideo`，即产品真实状态）
+
+- `defaultCount = 9316`、`trashedOnlyCount = 0`、`includeTrashedCount = 9316`、`foreignPackageCount = 5562`、`nullOwnerCount = 3754`、`distinctOwners = ["com.android.camera","com.android.shell","com.android.soundpicker"]`。
+- 他应用媒体的**直接 update 与 `RELATIVE_PATH` update 均抛**：
+  `RecoverableSecurityException: seeyuer.yingli.player has no access to content://media/external/video/media/2520` —— **这就是 F27 的真机证据**。
+- `singleForeignTrashRequest` → `ok`（`IntentSender` 成形；真正的用户授权发生在客户端 `send()` 之后）。
+- ⇒ **R1 对他应用媒体只有一条路：`MediaStore.createTrashRequest()` + `RecoverableSecurityException` 兜底**；任何"直接写列"的路径必然失败。设计必须假设「不知道会不会成功，先试，失败就换成请求授权」。
+
+#### 20.2.4 U3 — 2000 URI 上限（已闭合）
+
+| 条数 | `createTrashRequest` | `createDeleteRequest` |
+|---:|---|---|
+| 1999 | ok | — |
+| 2000 | ok | ok |
+| **2001** | **`IllegalArgumentException`** | **同一条错误** |
+| 5001 | 同一条错误 | — |
+
+- 错误消息逐字：**`URI list restricted to 2000 per request`**。
+- 单条请求的 `creatorPackage` 恒为 `com.android.providers.media.module`。
+- ⇒ 本设计 §3 与 §7 中「批量授权请求单次上限 2000、必须分块并逐块记录授权结果」**已被实测确认**，且**对 trash 与 delete 同样适用**。
+
+#### 20.2.5 `allfiles` 对照：一个产品级风险
+
+- `MANAGE_EXTERNAL_STORAGE` 被授予时，他应用媒体的**直接 update → `ok`、`RELATIVE_PATH` update → `ok`**，**完全绕过逐文件授权**。
+- ⇒ **凡声明 `MANAGE_EXTERNAL_STORAGE` 且在 OEM ROM 上被自动授予，整套「逐文件授权」设计就被静默架空**，且行为会随 ROM 不同而不同。**当前 manifest 就声明了它**（`app/src/main/AndroidManifest.xml:6-8`）。本设计的立场（§7「不为实现『全部视频』而默认申请 `MANAGE_EXTERNAL_STORAGE`」）应升级为**明确要求移除该声明或将其限制在 debug 变体**，否则取证与真机行为都不可复现。
+
+#### 20.2.6 新发现：`owner_package_name` 不是可靠的所有权判据
+
+- 9316 行中 **3754 行 `owner_package_name` 为 `null`**（样本首行 `_id = 2226`、`_display_name = "Screenrecorder-2026-03-20-09-13-51-159.mp4"`、`relative_path = "DCIM/screenrecorder/"`，其 `owner_package_name` 就是 `null`）。
+- ⇒ **不得用 `owner_package_name == 自己的包名` 作为「这份媒体是我创建的」的判据** —— null 既可能来自系统相机/录屏，也可能来自本应用在旧版本写入的行。所有权属判断必须**以应用自己的数据库为准**，平台侧一律「先试、失败再请求授权」。
+
+#### 20.2.7 API 36 视频行的全列实测（供字段设计直接引用）
+
+一次不指定投影的 `query` 在 `READ_MEDIA_VIDEO` 下返回 55 列。与本设计相关的实测值（样本 `_id = 2226`）：
+
+- **可用且非空**：`_id`、`_display_name`（`"Screenrecorder-2026-03-20-09-13-51-159.mp4"`，**证明文件名可读**）、`_data`（`/storage/emulated/0/DCIM/screenrecorder/...`）、`_size`、`relative_path`、`volume_name = "external_primary"`、`mime_type`、`width`/`height`/`resolution = "1080×2400"`/`orientation`、`duration`、`bitrate = 3242814`、`num_tracks = 2`、`date_added`、`date_modified`、`datetaken`、`inferred_date`、`is_trashed`、`is_pending`、`is_drm`、`is_favorite`、`is_download`、`generation_added`/`generation_modified`、`bucket_id`、`bucket_display_name`、`color_transfer = 3`、`color_standard = 2`、`color_range = 2`、`title`、`album`。
+- **可为 `null` 的**：`date_expires`（未移入时）、`owner_package_name`、`document_id`、`instance_id`、`original_document_id`、`group_id`、`isprivate`、`xmp`、`oem_metadata`、`compilation`、`capture_framerate`、`description`、`language`、`writer`、`author`、`album_artist`、`composer`、`genre`、`year`、`tags`、`category`、`bookmark`。
+- **`xmp` 是 BLOB 列**：`getString()` 会抛 `SQLiteException: unknown error (code 0 SQLITE_OK): Unable to convert BLOB to string`。⇒ 逐列读取必须 per-column 容错，**任何"全列转字符串"的诊断代码都必须先 `isNull` + `runCatching`**，否则一次诊断会被一列拖垮（本次首轮即如此）。
+- `date_added`（`1774190195`）**不等于** `datetaken`（`1773969236000` ms）——`date_added` 是**入库时间**，不是拍摄时间。`DATE_EXPIRES = date_added + 30 天` 因此是「入库后 30 天」，与文件的真实年龄无关。
+- **一处自我更正（留此存档）**：第一版快照的 `samples[].name` 全为 `null`，我一度怀疑「`_display_name` 对他应用媒体不可读」。**该怀疑是错的** —— `firstRowRaw` 在同一行（`_id = 2226`）明确返回 `_display_name = "Screenrecorder-2026-03-20-09-13-51-159.mp4"`，真实原因是探针自身的键名写错（用了 `display_name`，而投影列名是 `_display_name`）。修正后三种配置的 `samples[].name` 全部为真实文件名（`Screenrecorder-2026-03-20-09-13-51-159.mp4`、`5_6172354263369384461.mp4`、`VID_20260107_160506.mp4` …）。⇒ **`_display_name` 可读，回收站列表可以显示文件名**；同时也说明「同一份快照里两个字段互相矛盾时，必须回去核对探针代码，不能只报其中的一个」。
+
+#### 20.2.8 本节仍未闭合
+
+- **API 31 与 API 36 的差异**（0-B 第 3 条）：本工作区只有 API 36 真机、shell 无外网、无法下载 API 31 镜像 ⇒ **未验证**。
+- **SAF 树来源在 R1 下的行为（U2）**：需用户手动选择目录 ⇒ **未验证**。
+- **R2 复制期间流式 SHA-256、失败/空间不足/进程被杀不丢源文件**（0-B 第 6 条）：**未做**。
+- **`expiresAt` 严格边界**（0-B 第 7 条）：属域逻辑，归阶段 4 的 JVM 单测，非设备探针。
+- 设备上仍留有**首轮被污染的无后缀快照** `stage0-recycle-{column-inventory,own-media-cycle,foreign-media,request-api}.json`；引用时必须排除，只取带 `-<configTag>` 后缀的版本。
 
 ---
 

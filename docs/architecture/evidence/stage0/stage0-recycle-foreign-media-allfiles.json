@@ -1,0 +1,16 @@
+            { "apiLevel": 36
+            , "permissions": { "readMediaVideo": true
+, "readMediaVisualUserSelected": false
+, "readExternalStorage": false
+, "manageMediaDeclared": false
+, "canManageMedia": false
+, "isExternalStorageManager": true
+}
+            , "foreignUriFound": true
+            , "foreignUri": "content://media/external/video/media/2520"
+            , "method": "direct IS_TRASHED=0 update (no-op value)"
+            , "directUpdateOutcome": "ok"
+            , "methodRelPath": "direct RELATIVE_PATH re-set to 'Movies/' (no-op value)"
+            , "directRelPathOutcome": "ok"
+            , "directDeleteAttempted": false
+            }

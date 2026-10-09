@@ -1,0 +1,16 @@
+            { "apiLevel": 36
+            , "permissions": { "readMediaVideo": true
+, "readMediaVisualUserSelected": false
+, "readExternalStorage": false
+, "manageMediaDeclared": false
+, "canManageMedia": false
+, "isExternalStorageManager": false
+}
+            , "distinctVideoUrisAvailable": 9317
+            , "padStrategy": "cycle existing distinct URIs until count reached"
+            , "singleOwnTrashRequest": { "ok": true, "intentSenderNull": false, "creatorPackage": "com.android.providers.media.module" }
+            , "singleForeignTrashRequest": { "ok": true, "intentSenderNull": false, "creatorPackage": "com.android.providers.media.module" }
+            , "singleOwnUntrashRequest": { "ok": true, "intentSenderNull": false, "creatorPackage": "com.android.providers.media.module" }
+            , "trashRequestBySize": [{ "uris": 1999, "outcome": { "ok": true, "intentSenderNull": false, "creatorPackage": "com.android.providers.media.module" } },{ "uris": 2000, "outcome": { "ok": true, "intentSenderNull": false, "creatorPackage": "com.android.providers.media.module" } },{ "uris": 2001, "outcome": { "ok": false, "exception": "IllegalArgumentException", "message": "URI list restricted to 2000 per request", "recoverable": false } },{ "uris": 5001, "outcome": { "ok": false, "exception": "IllegalArgumentException", "message": "URI list restricted to 2000 per request", "recoverable": false } }]
+            , "deleteRequestBySize": [{ "uris": 2000, "outcome": { "ok": true, "intentSenderNull": false, "creatorPackage": "com.android.providers.media.module" } },{ "uris": 2001, "outcome": { "ok": false, "exception": "IllegalArgumentException", "message": "URI list restricted to 2000 per request", "recoverable": false } }]
+            }

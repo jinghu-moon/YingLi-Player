@@ -1,0 +1,16 @@
+            { "apiLevel": 36
+            , "permissions": { "readMediaVideo": true
+, "readMediaVisualUserSelected": false
+, "readExternalStorage": false
+, "manageMediaDeclared": false
+, "canManageMedia": false
+, "isExternalStorageManager": false
+}
+            , "foreignUriFound": true
+            , "foreignUri": "content://media/external/video/media/2520"
+            , "method": "direct IS_TRASHED=0 update (no-op value)"
+            , "directUpdateOutcome": "RecoverableSecurityException: seeyuer.yingli.player has no access to content://media/external/video/media/2520"
+            , "methodRelPath": "direct RELATIVE_PATH re-set to 'Movies/' (no-op value)"
+            , "directRelPathOutcome": "RecoverableSecurityException: seeyuer.yingli.player has no access to content://media/external/video/media/2520"
+            , "directDeleteAttempted": false
+            }

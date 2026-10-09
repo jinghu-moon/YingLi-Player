@@ -1,0 +1,59 @@
+            { "apiLevel": 36
+            , "permissions": { "readMediaVideo": true
+, "readMediaVisualUserSelected": false
+, "readExternalStorage": false
+, "manageMediaDeclared": false
+, "canManageMedia": false
+, "isExternalStorageManager": false
+}
+            , "device": "25102RKBEC"
+            , "ownPackage": "seeyuer.yingli.player"
+            , "projection": ["_id","_display_name","owner_package_name","is_trashed","date_expires","date_added","relative_path"]
+            , "defaultQueryError": null
+            , "trashedOnlyQueryError": null
+            , "includeTrashedQueryError": null
+            , "cursorColumns": ["_id","_display_name","owner_package_name","is_trashed","date_expires","date_added","relative_path"]
+            , "firstRowRaw": {"instance_id": null,"compilation": null,"disc_number": null,"duration": "4401","album_artist": null,"description": null,"language": null,"resolution": "1080×2400","latitude": null,"orientation": "0","artist": "<unknown>","color_transfer": "3","author": null,"inferred_date": "1773969236000","color_standard": "2","height": "2400","is_drm": "0","bucket_display_name": "screenrecorder","owner_package_name": null,"volume_name": "external_primary","date_modified": "1773969231","writer": null,"date_expires": null,"composer": null,"_display_name": "Screenrecorder-2026-03-20-09-13-51-159.mp4","datetaken": "1773969236000","mime_type": "video/mp4","bitrate": "3242814","cd_track_number": null,"_id": "2226","xmp": "<SQLiteException: unknown error (code 0 SQLITE_OK): Unable to convert BLOB to string>","tags": null,"year": null,"oem_metadata": null,"category": null,"_data": "/storage/emulated/0/DCIM/screenrecorder/Screenrecorder-2026-03-20-09-13-51-159.mp4","_size": "1783872","album": "screenrecorder","genre": null,"title": "Screenrecorder-2026-03-20-09-13-51-159","width": "1080","longitude": null,"is_favorite": "0","is_trashed": "0","group_id": null,"document_id": null,"generation_added": "7315","is_download": "0","generation_modified": "7315","is_pending": "0","date_added": "1774190195","mini_thumb_magic": null,"capture_framerate": null,"color_range": "2","num_tracks": "2","isprivate": null,"original_document_id": null,"bucket_id": "-2007764036","bookmark": null,"relative_path": "DCIM/screenrecorder/"}
+            , "defaultCount": 9316
+            , "trashedOnlyCount": 0
+            , "includeTrashedCount": 9316
+            , "ownPackageCount": 0
+            , "foreignPackageCount": 5562
+            , "nullOwnerCount": 3754
+            , "rowsWithNonZeroDateExpires": 0
+            , "distinctOwners": ["com.android.camera","com.android.shell","com.android.soundpicker"]
+            , "samples": [{ "id": "2226", "name": "Screenrecorder-2026-03-20-09-13-51-159.mp4"
+, "owner": null, "isTrashed": "0"
+, "dateExpires": null, "dateAdded": "1774190195"
+, "relativePath": "DCIM/screenrecorder/"
+},{ "id": "2229", "name": "5_6172354263369384461.mp4"
+, "owner": null, "isTrashed": "0"
+, "dateExpires": null, "dateAdded": "1774190217"
+, "relativePath": "download/Telegram/"
+},{ "id": "2238", "name": "5_6172354263369384463.mp4"
+, "owner": null, "isTrashed": "0"
+, "dateExpires": null, "dateAdded": "1774190228"
+, "relativePath": "download/Telegram/"
+},{ "id": "2241", "name": "5_6237694773369504177.mp4"
+, "owner": null, "isTrashed": "0"
+, "dateExpires": null, "dateAdded": "1774190260"
+, "relativePath": "download/Telegram/"
+},{ "id": "2242", "name": "5_6237694773369504180.mp4"
+, "owner": null, "isTrashed": "0"
+, "dateExpires": null, "dateAdded": "1774190269"
+, "relativePath": "download/Telegram/"
+},{ "id": "2257", "name": "5_6161178586666500603.mp4"
+, "owner": null, "isTrashed": "0"
+, "dateExpires": null, "dateAdded": "1774190409"
+, "relativePath": "download/Telegram/"
+},{ "id": "2260", "name": "VID_20260107_160506.mp4"
+, "owner": null, "isTrashed": "0"
+, "dateExpires": null, "dateAdded": "1774190427"
+, "relativePath": "DCIM/Camera/"
+},{ "id": "2262", "name": "5_6287473117912629609.mp4"
+, "owner": null, "isTrashed": "0"
+, "dateExpires": null, "dateAdded": "1774190475"
+, "relativePath": "download/Telegram/"
+}]
+            , "trashedSamples": []
+            }

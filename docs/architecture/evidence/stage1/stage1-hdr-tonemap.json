@@ -1,0 +1,14 @@
+{
+  "capturedAtEpochMillis": 1791542527947,
+  "sourceBytes": 9695243,
+  "sourceFormatKeys": "{track-id=1, level=2048, mime=video/avc, frame-count=90, profile=8, language=```, color-standard=6, display-width=1920, csd-1=java.nio.HeapByteBuffer[pos=0 lim=9 cap=9], color-transfer=6, durationUs=3000000, display-height=1080, width=1920, color-range=2, max-input-size=1167365, frame-rate=30, height=1080, csd-0=java.nio.HeapByteBuffer[pos=0 lim=23 cap=23]}",
+  "sourceColorTransfer": 6,
+  "sourceColorStandard": 6,
+  "sourceHdrFormat": "HDR10",
+  "plannerResult": "Ready",
+  "changes": ["HDR_TO_SDR"],
+  "engineResult": "Completed",
+  "outBytes": 6890053,
+  "verifierValid": true,
+  "verifierErrors": []
+}

@@ -90,4 +90,35 @@ class ProcessingContractsTest {
         assertNull(ProcessingSchedulerPolicy.next(listOf(urgent), 0, 1, SchedulerConditions(batteryLow = true)))
         assertNull(ProcessingSchedulerPolicy.next(listOf(urgent), 0, 1, SchedulerConditions(storageAvailable = false)))
     }
+
+    @Test
+    fun `exhausted foreground service quota stops scheduling new tasks`() {
+        val queued = task()
+        val conditions = SchedulerConditions(foregroundServiceUnavailable = true)
+
+        assertNull(ProcessingSchedulerPolicy.next(listOf(queued), 0, 1, conditions))
+        // 闸门只挡调度，不改变任务本身——排队中的任务必须原样留着，下次启动接着做。
+        assertEquals(ProcessingTaskState.QUEUED, queued.state)
+    }
+
+    @Test
+    fun `timeout fails running tasks but never demotes a task that already succeeded`() {
+        val running = task(ProcessingTaskState.RUNNING)
+        val failed = ProcessingTaskReducer.replay(
+            running,
+            listOf(ProcessingTaskEvent.Fail("FOREGROUND_SERVICE_TIMEOUT", 20)),
+        )
+        assertEquals(ProcessingTaskState.FAILED, failed.state)
+        assertEquals("FOREGROUND_SERVICE_TIMEOUT", failed.errorCode)
+
+        // 这是 InAppProcessingScheduler.failRunning 先取消后写事件的理由：执行器可能已经提交成功，
+        // 此时超时事件必须被忽略，而不是把「确实进了媒体库的输出」改写成失败。
+        val succeeded = task(ProcessingTaskState.SUCCEEDED).copy(outputDisplayName = "done.mp4")
+        val late = ProcessingTaskReducer.replay(
+            succeeded,
+            listOf(ProcessingTaskEvent.Fail("FOREGROUND_SERVICE_TIMEOUT", 21)),
+        )
+        assertEquals(ProcessingTaskState.SUCCEEDED, late.state)
+        assertNull(late.errorCode)
+    }
 }

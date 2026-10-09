@@ -116,12 +116,53 @@ enum class TranscodeChangeCode {
     SUBTITLES_NOT_EMBEDDED,
     HDR_TO_SDR,
     FRAME_RATE_CAPPED,
+
+    /**
+     * 请求的视频编码格式被库**静默替换**成另一个（G6）。
+     *
+     * Media3 Transformer 对 `setVideoMimeType` 支持的取值只有 H.263 / H.264 / H.265 / MPEG-4，
+     * 请求这些之外（或设备没有对应编码器）时它会**回退到支持的格式并报告成功**，
+     * 且**只通过 `Transformer.Listener.onFallbackApplied` 通知**。
+     * 不覆写该回调就会「用户要 HEVC、实际拿到 AVC 且被告知成功」——
+     * 与 Q498「不静默丢轨」、Q500「不静默降质」是同一类错误。
+     */
+    VIDEO_CODEC_FALLBACK,
+
+    /** 请求的音频编码格式被库静默替换（G6），语义同 [VIDEO_CODEC_FALLBACK]。 */
+    AUDIO_CODEC_FALLBACK,
 }
 
+/**
+ * 回退类 change 一律需要确认：它们是「你已经点了开始、结果却不是你点的那件事」，
+ * 不能通过第一次提交时的那次统一确认糊过去。
+ */
+fun TranscodeChangeCode.requiresConfirmation(): Boolean = when (this) {
+    TranscodeChangeCode.EXTRA_AUDIO_TRACKS_REMOVED,
+    TranscodeChangeCode.SUBTITLES_NOT_EMBEDDED,
+    TranscodeChangeCode.HDR_TO_SDR,
+    TranscodeChangeCode.FRAME_RATE_CAPPED,
+    TranscodeChangeCode.VIDEO_CODEC_FALLBACK,
+    TranscodeChangeCode.AUDIO_CODEC_FALLBACK,
+    -> true
+
+    TranscodeChangeCode.RESOLUTION_REDUCED,
+    TranscodeChangeCode.VIDEO_CODEC_CHANGED,
+    TranscodeChangeCode.AUDIO_CODEC_CHANGED,
+    -> false
+}
+
+/**
+ * 一项已确定的转换后果。
+ *
+ * `requiresConfirmation` **不再作为字段存在**：它完全由 [code] 决定（见 [TranscodeChangeCode.requiresConfirmation]）。
+ * 曾经两者并存（字段 + 枚举），也就意味着同一个事实有两个真源，可以互相矛盾；
+ * 而「哪些后果需要用户确认」是产品语义，只应有一个出处。开发期允许破坏性收敛。
+ */
 data class TranscodeChange(
     val code: TranscodeChangeCode,
-    val requiresConfirmation: Boolean,
-)
+) {
+    val requiresConfirmation: Boolean get() = code.requiresConfirmation()
+}
 
 data class TranscodePlan(
     val source: SourceMediaInfo,
@@ -176,27 +217,27 @@ object DefaultTranscodePlanner {
 
         val changes = buildList {
             if (width != source.width || height != source.height) {
-                add(TranscodeChange(TranscodeChangeCode.RESOLUTION_REDUCED, false))
+                add(TranscodeChange(TranscodeChangeCode.RESOLUTION_REDUCED))
             }
             val videoMime = source.tracks.first { it.type == MediaTrackType.VIDEO }.mimeType
             if (videoMime != preset.targetVideoMimeType) {
-                add(TranscodeChange(TranscodeChangeCode.VIDEO_CODEC_CHANGED, false))
+                add(TranscodeChange(TranscodeChangeCode.VIDEO_CODEC_CHANGED))
             }
             val audioTracks = source.tracks.filter { it.type == MediaTrackType.AUDIO }
             if (audioTracks.firstOrNull()?.mimeType?.let { it != preset.targetAudioMimeType } == true) {
-                add(TranscodeChange(TranscodeChangeCode.AUDIO_CODEC_CHANGED, false))
+                add(TranscodeChange(TranscodeChangeCode.AUDIO_CODEC_CHANGED))
             }
             if (audioTracks.size > 1) {
-                add(TranscodeChange(TranscodeChangeCode.EXTRA_AUDIO_TRACKS_REMOVED, true))
+                add(TranscodeChange(TranscodeChangeCode.EXTRA_AUDIO_TRACKS_REMOVED))
             }
             if (source.tracks.any { it.type == MediaTrackType.SUBTITLE }) {
-                add(TranscodeChange(TranscodeChangeCode.SUBTITLES_NOT_EMBEDDED, true))
+                add(TranscodeChange(TranscodeChangeCode.SUBTITLES_NOT_EMBEDDED))
             }
             if (source.hdrFormat != HdrFormat.SDR && !encoder.supportsHdr) {
-                add(TranscodeChange(TranscodeChangeCode.HDR_TO_SDR, true))
+                add(TranscodeChange(TranscodeChangeCode.HDR_TO_SDR))
             }
             if ((source.frameRate ?: 0f) > encoder.maxFrameRate) {
-                add(TranscodeChange(TranscodeChangeCode.FRAME_RATE_CAPPED, true))
+                add(TranscodeChange(TranscodeChangeCode.FRAME_RATE_CAPPED))
             }
         }
         val durationSeconds = source.durationMillis / 1_000.0
@@ -239,7 +280,22 @@ interface MediaCapabilityProbe {
 }
 
 sealed interface TranscodeEngineResult {
-    data object Completed : TranscodeEngineResult
+    /**
+     * 转换完成。
+     *
+     * [fallbacks] 是**库在运行期静默替换掉的请求**，来自 `Transformer.Listener.onFallbackApplied`。
+     * 它必须随成功结果一起返回，因为库在回退时**依然报告成功**——只看「成功/失败」
+     * 就会把「用户要 HEVC、实际拿到 H.264」当作正常结果提交（G6）。
+     *
+     * 这里只有 `VIDEO_CODEC_FALLBACK` / `AUDIO_CODEC_FALLBACK` 两种取值，
+     * 它们都属于「需要确认」的后果，因此执行器遇到非空 [fallbacks] 时**必须拒绝提交**。
+     */
+    data class Completed(
+        val fallbacks: Set<TranscodeChangeCode> = emptySet(),
+    ) : TranscodeEngineResult {
+        val requiresConfirmation: Boolean get() = fallbacks.any { it.requiresConfirmation() }
+    }
+
     data class Failed(val errorCode: String) : TranscodeEngineResult
     data object Canceled : TranscodeEngineResult
 }
@@ -255,6 +311,19 @@ data class OutputVerification(
     val durationMillis: Long? = null,
     val width: Int? = null,
     val height: Int? = null,
+    /**
+     * 整个输出文件（含音频与容器开销）的平均码率，按 `字节数 × 8 × 1000 / 时长毫秒` 计算。
+     *
+     * 这是**唯一可获得的码率观测量**：真机实测（`docs/architecture/Organizing-Page-Function-Design.md`
+     * §20.1.3）输出的 MP4 视频轨**读不到** `KEY_BIT_RATE`（源与全部输出均为 `null`），
+     * 因此 G8 原定的「读回 `KEY_BIT_RATE` 与预设比对」在本设备/该 MP4 路径不可行。
+     *
+     * 该值受内容复杂度影响，**不等于请求码率**（静态画面下编码器会大幅低于目标码率），
+     * 因此它只作为对照数据供 UI 呈现，**不参与 [valid] 判定**——把码率偏差当作失败会误杀合法输出。
+     * 「预设码率是否真的生效」由单元测试（请求已进入 `VideoEncoderSettings`）与真机测量
+     * （不同预设的输出字节数是否分离）回答。
+     */
+    val averageBitrateBitsPerSecond: Int? = null,
 )
 
 interface OutputVerifier {

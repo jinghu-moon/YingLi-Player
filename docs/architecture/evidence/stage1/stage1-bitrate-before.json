@@ -1,0 +1,11 @@
+{
+  "phaseLabel": "before",
+  "capturedAtEpochMillis": 1791540046184,
+  "sourceBytes": 10258660,
+  "sourceBitrate": 27356426,
+  "presets": [
+    { "preset": "compatible_mp4", "requestedVideoBitrate": 8000000, "outBytes": 10657482, "outDurationMillis": 3000, "outAverageBitrate": 28419952, "outFormatBitrate": null, "outWidth": 1920, "outHeight": 1080, "verifierValid": true, "verifierErrors": [] },
+    { "preset": "balanced_mp4", "requestedVideoBitrate": 5000000, "outBytes": 10657482, "outDurationMillis": 3000, "outAverageBitrate": 28419952, "outFormatBitrate": null, "outWidth": 1920, "outHeight": 1080, "verifierValid": true, "verifierErrors": [] },
+    { "preset": "space_saver_mp4", "requestedVideoBitrate": 2500000, "outBytes": 2825491, "outDurationMillis": 3000, "outAverageBitrate": 7534642, "outFormatBitrate": null, "outWidth": 1280, "outHeight": 720, "verifierValid": true, "verifierErrors": [] }
+  ]
+}

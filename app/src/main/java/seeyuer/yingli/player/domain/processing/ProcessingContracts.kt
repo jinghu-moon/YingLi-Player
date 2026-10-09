@@ -275,6 +275,21 @@ object ProcessingPresentationMapper {
 data class SchedulerConditions(
     val batteryLow: Boolean = false,
     val storageAvailable: Boolean = true,
+    /**
+     * 宿主当前无法再提供处理用的前台服务（F24）。
+     *
+     * Android 15 起 `mediaProcessing` 类型的运行时长配额为**每 24 小时 6 小时**，且被同一应用
+     * 的所有该类型前台服务共享；配额用尽后 `Service.onTimeout` 会要求服务在几秒内停止，
+     * 否则 ANR，此后再次 `startForegroundService` 也会被系统拒绝。
+     *
+     * 这个条件为真时**不得再启动新任务**：没有前台服务就不该继续跑重编码（进程会被随时杀掉，
+     * 留下半边临时文件），而且启动前台服务本身就会抛异常。排队中的任务保持 QUEUED，
+     * 本次进程不再取用；下次启动时条件自然复位。
+     *
+     * 这个闸门只影响**调度**，不影响**正在收尾**的任务——收尾语义见
+     * [ProcessingController.failRunning]。
+     */
+    val foregroundServiceUnavailable: Boolean = false,
 )
 
 object ProcessingSchedulerPolicy {
@@ -286,7 +301,13 @@ object ProcessingSchedulerPolicy {
     ): ProcessingTask? {
         require(runningCount >= 0)
         require(maximumConcurrent > 0)
-        if (runningCount >= maximumConcurrent || conditions.batteryLow || !conditions.storageAvailable) return null
+        if (runningCount >= maximumConcurrent ||
+            conditions.batteryLow ||
+            !conditions.storageAvailable ||
+            conditions.foregroundServiceUnavailable
+        ) {
+            return null
+        }
         return tasks.asSequence()
             .filter { it.state == ProcessingTaskState.QUEUED }
             .sortedWith(compareByDescending<ProcessingTask>(ProcessingTask::priority).thenBy(ProcessingTask::createdAtEpochMillis))
@@ -320,6 +341,22 @@ interface ProcessingController {
     fun resume(taskId: ProcessingTaskId)
     fun cancel(taskId: ProcessingTaskId)
     fun retry(taskId: ProcessingTaskId)
+
+    /**
+     * 把当前**所有正在执行**的任务以 [errorCode] 标记失败并立刻停止执行。
+     *
+     * 供宿主在「不能再继续运行处理任务」时调用；当前唯一的调用者是
+     * `YingLiProcessingService.onTimeout(...)`（F24），错误码 `FOREGROUND_SERVICE_TIMEOUT`。
+     * 与 [cancel] 的区别：[cancel] 是用户对一个任务的意图，终态是 `CANCELED`，可以再次重试；
+     * 这个方法表达的是宿主层面的中断，终态是 `FAILED`——**必须让用户看到发生了什么**，
+     * 而不是显示成「用户取消了」。
+     *
+     * 实现必须保证：先让执行器真正退出，再把任务写成失败。反过来的顺序会在「标记失败」
+     * 与「执行器提交输出」之间留出一个窗口，产出「任务显示失败但实际上输出已进媒体库」
+     * 的不一致；而先退出后写入，若执行器恰好已经成功，`Fail` 事件会被状态机忽略
+     * （终态不接受降级），任务如实保持成功。
+     */
+    fun failRunning(errorCode: String)
 }
 
 data class ProcessingArtifact(

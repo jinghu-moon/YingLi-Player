@@ -314,6 +314,8 @@
     <string name="transcode_change_subtitles">当前引擎不会写入内封字幕</string>
     <string name="transcode_change_hdr">设备无法证明 HDR 编码能力，计划将降级为 SDR</string>
     <string name="transcode_change_frame_rate">输出帧率将受设备编码能力限制</string>
+    <string name="transcode_change_video_codec_fallback">设备不支持请求的视频编码，输出将改用其它编码格式</string>
+    <string name="transcode_change_audio_codec_fallback">设备不支持请求的音频编码，输出将改用其它编码格式</string>
     <string name="duplicates_title">重复视频</string>
     <string name="duplicates_exact">完全重复</string>
     <string name="duplicates_similar">相似视频</string>

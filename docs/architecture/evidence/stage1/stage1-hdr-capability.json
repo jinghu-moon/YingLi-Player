@@ -1,0 +1,23 @@
+{
+  "capturedAtEpochMillis": 1791542354546,
+  "encoders": [
+    { "mimeType": "video/avc", "maxWidth": 8192, "maxHeight": 8192, "hardwareAccelerated": true, "supportsHdr": false },
+    { "mimeType": "video/hevc", "maxWidth": 8192, "maxHeight": 8192, "hardwareAccelerated": true, "supportsHdr": true },
+    { "mimeType": "video/hevc", "maxWidth": 8192, "maxHeight": 8192, "hardwareAccelerated": true, "supportsHdr": false },
+    { "mimeType": "video/hevc", "maxWidth": 512, "maxHeight": 512, "hardwareAccelerated": true, "supportsHdr": false },
+    { "mimeType": "video/hevc", "maxWidth": 4096, "maxHeight": 4096, "hardwareAccelerated": true, "supportsHdr": true },
+    { "mimeType": "video/apv", "maxWidth": 8192, "maxHeight": 8192, "hardwareAccelerated": true, "supportsHdr": false },
+    { "mimeType": "video/x-mvhevc", "maxWidth": 4096, "maxHeight": 4096, "hardwareAccelerated": true, "supportsHdr": false },
+    { "mimeType": "video/apv", "maxWidth": 1920, "maxHeight": 1920, "hardwareAccelerated": false, "supportsHdr": false },
+    { "mimeType": "video/av01", "maxWidth": 1920, "maxHeight": 1920, "hardwareAccelerated": false, "supportsHdr": false },
+    { "mimeType": "video/avc", "maxWidth": 2048, "maxHeight": 2048, "hardwareAccelerated": false, "supportsHdr": false },
+    { "mimeType": "video/3gpp", "maxWidth": 176, "maxHeight": 144, "hardwareAccelerated": false, "supportsHdr": false },
+    { "mimeType": "video/hevc", "maxWidth": 512, "maxHeight": 512, "hardwareAccelerated": false, "supportsHdr": false },
+    { "mimeType": "video/mp4v-es", "maxWidth": 176, "maxHeight": 144, "hardwareAccelerated": false, "supportsHdr": false },
+    { "mimeType": "video/x-vnd.on2.vp8", "maxWidth": 2048, "maxHeight": 2048, "hardwareAccelerated": false, "supportsHdr": false },
+    { "mimeType": "video/x-vnd.on2.vp9", "maxWidth": 2048, "maxHeight": 2048, "hardwareAccelerated": false, "supportsHdr": false }
+  ],
+  "hdrEditingFeatureMimeTypes": ["video/hevc","video/x-mvhevc"],
+  "hlgEditingFeatureMimeTypes": ["video/hevc","video/x-mvhevc"],
+  "hdrCapableEncoderCount": 2
+}

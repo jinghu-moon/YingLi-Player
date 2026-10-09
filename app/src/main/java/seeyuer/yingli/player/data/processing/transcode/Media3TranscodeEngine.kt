@@ -12,10 +12,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
+import androidx.media3.transformer.TransformationRequest
 import androidx.media3.transformer.Transformer
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -48,8 +50,14 @@ class Media3TranscodeEngine(
         outputPath: String,
         onProgress: suspend (Float) -> Unit,
     ): TranscodeEngineResult {
-        if (plan.changes.any { it.code == TranscodeChangeCode.HDR_TO_SDR }) {
-            return TranscodeEngineResult.Failed("HDR_TONE_MAPPING_UNAVAILABLE")
+        // G6 的第二道防线：在花掉一次注定作废的整段编码之前就拒绝。
+        Media3CodecAvailability
+            .videoEncoderErrorCode(plan.preset.targetVideoMimeType, plan.targetWidth, plan.targetHeight)
+            ?.let { return TranscodeEngineResult.Failed(it) }
+        if (plan.retainedAudioTrackIds.isNotEmpty()) {
+            Media3CodecAvailability
+                .audioEncoderErrorCode(plan.preset.targetAudioMimeType)
+                ?.let { return TranscodeEngineResult.Failed(it) }
         }
         return try {
             withContext(dispatchers.main) {
@@ -58,11 +66,30 @@ class Media3TranscodeEngine(
                     suspendCancellableCoroutine { continuation ->
                         val output = File(outputPath)
                         var progressJob: Job? = null
+                        // G6 的第一道防线：库静默回退时**依然报告成功**，只有这个回调会说出来。
+                        // 回调与 onCompleted/onError 一样跑在 setLooper 指定的主线程上，因此这里
+                        // 不需要同步。记录而不中断：中断要区分「我们自己取消」与「用户取消」，
+                        // 而结果无论如何都不会被提交（执行器见到非空 fallbacks 即拒绝），
+                        // 让库把剩下的帧编完没有额外的正确性代价。
+                        val fallbacks = mutableSetOf<TranscodeChangeCode>()
                         val listener = object : Transformer.Listener {
                             override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                                 progressJob?.cancel()
                                 activeTransformer = null
-                                if (continuation.isActive) continuation.resume(TranscodeEngineResult.Completed)
+                                if (continuation.isActive) {
+                                    continuation.resume(TranscodeEngineResult.Completed(fallbacks.toSet()))
+                                }
+                            }
+
+                            override fun onFallbackApplied(
+                                composition: Composition,
+                                originalTransformationRequest: TransformationRequest,
+                                fallbackTransformationRequest: TransformationRequest,
+                            ) {
+                                fallbacks += Media3FallbackMapping.changes(
+                                    originalTransformationRequest,
+                                    fallbackTransformationRequest,
+                                )
                             }
 
                             override fun onError(
@@ -80,6 +107,7 @@ class Media3TranscodeEngine(
                             .setLooper(Looper.getMainLooper())
                             .setVideoMimeType(plan.preset.targetVideoMimeType)
                             .setAudioMimeType(plan.preset.targetAudioMimeType)
+                            .setEncoderFactory(Media3EncoderSettings.encoderFactory(applicationContext, plan))
                             .addListener(listener)
                             .build()
                         activeTransformer = transformer
@@ -96,6 +124,19 @@ class Media3TranscodeEngine(
                         val edited = EditedMediaItem.Builder(MediaItem.fromUri(Uri.parse(plan.source.uri)))
                             .setEffects(Effects(emptyList(), listOf(effect)))
                             .build()
+                        // G2：HDR 模式只能通过 Composition 指定（`Transformer.Builder` 没有 `setHdrMode`）。
+                        // 轨道类型由此处显式声明，取值直接来自计划的 `retainedAudioTrackIds`：
+                        // 计划说要保留音轨就产音视频，说不要（或源本来没有音轨）就只产视频。
+                        // 不用无参 `Builder()` 是因为它在 1.10.1 已被标记废弃，
+                        // 而能「从 item 自身推断轨道类型」的 `fromSingleItem` 是包内私有。
+                        val sequence = if (plan.retainedAudioTrackIds.isEmpty()) {
+                            EditedMediaItemSequence.withVideoFrom(listOf(edited))
+                        } else {
+                            EditedMediaItemSequence.withAudioAndVideoFrom(listOf(edited))
+                        }
+                        val composition = Composition.Builder(sequence)
+                            .setHdrMode(Media3EncoderSettings.hdrMode(plan))
+                            .build()
                         progressJob = launch {
                             val holder = ProgressHolder()
                             while (continuation.isActive) {
@@ -105,7 +146,7 @@ class Media3TranscodeEngine(
                                 delay(PROGRESS_INTERVAL_MILLIS)
                             }
                         }
-                        transformer.start(edited, outputPath)
+                        transformer.start(composition, outputPath)
                     }
                 }
             }
@@ -143,12 +184,14 @@ class MediaExtractorOutputVerifier(
                     var durationMillis: Long? = null
                     var videoMime: String? = null
                     var audioMime: String? = null
+                    var videoFormat: MediaFormat? = null
                     repeat(extractor.trackCount) { index ->
                         val format = extractor.getTrackFormat(index)
                         val mime = format.getString(MediaFormat.KEY_MIME)
                     if (mime?.startsWith("video/") == true && videoTrack < 0) {
                         videoTrack = index
                         videoMime = mime
+                        videoFormat = format
                         width = format.integer(MediaFormat.KEY_WIDTH)
                         height = format.integer(MediaFormat.KEY_HEIGHT)
                         durationMillis = format.long(MediaFormat.KEY_DURATION)?.div(1_000)
@@ -169,7 +212,7 @@ class MediaExtractorOutputVerifier(
                 }
                 if (videoTrack >= 0) {
                     extractor.selectTrack(videoTrack)
-                    if (extractor.readSampleData(java.nio.ByteBuffer.allocate(SAMPLE_BYTES), 0) <= 0) {
+                    if (!hasReadableSample(extractor, videoFormat)) {
                         errors += "VIDEO_SAMPLE_UNREADABLE"
                     }
                 }
@@ -183,11 +226,58 @@ class MediaExtractorOutputVerifier(
                 } finally {
                     retriever.release()
                 }
-                OutputVerification(errors.isEmpty(), errors, duration, width, height)
+                OutputVerification(
+                    valid = errors.isEmpty(),
+                    errorCodes = errors,
+                    durationMillis = duration,
+                    width = width,
+                    height = height,
+                    averageBitrateBitsPerSecond = averageBitrate(file.length(), duration),
+                )
             } finally {
                 extractor.release()
             }
         }.getOrElse { OutputVerification(false, setOf("OUTPUT_PROBE_FAILED")) }
+    }
+
+    /**
+     * 「至少有一个视频样本能被读出来」。
+     *
+     * **不能用一个固定大小的缓冲去读**：`MediaExtractor.readSampleData` 在样本大于缓冲容量时抛
+     * `IllegalArgumentException`，此前该异常被外层 `runCatching` 吞成 `OUTPUT_PROBE_FAILED`，
+     * 于是**一次合法输出被整体判成验证失败**，连已经查明的尺寸 / 时长 / mime 结论都一起丢掉。
+     *
+     * 真机实测（`docs/architecture/Organizing-Page-Function-Design.md` §20.3）：1920×1080 高熵源的
+     * `compatible_mp4`（8 Mbps）与 `balanced_mp4`（5 Mbps）输出，首样本都超过原先固定的 1 MiB，
+     * 双双误报；唯独 `space_saver_mp4`（1280×720 / 2.5 Mbps）样本小于 1 MiB 而通过。
+     * 这不是边角场景——**高码率恰恰是 `compatible_mp4` 这一默认预设的常态**。
+     *
+     * 缓冲容量优先取容器声明的 `KEY_MAX_INPUT_SIZE`，再退回 1 MiB 下限，并以 [MAX_SAMPLE_BYTES]
+     * 封顶；首次失败时用封顶容量重试一次。整段用 `runCatching` 隔离，使这一项失败只产生
+     * `VIDEO_SAMPLE_UNREADABLE`，不再摧毁整份验证结论。
+     */
+    private fun hasReadableSample(extractor: MediaExtractor, format: MediaFormat?): Boolean {
+        val declared = format?.integer(MediaFormat.KEY_MAX_INPUT_SIZE) ?: SAMPLE_BYTES
+        val capacity = declared.coerceIn(SAMPLE_BYTES, MAX_SAMPLE_BYTES)
+        if (readSample(extractor, capacity)) return true
+        return capacity < MAX_SAMPLE_BYTES && readSample(extractor, MAX_SAMPLE_BYTES)
+    }
+
+    private fun readSample(extractor: MediaExtractor, capacity: Int): Boolean =
+        runCatching {
+            extractor.readSampleData(java.nio.ByteBuffer.allocate(capacity), 0) > 0
+        }.getOrDefault(false)
+
+    /**
+     * 整个输出文件的平均码率（含音频与容器开销）。
+     *
+     * 真机实测（`docs/architecture/Organizing-Page-Function-Design.md` §20.1.3）输出 MP4 的视频轨
+     * 读不到 `KEY_BIT_RATE`，因此这是唯一可得的码率观测量。它受内容复杂度影响、**不等于**请求码率，
+     * 只作对照数据，见 [OutputVerification.averageBitrateBitsPerSecond] 的口径说明。
+     */
+    private fun averageBitrate(sizeBytes: Long, durationMillis: Long?): Int? {
+        if (durationMillis == null || durationMillis <= 0L || sizeBytes <= 0L) return null
+        return (sizeBytes * 8 * 1_000 / durationMillis).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
     private fun MediaFormat.integer(key: String): Int? = if (containsKey(key)) getInteger(key) else null
@@ -195,6 +285,12 @@ class MediaExtractorOutputVerifier(
 
     private companion object {
         const val SAMPLE_BYTES = 1024 * 1024
+
+        /**
+         * 采样缓冲的容量上限（16 MiB）。足以覆盖 4K 高码率的单个关键帧，
+         * 又不至于在探测阶段因为一次误判而分配出离谱的内存。
+         */
+        const val MAX_SAMPLE_BYTES = 16 * 1024 * 1024
         const val DURATION_TOLERANCE_MILLIS = 1_500L
     }
 }

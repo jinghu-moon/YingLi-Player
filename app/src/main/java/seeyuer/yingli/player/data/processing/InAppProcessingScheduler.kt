@@ -68,6 +68,27 @@ class InAppProcessingScheduler(
         scope.launch { repository.apply(taskId, ProcessingTaskEvent.Retry(now())) }
     }
 
+    /**
+     * F24：宿主不能再继续跑处理任务时（前台服务运行时长配额用尽）的收尾。
+     *
+     * 顺序是「先取消 Job → 等它真正退出 → 再写 `Fail`」。不能先写 `Fail`：执行器可能在两步
+     * 之间走完 `commit`，于是输出进了媒体库而任务显示失败，那个输出再没有任何记录指向它。
+     * 先退出再写则最多是「执行器已经成功」——此时 `Fail` 会被状态机当作终态降级忽略，
+     * 任务如实保持 `SUCCEEDED`。
+     */
+    override fun failRunning(errorCode: String) {
+        val running = active.entries.toList()
+        if (running.isEmpty()) return
+        running.forEach { it.value.cancel() }
+        scope.launch {
+            running.forEach { (taskId, job) ->
+                job.join()
+                executor.cancel(taskId)
+                repository.apply(taskId, ProcessingTaskEvent.Fail(errorCode, now()))
+            }
+        }
+    }
+
     private fun schedule(tasks: List<ProcessingTask>) {
         while (active.size < maximumConcurrent) {
             val available = tasks.filterNot { active.containsKey(it.id) }

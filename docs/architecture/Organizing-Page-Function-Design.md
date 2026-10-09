@@ -86,7 +86,7 @@
 
 **关于任务中心与调度**
 
-17. **没有任何后台持久化调度。** `app/build.gradle.kts` **没有 `androidx.work` 依赖**；`InAppProcessingScheduler`（`app/src/main/java/seeyuer/yingli/player/data/processing/InAppProcessingScheduler.kt`）是**纯进程内**的 `CoroutineScope` 调度器；`YingLiProcessingService`（`app/src/main/java/seeyuer/yingli/player/app/processing/YingLiProcessingService.kt`）是前台服务，但**没有实现 Android 15 的 `onTimeout`**（`startForeground(..., FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)` 在 `:48-52`）。所以「30 天到期清理」在本项目**当前没有任何可用的执行载体**；同时 Android 15 起 `mediaProcessing` 前台服务有**每 24 小时 6 小时**的硬上限（F24）。
+17. **没有任何后台持久化调度。** `app/build.gradle.kts` **没有 `androidx.work` 依赖**；`InAppProcessingScheduler`（`app/src/main/java/seeyuer/yingli/player/data/processing/InAppProcessingScheduler.kt`）是**纯进程内**的 `CoroutineScope` 调度器；`YingLiProcessingService`（`app/src/main/java/seeyuer/yingli/player/app/processing/YingLiProcessingService.kt`）是前台服务，**阶段 1 步骤 4 已实现 Android 15 的 `onTimeout` 收尾**（见 14.2.4；`startForeground(..., FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)` 在 `:48-52`）。但「30 天到期清理」在本项目**仍没有任何可用的执行载体**——`onTimeout` 只把运行中的处理任务标记为失败，不承担到期清理；同时 Android 15 起 `mediaProcessing` 前台服务有**每 24 小时 6 小时**的硬上限（F24）。
 18. **`ProcessingProjectType.DEDUPLICATE` 已存在但没有执行器。** `app/src/main/java/seeyuer/yingli/player/data/processing/RoutingProcessingExecutor.kt` 只路由 `CLIP` 与 `COMPRESS|CONVERT`，其余落到 `ProcessingExecutionResult.Failure("PROCESSING_TYPE_UNSUPPORTED")`。且 `ProcessingTaskState` **缺** `VALIDATING` / `WAITING_FOR_USER_ACTION` / `PARTIAL_SUCCESS` / `CLEANUP_PENDING` / `EXPIRED` 五个状态。
 
 ---
@@ -572,7 +572,7 @@ enum class ProcessingProjectType { CLIP, COMPRESS, CONVERT, DEDUPLICATE }
 - `app/src/main/java/seeyuer/yingli/player/data/processing/RoutingProcessingExecutor.kt`（36 行）：`CLIP → clipExecutor`；`COMPRESS|CONVERT → transcodeExecutor`；**其余（含 `DEDUPLICATE`）→ `Failure("PROCESSING_TYPE_UNSUPPORTED")`**。
 - `app/src/main/java/seeyuer/yingli/player/data/processing/InAppProcessingScheduler.kt`（139 行）：`class InAppProcessingScheduler(scope, repository, executor, clock, logger, conditions, onActiveChanged, maximumConcurrent = 1)`；`start()` 先 `repository.recoverInterrupted()` 再 `repository.tasks.collectLatest(::schedule)`。**纯进程内调度，无 WorkManager，无跨进程/跨重启续跑**（除 `recoverInterrupted` 把残留 `RUNNING` 复位为 `QUEUED`）。
 - `app/src/main/java/seeyuer/yingli/player/data/processing/RoomProcessingRepository.kt`（159 行）：**事件溯源 + 节流写库**——`apply(taskId, event)` 在事务内读当前 → `reduce` → 仅当 `Applied && shouldCheckpoint(...)` 才 upsert task 并插入 event。`shouldCheckpoint` 条件：状态变化 / 进度差 ≥ `total/100` / 时间差 ≥ `CHECKPOINT_INTERVAL_MILLIS = 2_000L` / `fraction == 1`。
-- `app/src/main/java/seeyuer/yingli/player/app/processing/YingLiProcessingService.kt`（73 行）：前台服务，`CHANNEL_ID = "processing"`，`NOTIFICATION_ID = 2002`；`onStartCommand` 中 `if (Build.VERSION.SDK_INT >= 35) startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)`，否则普通 `startForeground`。**没有 `onTimeout`**（G18）。
+- `app/src/main/java/seeyuer/yingli/player/app/processing/YingLiProcessingService.kt`（134 行）：前台服务，`CHANNEL_ID = "processing"`，`NOTIFICATION_ID = 2002`；`onStartCommand` 中 `if (Build.VERSION.SDK_INT >= 35) startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)`，否则普通 `startForeground`。**已实现 `onTimeout`（阶段 1 步骤 4，见 14.2.4）**；G18 所指的「到期清理执行载体」仍未确定。
 - 调度条件（`app/src/main/java/seeyuer/yingli/player/app/MediaContainer.kt`）：`schedulerConditions()` 用 `BatteryManager.BATTERY_PROPERTY_CAPACITY`，`batteryLow = capacity in 0..LOW_BATTERY_PERCENT`（`LOW_BATTERY_PERCENT = 15`）；`storageAvailable = availableBytes >= MINIMUM_FREE_BYTES`（`MINIMUM_FREE_BYTES = 256 MiB`）。
 
 **DI 装配**（`MediaContainer.kt`，403 行）：`data class MediaContainer(...)` 有 45 个字段，含 `trashRepository`、`libraryMutationRepository`、`duplicateRepository`、`duplicateScanner`、`duplicateDeletionExecutor`、`processingRepository`、`processingArtifactStore`、`processingController`、`processingLifecycle`。注释明确：**容器内组件是跨宿主单例（Activity 与 Service 共享），页面销毁时不能收**。`shutdown()` 只关 `frameCalibrationControl` 与 `processingLifecycle`（G25）。
@@ -641,7 +641,7 @@ enum class ProcessingProjectType { CLIP, COMPRESS, CONVERT, DEDUPLICATE }
 | **G15** | **严重** | `purge()` 对 `content://` 直接 `resolver.delete(uri)`，未处理 `RecoverableSecurityException` / 未走 `createDeleteRequest()` | 永久删除会抛异常或静默失败；资料明确「不得静默把授权拒绝变成永久删除」 | §8.6 |
 | **G16** | **严重** | `trash_entries` 以 `mediaItemId` 为主键，所有查询用 `LEFT JOIN ... ON mediaItemId = media_items.id` 排除（item 级排除） | 一旦 G12 修复（一个 item 多 location），回收一个位置会把整个 item 从媒体库藏起来 | `trash_entries` 主键改 `locationId`；排除逻辑改到 `media_item_locations` 层（§8.2、§8.8） |
 | **G17** | **严重** | 移入回收站**没有任何文件系统动作的完整性验证**，也没有空间预检：`DefaultLibraryMutationRepository.trash()` 只要 `renameTo` 返回 true 就写 `trash_entries` | 违反 `ADR-XXX` 的「不得仅通过修改数据库标记来冒充文件已安全移入回收站」与资料文件 3 第 ②④ 条 | §8.4 十步移入事务 |
-| **G18** | 高 | 没有任何到期清理执行载体：无 WorkManager 依赖、无 Worker、`YingLiProcessingService` 无 `onTimeout` | 「30 天到期清理」无法兑现；`TrashRepository.expired()` 没有任何调用者 | §8.7；是否引入 WorkManager 见 D3 |
+| **G18** | 高 | **部分已修（阶段 1 步骤 4，2026-10-09）**：`YingLiProcessingService.onTimeout` 已实现并标记 `FAILED("FOREGROUND_SERVICE_TIMEOUT")`。**仍未解决的部分**：没有任何到期清理执行载体——无 WorkManager 依赖、无 Worker；`TrashRepository.expired()` 没有任何调用者 | 「30 天到期清理」无法兑现 | §8.7；是否引入 WorkManager 见 D3 |
 | **G19** | 中 | `TrashState` 只有 4 个值，缺少 `STAGING` / `WAITING_SOURCE_DELETE_AUTH` / `CLEANUP_PENDING` / `RECONCILIATION_REQUIRED` | 无法表达「副本已验证但等待授权」「物理删除失败待重试」「结果不确定」三种必须存在的中间态 | §8.3 状态机 |
 | **G20** | 中 | `DefaultDuplicateScanner.loadAllMedia()` 把整库读进内存；`DefaultDuplicateDeletionExecutor` 也加载整库；`RoomDuplicateRepository.groups` 有 N+1 查询 | 10k 库内存与耗时不可控；违反资料「分页查询、不一次性全量加载」与 `docs/09:943` 的 10k 复杂度基线要求 | §7.4 |
 | **G21** | 中 | 去重扫描完全脱离任务中心：`OrganizeViewModel.scanDuplicates()` 在 `viewModelScope` 里直接跑，进度只有一个布尔；`ProcessingProjectType.DEDUPLICATE` 没有执行器 | 离开整理页即丢进度；无取消持久化、无重试、无跨重启恢复 | §11.1 |
@@ -1153,7 +1153,7 @@ stateDiagram-v2
 |---|---|---|---|
 | **C1 引入 WorkManager** | 加 `androidx.work` 依赖 + `CoroutineWorker` + `PeriodicWorkRequest`（`BatteryNotLow` / `StorageNotLow` 约束） | 唯一能跨进程重启、跨设备重启存活的机制；资料文件 8 §9.3 推荐；`docs/06` 也提到 WorkManager | 引入新依赖；`docs/06:20` 明确「不能因为未来的需求提前引入重量级依赖」，需评估 |
 | **C2 复用应用启动对账** | 在 `YingLiApplication` / `MainActivity` 启动与进前台时跑一次到期扫描 + 清理；配合 `InAppProcessingScheduler` 在前台服务运行期间处理 | 零新依赖；符合资料「每次启动/进入前台检查」 | **应用长期不启动则永不清理**；对 R2 意味着副本可能远超 30 天占用空间 |
-| **C3 用现有前台服务** | 把清理挂到 `YingLiProcessingService` 上 | 零新依赖 | 该服务只在有处理任务时运行，且 Android 15 有每日 6 小时限制（F24）；`YingLiProcessingService` **没有 `onTimeout`** |
+| **C3 用现有前台服务** | 把清理挂到 `YingLiProcessingService` 上 | 零新依赖 | 该服务只在有处理任务时运行，且 Android 15 有每日 6 小时限制（F24）；`onTimeout` 已于阶段 1 步骤 4 实现，但它只负责「超时后把运行中的处理任务标记为失败」，**不承担到期清理**，因此把清理挂上去仍会与处理任务同生共死 |
 
 **[待决 D3]** 推荐 **C2 先做 + C1 作为后续评估**：理由是资料文件 8 自己承认「后台周期任务不保证在截止秒数启动」，而 C2 已经能保证「恢复资格严格」这个**唯一必须严格的部分**（因为它是纯 DB 判定，不需要后台执行）。物理删除的延迟对 R1 无影响（系统自己会删），对 R2 只影响空间占用，不是正确性问题。**若采纳 C2，必须在文档与 UI 中明说「物理清理在下次打开应用时执行」**（见 D7）。
 
@@ -1415,7 +1415,7 @@ interface MediaOperationGuard {
 ### 11.6 长任务、后台限制与生命周期归属
 
 - **Android 15+ 的 `mediaProcessing` 前台服务类型有每日 6 小时总运行时间限制**（F24），**不能假设不限时运行**。
-- **[调整] 修 G18 的一部分**：`YingLiProcessingService` 必须实现 `Service.onTimeout(startId, fgsType)`，在其中把运行中的任务标记为 `FAILED("FOREGROUND_SERVICE_TIMEOUT")` 并停止前台。
+- **[已实现 — 阶段 1 步骤 4，2026-10-09] 修 G18 的一部分**：`YingLiProcessingService` 实现 `Service.onTimeout(startId, fgsType)`，在其中把运行中的任务标记为 `FAILED("FOREGROUND_SERVICE_TIMEOUT")` 并停止前台；同时置起「本进程前台服务时长已用尽」的闸门，调度策略据此不再启动新任务。**G18 的另一半（到期清理执行载体）仍未解决**，见 D3。
 - **WorkManager 不是精确计时器**（资料文件 8 §9.3）；短周期进度 UI 也不应由 WorkManager 周期任务驱动。
 - **任务持久化状态必须与底层实际文件状态对账，不以进程内回调是否发生作为唯一成功证据**（资料文件 8 §9.3）。
 - **[调整] 修 G25**：新增的 `TrashService` 与到期对账入口必须纳入 `MediaContainer` 的生命周期管理（`shutdown()` 目前只关 `frameCalibrationControl` 与 `processingLifecycle`）。**同时 `MediaContainer` 已 45 个字段，新增组件前应先考虑是否应把处理/回收站相关组件收进一个子容器**，否则字段数会继续膨胀。
@@ -1569,18 +1569,104 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 
 **退出条件**：**任何失败路径都不丢失唯一副本**；授权拒绝行为正确；恢复与清理在目标 API / 代表性真机（Xiaomi M2012K11AC，Android 13 / API 33，**需先解决 MIUI 的 `INSTALL_FAILED_USER_RESTRICTED`**，U7）上可验证。**若不通过，先修正架构，不进入大规模实现。**
 
-> **U7 已解除（2026-10-09）**：在 Xiaomi 25102RKBEC（Android 16 / API 36）上 `adb install -r -t` 主 APK 与测试 APK 均返回 `Success`，instrumentation 正常执行（`OK (2 tests)`）。**MIUI 的安装限制不再是阻塞项**，§15.3 的整个设备矩阵从"未验证"转为"可验证"。若仍要在交班清单里保留一台 API 33 真机，那是**覆盖面**要求，不是**许可**要求。详见 §20.1。
+> **U7 已解除（2026-10-09）**：在 Xiaomi 25102RKBEC（Android 16 / API 36）上 `adb install -r -t` 主 APK 与测试 APK 均返回 `Success`，instrumentation 正常执行并产出全部快照（三种权限配置各 4 个用例全部通过，见 §20.2）。**MIUI 的安装限制不再是阻塞项**，§15.3 的整个设备矩阵从"未验证"转为"可验证"。若仍要在交班清单里保留一台 API 33 真机，那是**覆盖面**要求，不是**许可**要求。详见 §20.1。
 
 ### 14.2 阶段 1：转码链路修复
 
-| 步骤 | 内容 | 破坏性 |
-|---|---|---|
-| 1 | 补 G1：码率接线 + `AudioEncoderSettings`；同一步把 verifier 读回 `KEY_BIT_RATE`（G8），否则无法断言修复生效 | 否 |
-| 2 | 补 G6：覆写 `onFallbackApplied` + build 前用 `getSupportedSampleMimeTypes()` 校验 | 否 |
-| 3 | 补 G2：HDR 模式 + 真实 `supportsHdr` 探测 | 否 |
-| 4 | 实现 `Service.onTimeout(int, int)` 并定义超时后的收尾语义（F24，属 Phase 9 任务基础设施） | 否 |
+| 步骤 | 内容 | 破坏性 | 状态 |
+|---|---|---|---|
+| 1 | 补 G1：码率接线 + `AudioEncoderSettings`；同一步把 verifier 读回 `KEY_BIT_RATE`（G8），否则无法断言修复生效 | 否 | ✅ 已完成（G8 口径已按实测改写，见 14.2.1） |
+| 2 | 补 G6：覆写 `onFallbackApplied` + build 前用 `getSupportedSampleMimeTypes()` 校验 | 否 | ✅ 已完成（见 14.2.2） |
+| 3 | 补 G2：HDR 模式 + 真实 `supportsHdr` 探测 | 否 | ✅ 已完成（见 14.2.3） |
+| 4 | 实现 `Service.onTimeout(int, int)` 并定义超时后的收尾语义（F24，属 Phase 9 任务基础设施） | 否 | ✅ 已完成（见 14.2.4；6 小时真实超时路径未验证，理由见 14.2.4 末段） |
 
-**步骤 3 之后必须回填 `docs/architecture/phase-11-transcode-contract.md`**：删除 G5 里那句已被证伪的"多音轨保留需要多条 `EditedMediaItemSequence`"，补上 G6 的回退确认码，并删掉"多轨需要 API 26+"的旧说法。契约文档与代码同时改，不留过期说明。
+#### 14.2.1 步骤 1 落地与实测（G1 / G8）
+
+**修复**：`app/src/main/java/seeyuer/yingli/player/data/processing/transcode/Media3EncoderSettings.kt` 把预设码率装进 `VideoEncoderSettings`（`setBitrate` + `BITRATE_MODE_VBR`）与 `AudioEncoderSettings`，经 `DefaultEncoderFactory.Builder` 交给 `Transformer.Builder.setEncoderFactory(...)`。码率模式选 VBR 而非 CBR：预设承诺的是「同等体积下更好的质量」，不是恒定瞬时码率。
+
+**G8 的原始口径已被实测否掉**：真机（Xiaomi 25102RKBEC）输出的 MP4 视频轨**读不到** `KEY_BIT_RATE`（源与三档输出全为 `null`，见 §20.1.3），而 `AudioEncoderSettings.setBitrate` 的官方说明逐字写着「The encoder may ignore the requested bitrate to improve the encoding quality.」。因此 verifier 只新增只读字段 `OutputVerification.averageBitrateBitsPerSecond`（`字节数 × 8 × 1000 / 时长毫秒`），**不参与 `valid`**——把码率偏差当失败会误杀合法输出（静态画面下编码器会大幅低于目标码率）。
+
+「预设码率是否真的生效」因此改由两处回答：JVM 单测断言请求已进入 `VideoEncoderSettings` 且 `compatible` 与 `balanced` 不再产生相同参数；真机测量不同预设的输出字节数是否分离。
+
+**实测**（同一高熵源 1920×1080 逐帧平移噪声；改前把 `.setEncoderFactory(...)` 注释掉）：
+
+| 预设 | 请求码率 | 改前 bytes | 改后 bytes |
+|---|---:|---:|---:|
+| `compatible_mp4` | 8 Mbps | 10 657 482 | 5 968 431 |
+| `balanced_mp4` | 5 Mbps | 10 657 482（与上行**逐字节相同**） | 3 868 755 |
+| `space_saver_mp4` | 2.5 Mbps | 2 825 491 | 1 867 993 |
+
+改前前两档完全相同 ⇒ G1 复现；改后单调分离，比值 1.543 与 2.07（请求比 1.6 与 2.0）⇒ 码率确实下发。证据：`docs/architecture/evidence/stage1/stage1-bitrate-before.json`、`stage1-bitrate-after.json`。
+
+**源必须高熵**：阶段 0 的竖屏源是「竖直条纹 + 移动亮带」，画面几乎平坦，编码器受**质量**而非码率约束，三档差异被淹没。用平坦源做这项测量会得出「接不接线都一样」的错误结论。
+
+**顺带修掉一个新缺陷**：verifier 用固定 1 MiB 缓冲调 `MediaExtractor.readSampleData`，样本更大时抛 `IllegalArgumentException`，被 `runCatching` 吞成 `OUTPUT_PROBE_FAILED`，于是**一次合法输出被整体判为验证失败，连已经查明的尺寸/时长/mime 结论一起丢失**。高码率恰是 `compatible_mp4` 这个默认预设的常态，不是边角场景。现按 `KEY_MAX_INPUT_SIZE` 分配缓冲（上限 16 MiB）并只把该项降级为 `VIDEO_SAMPLE_UNREADABLE`。修复前那次判失败的原样快照保留在 `docs/architecture/evidence/stage1/stage1-bitrate-before-wiring-removed.BROKEN-VERIFIER.json`（文件名即缺陷标记），与修复后的 `stage1-bitrate-after.json` 对照即可复现该缺陷。
+
+#### 14.2.2 步骤 2 落地与实测（G6）
+
+**两道防线，都是必需的**：
+
+1. **编码前的前置校验** —— `Media3CodecAvailability`（`MediaCodecList.findEncoderForFormat`）在构建 `Transformer` 之前拒绝设备做不到的目标，返回 `VIDEO_ENCODER_UNAVAILABLE` / `AUDIO_ENCODER_UNAVAILABLE`，**不产生输出文件，也不浪费一次注定作废的整段编码**。
+2. **运行期回退检测** —— 覆写 `Transformer.Listener.onFallbackApplied`，经 `Media3FallbackMapping.changes(original, fallback)` 把「明确请求过却被换掉」翻成 `VIDEO_CODEC_FALLBACK` / `AUDIO_CODEC_FALLBACK`，随 `TranscodeEngineResult.Completed(fallbacks)` 返回；执行器见到 `requiresConfirmation` 即 `abort` 并返回 `DEGRADATION_CONFIRMATION_REQUIRED`（**与提交前那次确认用同一个错误码**，上层只需一种处理方式）。
+
+两道防线的分工是刻意的：前置校验挡「确定做不到」的组合；运行期检测兜住 `findEncoderForFormat` 看不出来的失败（profile/level、tier、并发实例数、configure 期异常）。因为 `DefaultEncoderFactory` 的 `enableFallback` 默认为 `true`，没有第 2 道防线就一定会出现「用户要 HEVC、实际拿到 H.264 且被告知成功」。
+
+**两处对文档原文的修正**（落地时必须让步的地方）：
+
+- 原文说要「新增 `VIDEO_CODEC_FALLBACK` / `AUDIO_CODEC_FALLBACK`（`requiresConfirmation = true`）」。落地时**删掉了 `TranscodeChange.requiresConfirmation` 字段**，确认语义唯一由 `code` 派生（`TranscodeChangeCode.requiresConfirmation()`）。字段与枚举并存意味着同一个事实有两个真源、可以互相矛盾，而「哪些后果需要用户确认」是产品语义，只应有一个出处。
+- 原文说的 `Muxer.Factory.getSupportedSampleMimeTypes()` 要等阶段 2 步骤 7（`setMuxerFactory`）才接得上；本步骤用的是「编码器探测」这一半，效果等价且更严格（把分辨率约束也算进去）。
+
+**一个必须写下来的设计后果**：前置校验会让「设备确定没有该编码器」这一组合**根本走不到 `onFallbackApplied`**。因此 §15 那条「请求 HEVC 但设备无 HEVC 编码器」的用例在本机**不可复现**——实测这台设备**同时具备** AV1 / VP9 / VP8 / H.263 / MPEG-4 / HEVC 的编码器（也顺带证伪了「移动端不会有某个编码器」这类假设）。该用例的用户可见结果由前置校验给出：同样不会静默拿到 H.264，而且更早、更便宜。
+
+**实测**（`Stage1CodecRefusalMeasurementTest`）：请求 `video/mpeg2` → `Failed(VIDEO_ENCODER_UNAVAILABLE)` 且无输出文件；请求 `audio/ac3` → `Failed(AUDIO_ENCODER_UNAVAILABLE)` 且无输出文件；对照组（本机支持的 `video/avc` + 不存在的源）→ `Failed(TRANSCODE_FAILED)`，证明前置校验是**有选择性的**，不是一律拒绝。证据：`docs/architecture/evidence/stage1/stage1-codec-refusal.json`。
+
+**运行期回退那条路径的覆盖方式**：`Media3FallbackMappingTest`（6 例，用真实的 `TransformationRequest` 直接构造 `onFallbackApplied` 的两个参数，无需设备）覆盖映射逻辑；`TranscodeFallbackContractTest`（4 例）锁死九种后果码的确认语义与 `Completed(fallbacks).requiresConfirmation`。
+
+**✅ 契约文档已回填（2026-10-09，阶段 1 步骤 3 完成后）** `docs/architecture/phase-11-transcode-contract.md` 的四处已与代码同步：①「预设码率的接线要求（G1 / G8）」改为已实现并写明 G8 原目标被实测否掉；②「HDR（G2）」整节重写；③「编码器回退（G6）」改为两道防线并写明实现用的是 `findEncoderForFormat` 而非原目标里的 `getSupportedSampleMimeTypes()`（后者属封装层，留到阶段 2 步骤 7）；④「已知限制」更新 HDR 条目与真机门禁条目。G5 那两句「多音轨保留需要多条 `EditedMediaItemSequence`」与「多轨需要 API 26+」**已再次确认不在该契约文档中**（只存在于本设计稿早期版本）。
+
+#### 14.2.3 步骤 3 落地与实测（G2）
+
+**修复分两处，缺一不可**：
+
+1. **`supportsHdr` 改为实测** —— `AndroidMediaCapabilityProbe` 不再把 `supportsHdr` 写成常量 `false`，而是复用 Media3 自己的谓词 `EncoderUtil.getSupportedEncodersForHdrEditing(mimeType, colorInfo)`（`EncoderUtil` 内部要求 `SDK_INT >= 33`，并核对 `hdr-editing` 特性、`ColorInfo` 推导出的允许 profile 与尺寸上限）。对 `COLOR_TRANSFER_ST2084` 与 `COLOR_TRANSFER_HLG`、BT.2020 + 有限范围 + 10 bit 各问一次，任一命中即算支持。**不自己手写 `profileLevels` + `ColorInfo` 判断**：那会成为「谁算支持 HDR」的第二个真源，而 Media3 引擎挑 HDR 编码器用的就是这一个谓词。附带修正：`probeEncoders()` 的 `distinctBy` 键必须加上 `supportsHdr`，否则「只在 HDR 能力上不同」的两个编码器会被错误合并成一个。
+2. **引擎不再拒绝 HDR** —— 删除 `Media3TranscodeEngine` 里 `plan.changes` 含 `HDR_TO_SDR` 就 `return Failed("HDR_TONE_MAPPING_UNAVAILABLE")` 的分支，改为按 `Media3EncoderSettings.hdrMode(plan)` 指定 `Composition` 的 HDR 模式：产生 `HDR_TO_SDR` 时用 `HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL`，否则用默认的 `HDR_MODE_KEEP_HDR`。
+
+**为什么固定用 OpenGL 路径、不请求 MediaCodec 路径**：官方 tone mapping 指南原文写明 MediaCodec 路径「Only supported on API 31+ on certain devices and on API 33+ for devices with HDR capture support. **If not supported, `Transformer` throws an `ExportException`.**」——在设备能力不确定时请求它就是拿用户的编码时间去试雷。OpenGL 路径从 API 29 起可用、覆盖面更广、结果更一致，代价只是「may produce mild differences」。`HDR_MODE_EXPERIMENTAL_FORCE_INTERPRET_HDR_AS_SDR` 也一并排除（官方说明其画面「likely have a washed out look」）。
+
+**一处 API 约束（落地时才发现，值得记下来）**：`Transformer.Builder` **没有** `setHdrMode`，设 HDR 模式只能走 `Composition`；而构造 `Composition` 需要 `EditedMediaItemSequence`。可用的入口只有三个显式声明轨道类型的工厂：`withAudioFrom` / `withVideoFrom` / `withAudioAndVideoFrom`——能「从 item 自身推断轨道类型」的 `fromSingleItem` 是包内私有，无参 `EditedMediaItemSequence.Builder()` 已被标记废弃（本项目 `-Werror` 会直接编译失败）。因此轨道类型由**计划自己**给出：`retainedAudioTrackIds` 为空就用 `withVideoFrom`，非空就用 `withAudioAndVideoFrom`。这与计划的决定一一对应，比让库去猜更贴合「不静默丢轨/不静默增轨」。
+
+**改前 / 改后（同一台 Xiaomi 25102RKBEC / Android 16 / API 36）**：
+
+| 观测 | 改前 | 改后 |
+|---|---|---|
+| 15 个视频编码器的 `supportsHdr` | **全部 `false`**（常量） | **2 个 HEVC 编码器为 `true`**（8192×8192 与 4096×4096），其余 13 个为 `false` |
+| 声明 `hdr-editing` 特性的 mime（不经本项目逻辑直接查 `MediaCodecInfo`） | — | `video/hevc`、`video/x-mvhevc` |
+| HDR10 源 + `compatible_mp4`（AVC 目标） | `Failed(HDR_TONE_MAPPING_UNAVAILABLE)` | **`Completed`**，独立 verifier `valid = true`，输出 6 890 053 字节 |
+| planner 对 HDR10 源的变更 | `HDR_TO_SDR`（因硬编码 false 而必然产生） | `HDR_TO_SDR`（因为 AVC 目标确实不参与 HDR 编辑，**这是正确结论**） |
+
+证据：`docs/architecture/evidence/stage1/stage1-hdr-capability.json`、`docs/architecture/evidence/stage1/stage1-hdr-tonemap.json`。测试：`Stage1HdrToneMappingMeasurementTest`（真机 2 例，逐例运行均 `OK (1 test)`）+ 单测 `Media3EncoderSettingsTest` 新增 3 例（HDR 源对不支持 HDR 的编码器产生 `HDR_TO_SDR` 且选择 tone-map；支持 HDR 时不产生且保持 KEEP_HDR；SDR 源保持 KEEP_HDR）。
+
+**这次实测的边界（必须说明，不能算 D9 已闭合）**：本机媒体库里**没有任何 HDR 视频**（`content://media/external/video/media` 的 `color_transfer` 只有 3 = SDR、1 = LINEAR、NULL，没有 6 = ST2084、7 = HLG），所以上面那次「HDR 源」是**现场合成**的：用 MediaCodec 编码 + MediaMuxer 封装一个在容器层声明 `color-standard = BT.2020` / `color-transfer = ST2084` 的文件，再用生产探测器读回确认（`sourceColorTransfer = 6`、`sourceHdrFormat = HDR10`，自校验成立）。合成用 AVC 而非 HEVC：本机 HEVC Main10 编码器的输出格式经 `MediaMuxer` 封装后**连视频轨都解析不出来**（实测 `sourceFormatKeys = null`），而 AVC 这条路径已被步骤 1 的测量证明可正常读回。这不削弱本次要证的结论——tone mapping 的判据来自**容器声明的色彩信息**，不是像素位深——但**真实 HDR10 / HLG 相机素材、真实 HDR→SDR 画质、以及 §15.3 的多设备矩阵仍然未验证**，D9 只闭合了「能力探测与 tone mapping 通路」这一半。
+
+#### 14.2.4 步骤 4 落地（F24 前台服务超时收尾）
+
+**需求**（F24）：Android 15 起前台服务类型 `mediaProcessing` 的累计运行时长上限为**每 24 小时 6 小时**（同一应用的所有该类型前台服务共享），超时前系统调用 `Service.onTimeout(int, int)`，服务必须在几秒内 `stopSelf()`，否则 ANR。
+
+**实现分三处，顺序不能换**：
+
+1. **`YingLiProcessingService.onTimeout(startId, fgsType)`**：① 先立起「本进程不能再提供处理用前台服务」的闸门（`foregroundTimeExhausted = true`）；② 调 `ProcessingController.failRunning("FOREGROUND_SERVICE_TIMEOUT")`；③ `stopForeground(STOP_FOREGROUND_REMOVE)` + `stopSelf()`。日志事件 `PROCESSING_FOREGROUND_TIMEOUT`（带 `startId` 与 `foregroundServiceType`）。
+   - **①必须在②之前**：`failRunning` 写出的 `Fail` 事件会触发调度器重新取任务（`repository.tasks` 有新值），而此刻配额已用尽，再取任务就会去起前台服务、被系统拒绝。
+2. **调度闸门**：`SchedulerConditions` 新增 `foregroundServiceUnavailable`，`ProcessingSchedulerPolicy.next()` 在该条件为真时返回 `null`。闸门放在服务一侧（配额用尽是 Android 告诉**服务**的事实），调度器只是它的读者；`MediaContainer.schedulerConditions()` 读取它。
+   - **闸门只挡调度，不改任务**：排队中的任务保持 `QUEUED`，只是本次进程不再取用；闸门只在内存里，进程重启即复位（配额按 24 小时窗口算，不是按进程）。
+3. **`ProcessingController.failRunning(errorCode)`**：新增的接口方法。与 `cancel(taskId)` 的区别是**终态**——用户取消 → `CANCELED` 且可重试；宿主中断 → `FAILED("FOREGROUND_SERVICE_TIMEOUT")`，用户必须在任务中心看到真实原因，而不是显示成「用户取消了」。
+
+**`failRunning` 的内部顺序：先取消 Job → `join()` 等执行器真正退出 → `executor.cancel(taskId)` → 写 `Fail`。** 不能先写 `Fail`：执行器可能在「已标记失败」与「执行器提交输出」之间走完 `commit`，于是输出进了媒体库而任务显示失败——那个输出不再有任何记录指向它。先退出再写则最多遇到「执行器已经成功」，此时 `Fail` 被状态机按终态降级忽略（`task.state.terminal -> same(FAILED)` → `Rejected`），任务如实保持 `SUCCEEDED`。**这条顺序有单测锁定**。
+
+**附带修掉的一处崩溃隐患**：`YingLiProcessingService.setActive` 原先直接抛。超时后 `failRunning` 让任务结束 → `onActiveChanged(false)` → `setActive(context, false)`，而服务此时已经停了、进程退到后台，`startService` 会抛 `IllegalStateException`（`ForegroundServiceStartNotAllowedException` 也是它的子类），异常会直接崩在调度器的回调里。现在这两种「状态型异常」被 `runCatching` 吞掉——它们表达的事实就是「现在没有服务」，正是我们已经在的状态。
+
+**验证与未验证（必须分开写）**：
+- ✅ JVM 单测 `ProcessingContractsTest` 新增 2 例：闸门为真时调度策略返回 `null` 且不改任务状态；超时事件把 `RUNNING` 记为 `FAILED("FOREGROUND_SERVICE_TIMEOUT")`、且**不把已 `SUCCEEDED` 的任务降级**（后者是上面那条顺序约束的证明）。`onTimeout(Int, Int)` 能通过编译本身就是「确实覆写了框架方法」的结构性证据（Kotlin 对签名不符报 "overrides nothing"）。
+- ⚠ **`mediaProcessing` 的 6 小时真实超时路径未验证**。§15.3 已明令「若无法在真实设备上跑到 6 小时，则此条记为未验证，**不得用缩短时限的方式假装通过**」，这里遵守该规定：没有用 `FOREGROUND_SERVICE_TYPE_SHORT_SERVICE`（约 3 分钟超时）或改短时限去伪造一次超时。因此「系统真的会调用 `onTimeout`」这一步仍依赖平台行为文档，而不是本项目的实测。
 
 ### 14.3 阶段 2：域模型与引擎合并
 
@@ -1669,9 +1755,9 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 | --- | --- | --- |
 | G7 实测 | — | **已完成（2026-10-09）**：竖屏源实测记录表见 **§20.1.1**；原始快照 `docs/architecture/evidence/stage0/stage0-g7-portrait.json`；取证测试 `TranscodeDeviceCapabilityMeasurementTest.kt` |
 | G1 码率 | `TranscodeContractsTest.kt` 现有全部用例 | 断言 `OutputTarget.videoBitrate` 出现在构造出的 `VideoEncoderSettings` 中；断言 `Compatible` 与 `Balanced` 的编码参数**不再相等** |
-| G2 HDR | 断言 `HDR_TO_SDR` 在 `supportsHdr=false` 时 `requiresConfirmation=true` | 断言 `supportsHdr=true` 时不产生 `HDR_TO_SDR`；断言 planner 为 HDR 源选择 tone-map 模式而非拒绝 |
+| G2 HDR | 断言 `HDR_TO_SDR` 在 `supportsHdr=false` 时 `requiresConfirmation=true` | ✅ `TranscodeContractsTest`（确认语义）、`Media3EncoderSettingsTest`（`hdrMode` 两分支 + `supportsHdr` 两取值）、`Stage1HdrToneMappingMeasurementTest`（真机：能力探测实测化 + HDR 源 `Completed` 而非拒绝）；见 14.2.3 |
 | G3/G11 白名单 | `ClipContractsTest.kt` 现有全部用例 | 断言白名单来自 muxer 查询；断言 VP9/Opus 源可走 remux；断言被删除的硬编码表不存在（防止回退） |
-| G6 回退 | — | 用假的 `TransformationRequest` 触发 `onFallbackApplied`，断言产生 `requiresConfirmation = true` 的 change；断言不支持的目标在 build 之前就被 planner 拒绝（不进入引擎） |
+| G6 回退 | ✅ `Media3FallbackMappingTest`、`TranscodeFallbackContractTest` | 用真实的 `TransformationRequest` 触发 `onFallbackApplied` 的映射，断言产生 `requiresConfirmation = true` 的 change；断言不支持的目标在 build 之前就被拒绝（不进入引擎）；断言九种后果码的确认语义各自固定 |
 | G8 码率回读 | — | 断言 verifier 会读输出的 `KEY_BIT_RATE` 并在与请求值偏离超过容差时报错 |
 | 阶段 2 重构 | 上述全部 | 同一组输入在重构前后产出**字段级相同**的 plan（golden test） |
 | 步骤 9/10（`forRange`） | `ClipContractsTest.kt` / `ProcessingViewModelTest` 现有全部用例 | `forRange` 边界：`start=0`、`end=duration`、`end=duration+1`（拒绝）、`start=end`（拒绝）、A 与 B 互换后仍合法；golden：同一 `LibraryMedia` 经 `createProject` 产出的 `ClipProject` 与改前**字段级相同** |
@@ -1713,7 +1799,7 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 - MKV(VP9+Opus) → MP4：验证 Media3 muxer 路径（这条走的是手写引擎，不是 Transformer）。
 - 多音轨源：验证确认流程与丢弃行为（**注意：不是验证"保留"——Transformer 做不到，见 G5**）。
 - VFR 源、旋转元数据源、空间耗尽。
-- **超长任务**：验证 `Service.onTimeout` 的收尾路径（F24）。若无法在真实设备上跑到 6 小时，则此条记为**未验证**，不得用缩短时限的方式假装通过。
+- **超长任务**：验证 `Service.onTimeout` 的收尾路径（F24）。**阶段 1 步骤 4 已实现该路径的结构**（`onTimeout` 覆写 + 调度闸门 + `failRunning`，JVM 单测覆盖状态机与策略），但**系统真的会调用 `onTimeout` 这一步未验证**：若无法在真实设备上跑到 6 小时，则此条记为**未验证**，不得用缩短时限的方式假装通过（没有用 `FOREGROUND_SERVICE_TYPE_SHORT_SERVICE` 或改短时限伪造超时）。
 - `YingLiDatabaseMigrationTest` 扩展到 v10：**破坏性迁移后旧数据（`trash_entries` 的 `mediaItemId` → `locationId`）的转换正确性**。
 - `content://` 与 `file://` 两种来源的移入/恢复/删除端到端。
 - R1 的 `IS_TRASHED` 状态在 MediaStore 查询中确实不可见。
@@ -1781,7 +1867,7 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 | **D6** | 相似视频（SIMILAR）是否本轮重开 | 保持关闭；或按 §7.5 的六项前置条件启动标注集工作 | **保持关闭** | 决定是否投入标注集与阈值基线工作 |
 | **D7** | 是否接受「物理清理在下次打开应用时执行」（若采纳 D3-C2） | 接受；或不接受并改选 C1 | **接受，但必须在 UI 与文档中明说** | 影响 R2 副本的实际占用时长 |
 | **D8** | H.264/H.265 专利许可是否现在处理 | 现在查（① 专利池对中国区 Android 应用的实际执行与费率；② Cisco OpenH264 二进制模块的覆盖是否适用中国区；③ kvazaar（HEVC）是否落入专利池）；或推迟到「出现平台做不到的任务」时 | **推迟** | 这是**唯一一条可能与"引入 FFmpeg"结论相关的未闭合项**，但它只在"未来真的出现了平台做不到的任务"时才有意义——当前没有这样的任务（§4.4–§4.6），所以**不阻塞任何事** |
-| **D9** | HDR tone mapping 的实测覆盖率 | 现在建立真实 HDR 样本 + 设备矩阵；或先按 `HDR_MODE_KEEP_HDR` 默认行为实现、实测推迟 | **阶段 1 步骤 3 完成后立即实测** | F13 说明能力存在，但"部分设备支持 MediaCodec 路径"意味着必须逐设备验证 |
+| **D9** | HDR tone mapping 的实测覆盖率 | 现在建立真实 HDR 样本 + 设备矩阵；或先按 `HDR_MODE_KEEP_HDR` 默认行为实现、实测推迟 | **部分闭合（2026-10-09）**：能力探测与 tone mapping 通路已在真机实测通过（§14.2.3）；真实 HDR10/HLG 相机素材与多设备矩阵仍待补 | F13 说明能力存在，但"部分设备支持 MediaCodec 路径"意味着必须逐设备验证。**已定：固定请求 OpenGL 路径，不请求会在不支持的设备上抛 `ExportException` 的 MediaCodec 路径**。本机媒体库无任何 HDR 视频，实测用的是容器层声明 HDR10 的合成源 |
 | **D10** | AV1 输出是否作为预设 | 是；或否 | **否（当前）** | Android 14+ 强制提供 AV1 编码器，但 minSdk 31 上不保证。是否值得作为预设取决于目标设备分布，**当前无数据** |
 | **D11** | 是否升级 Media3 到 1.11+ | 升级；或保持 1.10.1 | **在阶段 2 步骤 7 之前用基准决定**，不预先决定 | `WavMuxer` 与"现成的 muxer Factory"在新版本才出现。升级收益是减少一个自定义适配器类；成本是回归面。已核实 1.10.1 → 1.11.0 的 Transformer 变更只有一条 `ExportResult.fileSizeBytes` 修正，**回归面很小**；`CodecDbLite` 自 1.8.0 起存在但默认关闭，可作为一个独立的性能实验项 |
 | **D12** | 格式转换预设集暴露哪几个目标 | 由 §4.4 的能力边界决定具体清单 | **阶段 6 之前定** | §4.4 给的是能力边界，具体暴露哪几个目标需要产品决策（**尚未有 Q 编号**） |
@@ -1834,17 +1920,17 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 
 | 文档 | 建议修订 |
 |---|---|
-| `docs/06-feature-roadmap.md:264` | 明确「底层优先使用 MediaStore 系统回收站」与「30 天严格保留期」不能同时成立；按 §8.1 改写为「R1 为主 + R2 降级，两类期限语义」 |
-| `docs/06-feature-roadmap.md:199` | 补一句：该模型当前**尚未实现**（`MediaIdentityResolver` 是 temporary one-file-per-item），并指向本设计 §4.7 |
-| `docs/06-feature-roadmap.md:461` | 退出条件「第二次扫描使用缓存且明显快于第一次」需补**实测数据位置**（本设计 §15.2） |
-| `docs/06-feature-roadmap.md:420-433`（M9） | 补一句：M9 的「格式转换」与 Phase 11 的「压缩」共用同一个 planner，「两个引擎」的理由是 F18 而不是功能差异 |
-| `docs/architecture/phase-12-duplicate-algorithm-card.md` | 算法卡需按 §7.1 的 L0–L4 重写；删除 group 实体相关描述；补 `hashAlgorithmVersion` 与 `duplicate_ignores` 语义 |
-| `docs/architecture/phase-12-duplicate-algorithm-card.md:9` | 「删除计划默认为空，必须同时包含至少一个保留项和一个回收站项，且覆盖整组」→ 按 D1 改写 |
-| `docs/architecture/phase-11-transcode-contract.md` | **删除**"多音轨保留需要多条 `EditedMediaItemSequence`"（已被证伪，见 G5）；**删除**"多轨需要 API 26+"；补 G6 的回退确认码；补 §6.1 的 `OutputTarget` 折叠 |
-| `docs/architecture/phase-10-clips-contract.md` | 补一句：快速模式的白名单来自 muxer 反查而不是硬编码表（G3/G11） |
-| `docs/09-tdd-phased-development-checklist.md:951-957` | 任务 12.6 的「覆盖整组」需按 D1 改写；任务 12.2 需补「同哈希不同算法版本」用例 |
-| `docs/09-tdd-phased-development-checklist.md:820-889`（Phase 11） | 任务 11.6 的「处理配置和结果对比 UI」需要明确落点是处理中心而不是整理页（D0） |
-| 新增 ADR | ADR-DEDUP-002（`MediaItem` = 内容等价类，重复组为派生查询）；ADR-RECYCLE-003（R1 为主 + R2 降级，两类期限语义）；ADR-RECYCLE-004（按文件所有权选择删除确认方式）；ADR-DEDUP-003（相似视频重开的六项前置条件）；ADR-TRANSCODE-002（编码层用 Transformer、封装层用手写 extractor+muxer 的双引擎边界） |
+| `docs/06-feature-roadmap.md:264` | ✅ **已完成（2026-10-09，`:266`）**：已写明「本条与严格 30 天不可同时成立」+ D2 双后端裁决（R1 系统回收站为主 / R2 应用副本降级 / R3 删除 / R4 阻止并解释）+ 30 天拆两个指标 |
+| `docs/06-feature-roadmap.md:199` | ✅ **已完成（2026-10-09，`:200`）**：已补「⚠ 该模型尚未实现」（`MediaIdentityResolver.kt` 第 3 步无条件返回 `NewIdentity`，`DefaultMediaScanner` 的 contentHash 归并是死代码）并指向本设计 §4.7 |
+| `docs/06-feature-roadmap.md:461` | ✅ **已完成（2026-10-09，`:484`）**：已补「⚠『明显快于第一次』必须有实测数据支撑；当前仓库内没有任何去重性能基线；实测数据须落在本阶段报告内，不得以 AOSP 模拟器结果代替真机结论」 |
+| `docs/06-feature-roadmap.md:420-433`（M9） | ✅ **已完成（2026-10-09，`:443`）**：已写明「封装转换与重新编码不是两个功能」、`TranscodePreset` 折叠为 `OutputTarget` 命名常量、压缩与格式转换共用同一个 planner 与引擎 |
+| `docs/architecture/phase-12-duplicate-algorithm-card.md` | ✅ **已完成（2026-10-09）：整篇重写**，L0–L4 分层、判定结果直接落在 `media_locations`、删除三张 group 表、补 `hashAlgorithmVersion` 与 `duplicate_ignores` 语义 |
+| `docs/architecture/phase-12-duplicate-algorithm-card.md:9` | ✅ **已完成（2026-10-09，`:51`）**：删除计划约束从「必须覆盖整组」放宽为**子集关系**，并写明理由与旧 `INCOMPLETE_SELECTION` 的成因 |
+| `docs/architecture/phase-11-transcode-contract.md` | ✅ **已完成（2026-10-09，阶段 1 步骤 1–3）**："预设码率接线（G1/G8）"、"HDR（G2）"、"编码器回退（G6）"三节已改为已实现；"已知限制"两条已更新。**注**：本条原写的"**删除**多音轨保留需要多条 `EditedMediaItemSequence`"与"**删除**多轨需要 API 26+"，经 grep 核实**这两句从未出现在该契约文档中**（只存在于本设计稿的早期版本，见 §20 修正表）。§6.1 的 `OutputTarget` 折叠**留到阶段 2 步骤 5**（破坏性改动） |
+| `docs/architecture/phase-10-clips-contract.md` | ✅ **已完成（2026-10-09）**：已补「轨道白名单的来源（G11 / 阶段 2 步骤 7）」一节，写明 `FAST_MP4_MIME_TYPES` 的硬编码缺口与改为 muxer 反查的目标 |
+| `docs/09-tdd-phased-development-checklist.md:951-957` | ✅ **已完成（2026-10-09）**：任务 12.6 已按 D1 改为子集关系并列出必须重指向的七类引用、加「归并事务失败必须整体回滚」；任务 12.2 已改为 L0–L4、三元组缓存键，并补「同哈希不同算法版本」「同哈希不同文件大小」用例 |
+| `docs/09-tdd-phased-development-checklist.md:820-889`（Phase 11） | ✅ **已完成（2026-10-09）**：任务 11.6 已补「落点（裁决 D0）：该 UI 落在**处理中心**，不在整理页新建第二套配置界面；压缩与格式转换共用同一套配置与结果对比界面」 |
+| 新增 ADR | ✅ **已创建（2026-10-09，`docs/architecture/adr/`）**：`ADR-DEDUP-002-media-item-as-content-equivalence-class.md`、`ADR-RECYCLE-003-storage-backend.md`、`ADR-RECYCLE-004-delete-confirmation-by-ownership.md`、`ADR-DEDUP-003-similar-video-reopen-preconditions.md`、`ADR-TRANSCODE-002-dual-engine-boundary.md`（另有 `README.md` 索引） |
 
 ---
 
@@ -1858,7 +1944,9 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 | "多轨与 Metadata 轨仅 MP4 且 API 26+"（据此认为手写多轨受 API 26 限制） | **只对平台 `MediaMuxer` 成立**。Media3 的 `Mp4Muxer` 是纯 Java 应用内多轨 muxer，轨道数不限，还支持 `addTrackReference` 与 MP4-AT，**无 API 26 限制** | `Mp4Muxer.md.txt`（F25） |
 | "MediaMuxer 的 AVC/H.263/AAC 起始 SDK = 17" | **错**。参考页权威值 = **16** | `MediaMuxer.md.txt` |
 | "VP9/AV1 无法进入 MP4" | **部分错**。平台 muxer 拒绝，但 Media3 `Mp4Muxer` 接受 `video/x-vnd.on2.vp9`、`video/av01` | Media3 `Mp4Muxer` 类清单 |
-| "HDR 在当前实现下完全不可用（HDR_TO_SDR 必然失败）" | **方向对，机制已更正**：能力自 API 29 起存在（OpenGL 路径），是代码硬编码 `supportsHdr = false` + 无条件 `return Failed` 造成的，属 G2 | `Composition.HdrMode` 文档 |
+| "HDR 在当前实现下完全不可用（HDR_TO_SDR 必然失败）" | **方向对，机制已更正，且已修复**：能力自 API 29 起存在（OpenGL 路径），是代码硬编码 `supportsHdr = false` + 无条件 `return Failed` 造成的，属 G2。**阶段 1 步骤 3 已落地并真机验证（§14.2.3）** | `Composition.HdrMode` 文档；`stage1-hdr-capability.json`、`stage1-hdr-tonemap.json` |
+| "不支持 HDR 的源一律按 SDR 处理（'保守取舍'）" | **被实测证伪并已纠正**：同机改后测得 2 个 HEVC 编码器（8192×8192、4096×4096）真支持 HDR 编辑，声明 `hdr-editing` 的 mime 为 `video/hevc` 与 `video/x-mvhevc` | §20.1.4、§14.2.3 |
+| "HDR→SDR 应请求 `HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_MEDIACODEC`（画质最好）" | **更正为固定 OpenGL 路径**：MediaCodec 路径「Only supported on API 31+ on certain devices」，不支持的设备上 `Transformer` 直接抛 `ExportException` —— 设备能力不确定时请求它等于拿用户编码时间试雷 | Media3 官方 tone mapping 指南原文（§14.2.3） |
 | "FFmpeg 的否决理由包括 GPL/LGPL 合规风险" | **更正**：本项目 `LICENSE` 为 **AGPL-3.0**（`LICENSE:1-2`），与 GPL-3.0 兼容，`-gpl` 变体**无额外 copyleft 障碍**。否决理由改为"零需求覆盖 + 体积 + 单点维护者 + 专利未核实" | `LICENSE:1-2`；AGPL-3.0 §13 |
 | "`dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7` 是当前版本" | **过时**：Maven Central `<latest>` / `<release>` 已是 **8.1.9**（2026-09-26） | `maven-metadata.xml` |
 | "FFmpegKitNext 是可用替代" | **不成立**：所有 release 的资产均为空，body 逐字 "This is a source-only release"，**无 Maven 坐标** | `arthenica/ffmpeg-kit-next` releases |
@@ -1877,7 +1965,7 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 
 **它不是行为契约测试**：断言只覆盖"测量本身有效"（拿到编码器、生成可解码竖屏源、三档预设都跑完），**不对 G7 的结论下断言** —— 结论是被记录的事实，不是被强制的期望。这与 §14.1 的"0-B 只做验证工程"、§15.3 的"设备测试恢复前该矩阵属于未验证"一致。
 
-**前置阻塞已解除**：`docs/architecture/phase-11-14-tdd-report.md` 记录的 MIUI `INSTALL_FAILED_USER_RESTRICTED`（U7）**在本设备上已不存在** —— `adb install -r -t` 主 APK 与测试 APK 均返回 `Success`，instrumentation 正常执行（`OK (2 tests)`）。§15.3 的整个设备矩阵因此**从"未验证"转为"可验证"**。
+**前置阻塞已解除**：`docs/architecture/phase-11-14-tdd-report.md` 记录的 MIUI `INSTALL_FAILED_USER_RESTRICTED`（U7）**在本设备上已不存在** —— `adb install -r -t` 主 APK 与测试 APK 均返回 `Success`，instrumentation 正常执行并产出全部快照（三种权限配置各 4 个用例全部通过，见 §20.2）。§15.3 的整个设备矩阵因此**从"未验证"转为"可验证"**。
 
 #### 20.1.1 G7 已裁定：planner 对，verifier 少一步旋转换算
 
@@ -1930,6 +2018,7 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 | `c2.qti.hevc.encoder.cq` | **128–512** | 有 | **CQ** |
 
 - ⇒ **该设备的 HEVC 10-bit / HDR 编码能力真实存在**（还有一个名字里就写着 `hdr` 的编码器），"一律不宣称 HDR"的硬编码**已经错了**。阶段 1 步骤 3（G2）的 `supportsHdr` 必须改为实测推导。
+- **✅ 已修复（2026-10-09，阶段 1 步骤 3）**：`supportsHdr` 改为复用 `EncoderUtil.getSupportedEncodersForHdrEditing` 实测，改后同机复测为「15 个视频编码器中 2 个 HEVC（8192×8192、4096×4096）为 `true`，其余 13 个为 `false`」，声明 `hdr-editing` 特性的 mime 是 `video/hevc` 与 `video/x-mvhevc`。改后证据 `docs/architecture/evidence/stage1/stage1-hdr-capability.json`，落地细节见 §14.2.3。
 - **一处方法学自我更正（留此存档）**：我最初用 `caps.profileLevels.any { it.profile == HEVCProfileMain10 }` 作第二个 HDR 信号，它在 **AVC** 编码器上也返回 `true`。原因：**`AVCProfileMain == HEVCProfileMain10 == 0x02`（`MediaCodecInfo.CodecProfileLevel` 常量撞号）**。该判据**只对 `video/hevc` 有效**，不得跨 mime 使用。实测数据也必须逐条自检。
 
 #### 20.1.5 编码器清单与 `BitrateMode`（T1 的直接输入）
@@ -1941,7 +2030,7 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 
 #### 20.1.6 阶段 0 仍未闭合
 
-- **试编超时行为**（`Service.onTimeout`，F24）：属阶段 1 步骤 4，本次未测。§15.3 已写明"若无法跑到 6 小时，记为未验证，**不得用缩短时限假装通过**"。
+- **试编超时行为**（`Service.onTimeout`，F24）：**阶段 1 步骤 4 已实现该路径的结构**（`YingLiProcessingService.onTimeout` 覆写 + 调度闸门 `SchedulerConditions.foregroundServiceUnavailable` + `ProcessingController.failRunning`，见 14.2.4），**但 6 小时真实超时未被触发过**。§15.3 已写明"若无法跑到 6 小时，记为未验证，**不得用缩短时限假装通过**"，本次遵守该规定。
 - **回收站 R1/R2 的 8 项**（§14.1 的 0-B 第 2–8 条）：**第 2/5/8 条已做（§20.2）**；第 3 条（API 31 与 36 差异）因本工作区只有 API 36 真机而**未验证**；第 4 条（SAF 树来源）需用户手动选择目录，**未验证**；第 6 条（R2 复制期间流式 SHA-256、失败/空间不足/进程被杀不丢源文件）**未做**；第 7 条（`expiresAt` 严格边界）属域逻辑，归阶段 4 的 JVM 单测。
 - **带旋转元数据的横向源**：见 20.1.1 的 ⚠。
 

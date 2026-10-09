@@ -297,6 +297,8 @@ private fun TranscodeChangeCode.labelResource(): Int = when (this) {
     TranscodeChangeCode.SUBTITLES_NOT_EMBEDDED -> R.string.transcode_change_subtitles
     TranscodeChangeCode.HDR_TO_SDR -> R.string.transcode_change_hdr
     TranscodeChangeCode.FRAME_RATE_CAPPED -> R.string.transcode_change_frame_rate
+    TranscodeChangeCode.VIDEO_CODEC_FALLBACK -> R.string.transcode_change_video_codec_fallback
+    TranscodeChangeCode.AUDIO_CODEC_FALLBACK -> R.string.transcode_change_audio_codec_fallback
 }
 
 @Composable

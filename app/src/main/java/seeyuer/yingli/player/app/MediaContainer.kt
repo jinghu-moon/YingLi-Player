@@ -395,6 +395,9 @@ object ProductionMediaContainerFactory {
         return SchedulerConditions(
             batteryLow = capacity in 0..LOW_BATTERY_PERCENT,
             storageAvailable = availableBytes >= MINIMUM_FREE_BYTES,
+            // F24：前台服务配额用尽后不再启动新任务（见 YingLiProcessingService.onTimeout）。
+            foregroundServiceUnavailable =
+                seeyuer.yingli.player.app.processing.YingLiProcessingService.isForegroundTimeExhausted(),
         )
     }
 

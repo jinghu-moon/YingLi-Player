@@ -119,14 +119,23 @@ class TranscodeProcessingExecutor(
                 onProgress(ProcessingProgress("transcode", (fraction * PROGRESS_TOTAL).toLong(), PROGRESS_TOTAL))
             }
             when (result) {
-                TranscodeEngineResult.Completed -> {
-                    onProgress(ProcessingProgress("verify", PROGRESS_TOTAL, PROGRESS_TOTAL))
-                    val verification = verifier.verify(artifact.temporaryPath, plan)
-                    if (!verification.valid) {
+                is TranscodeEngineResult.Completed -> {
+                    // G6：库在编码格式被静默回退时**依然报告成功**。用户点的是「HEVC」，
+                    // 拿到的却是 H.264，这不是一个可以提交的结果——「输出成功」不能覆盖
+                    // 「输出不是你要求的东西」。确认前置检查（上面那次）管不到运行期才发现
+                    // 的回退，所以这里必须再拒一次，并且用同一个错误码，让上层只有一种处理方式。
+                    if (result.requiresConfirmation) {
                         artifacts.abort(artifact)
-                        ProcessingExecutionResult.Failure(verification.errorCodes.firstOrNull() ?: "OUTPUT_INVALID")
+                        ProcessingExecutionResult.Failure("DEGRADATION_CONFIRMATION_REQUIRED")
                     } else {
-                        ProcessingExecutionResult.Success(artifacts.commit(artifact))
+                        onProgress(ProcessingProgress("verify", PROGRESS_TOTAL, PROGRESS_TOTAL))
+                        val verification = verifier.verify(artifact.temporaryPath, plan)
+                        if (!verification.valid) {
+                            artifacts.abort(artifact)
+                            ProcessingExecutionResult.Failure(verification.errorCodes.firstOrNull() ?: "OUTPUT_INVALID")
+                        } else {
+                            ProcessingExecutionResult.Success(artifacts.commit(artifact))
+                        }
                     }
                 }
                 is TranscodeEngineResult.Failed -> {

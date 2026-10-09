@@ -41,7 +41,7 @@
 | 前缀 | 含义 | 本文档范围 | 说明 |
 |---|---|---|---|
 | **F** | 不可再还原的基本事实 | **F1–F36** | F1–F25 来自压缩/格式转换方案；F26–F36 来自去重/回收站设计（原 F1–F11） |
-| **G** | 现状偏差（代码与事实的矛盾） | **G1–G26** | G1–G11 属转码/切片链路；G12–G26 属去重/回收站链路（原 G1–G15） |
+| **G** | 现状偏差（代码与事实的矛盾） | **G1–G27** | G1–G11 属转码/切片链路；G12–G26 属去重/回收站链路（原 G1–G15）；G27 是阶段 2 步骤 8 真机新发现（VP9 无 CodecPrivate 无法封进 MP4） |
 | **D** | 需用户裁决的决策点 | **D0–D13** | D0–D7 来自去重/回收站设计；D8–D13 来自压缩/格式转换方案的「未决」 |
 | **U** | 尚未核实、待确认项 | **U1–U10** | U1–U7 来自去重/回收站设计；U8–U10 来自压缩/格式转换方案的取证遗留 |
 
@@ -650,6 +650,7 @@ enum class ProcessingProjectType { CLIP, COMPRESS, CONVERT, DEDUPLICATE }
 | **G24** | 低 | `duplicate_groups` / `duplicate_group_members` / `duplicate_fingerprints` 三张表与 `MediaItem`/`MediaLocation` 模型重叠 | 两个真相来源，可能不一致 | §7.6 删除三张表 |
 | **G25** | 低 | `MediaContainer` 有 45 个字段，去重与回收站相关组件没有生命周期归属；`shutdown()` 只关 `frameCalibrationControl` 与 `processingLifecycle` | 新增调度组件时无处安放生命周期 | §11.6 |
 | **G26** | 低 | `DuplicateRepository.ignore(groupId)` = `dao.deleteGroup(groupId)`（`RoomDuplicateRepository.kt`） | 删掉组后下次扫描会重建，**用户会反复看到同一组** | §7.1 的 `duplicate_ignores` 表 |
+| **G27** | 中（能力边界） | **阶段 2 步骤 8 真机新发现**：`Mp4Muxer` 的能力表列了 `video/x-vnd.on2.vp9`，但写样本时 `Boxes.vpcCBox` 要求 csd-0。源自带 VP9 CodecPrivate 时可行；**ffmpeg 产出的 VP9 WebM 通常不带 CodecPrivate**（`matroskaenc.c:1219-1224` 的 `default:` 分支只在 `extradata_size > 0` 时写），此时抛 `IllegalArgumentException: csd-0 is not found in the format for vpcC box` | 「容器能力表说收」不等于「写得进去」；**白名单反查（G3/G11 的修法）管不到这一层**——校验通过之后才在写样本时失败。VP9→MP4 的无损搬运对常见源不可达 | 自行合成 csd-0（profile/level/bitDepth/chroma 缺省 0/10/8/0，颜色字段取 `Format.colorInfo`）。**本期未做**，真机用例 5 已把缺口钉住（见 §14.3.4） |
 
 ---
 
@@ -697,15 +698,15 @@ data class ProcessingPlan(
 
 ### 6.2 数据层
 
-- **`ContainerMuxerFactory`**：`containerMimeType → Muxer.Factory`，内部委托 `InAppMp4Muxer.Factory` / `WebmMuxer` / `OggMuxer` / `AacMuxer`。**这张映射表就是 F19 所说的"build 之前必须校验"的依据**——它同时提供 `getSupportedSampleMimeTypes()`，planner 用它而不是用一张写死的白名单（G3）。
-- **`PlatformRemuxEngine`**：把 `PlatformClipEngine.fastCut` 的时间区间参数改为可选，支持整文件 remux（G3）。
+- **`ContainerMuxerFactory`**：`containerMimeType → Muxer.Factory`，内部委托 `Mp4Muxer` / `WebmMuxer` / `OggMuxer` / `AacMuxer`。**这张映射表就是 F19 所说的"build 之前必须校验"的依据**——它同时提供 `getSupportedSampleMimeTypes()`，planner 用它而不是用一张写死的白名单（G3）。**【已实现（步骤 8）】** 四个容器一视同仁；MP4 那一行取自 `Mp4Muxer.SUPPORTED_*` 静态表（单一真源）。「MP4 不顶替 `Transformer` 自带封装器」这条取舍写在 `Media3ProcessingEngine` 里，不在本类。
+- **`InAppRemuxEngine`（原 `PlatformRemuxEngine`）**：把 `PlatformClipEngine.fastCut` 的时间区间参数改为可选，支持整文件 remux（G3）。**【已实现（步骤 8）】** 改用 Media3 `Muxer` 而非平台 `MediaMuxer`；能力反查走 `ContainerMuxerFactory.supports(...)`。**注意 G27**：能力表通过之后仍可能因缺 codec private 数据写不进去。
 - **`Media3TranscodeEngine` 补齐**：
   - `setEncoderFactory(DefaultEncoderFactory.Builder().setRequestedVideoEncoderSettings(...).setRequestedAudioEncoderSettings(...))`（G1）；
   - `setMuxerFactory(...)`（G4）；
   - `Composition.Builder.setHdrMode(...)`（G2）；
   - **覆写 `Transformer.Listener.onFallbackApplied(...)`**，把回退转成 `TranscodeChangeCode` 并要求确认（G6）——这是**唯一**能发现"请求的编码格式被库静默替换"的位置；
   - 竖屏源的尺寸语义按 G7 实测结果处理（**实测之前不动**）。
-- **`MediaExtractorOutputVerifier` 扩展**：读输出的 `KEY_BIT_RATE` 与 `KEY_WIDTH`/`KEY_HEIGHT`，让"预设码率真的生效"从间接推断变成直接断言（G8）。
+- **`MediaExtractorOutputVerifier` 扩展**：读输出的 `KEY_WIDTH`/`KEY_HEIGHT` 与**平均码率**（`字节数 × 8 × 1000 / 时长毫秒`），让验证结果里带上可对照的产出参数。**G8 的原定作法（读 `KEY_BIT_RATE` 直接断言）已被实测否掉**：本设备输出的 MP4 视频轨该键恒为 `null`，且编码器可以忽略请求码率，故平均码率只作对照、不参与 `valid`（见 §14.2.1）。
 - 两者都实现同一个 `ProcessingEngine` 接口，由 planner 的 `operation` 字段路由。
 
 ### 6.3 能力探测
@@ -1670,12 +1671,144 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 
 ### 14.3 阶段 2：域模型与引擎合并
 
-| 步骤 | 内容 | 破坏性 |
+| 步骤 | 内容 | 破坏性 | 状态 |
+|---|---|---|---|
+| 5 | 引入 `OutputTarget` / `ProcessingOperation`，把 `TranscodePreset` 折叠为命名常量（§6.1） | **是**（域模型重命名） | ✅ 已完成（见 14.3.1） |
+| 6 | 合并 `PlatformClipEngine.fastCut` 与 `Media3TranscodeEngine` 到统一 `ProcessingEngine` + planner 路由 | **是**（接口与执行器重构） | ✅ 已完成（见 14.3.2） |
+| 7 | 接入 `Muxer.Factory` 适配器，开放 WebM/Ogg/AAC 输出（G4） | 否 | ✅ 已完成（见 14.3.3；**接入已完成，端到端可达性见该节的说明**） |
+| 8 | 白名单改为 muxer 反查（G3、G11）；`fastCut` 的时间区间参数改为可选 | **是**（删除硬编码白名单） | ✅ 已完成（见 14.3.4；**G11 的端到端可达路径已真机取证，新缺口 G27 见该节**） |
+
+#### 14.3.1 步骤 5 落地（`OutputTarget` 折叠，2026-10-09）
+
+**做了什么。** 域层从 `domain/transcode/TranscodeContracts.kt`（337 行，单个文件承担源信息、编码器能力、预设、计划、结果、接口六类职责）拆成两个文件，包名改为 `domain/processing`：
+
+| 文件 | 内容 |
+|---|---|
+| `app/src/main/java/seeyuer/yingli/player/domain/processing/MediaSourceContracts.kt` | `MediaTrackType` / `HdrFormat` / `MediaTrackInfo` / `SourceMediaInfo` / `EncoderCapability` / `DeviceMediaCapabilities` / `MediaCapabilityProbe`（**零语义改动，只换包**） |
+| `app/src/main/java/seeyuer/yingli/player/domain/processing/ProcessingPlanContracts.kt` | `OutputTargetId` / `ProcessingOperation` / `OutputTarget` / `OutputTargets` / `ProcessingChangeCode` / `ProcessingChange` / `MediaRange` / `ProcessingPlan` / `ProcessingPlanningResult` / `DefaultProcessingPlanner` / `PROCESSING_FREE_SPACE_RESERVE_BYTES` / `ProcessingEngineResult` / `ProcessingEngine` / `OutputVerification` / `OutputVerifier` / `ProcessingQueue` |
+
+`TranscodePreset` **不再是一个实体**，它的三档取值变成 `OutputTargets.Compatible` / `Balanced` / `SpaceSaver` 三个 `OutputTarget` 命名常量；`version` 字段被删除（没有持久化契约需要版本号）。`TranscodePlan` → `ProcessingPlan`，`TranscodeEngine.transcode(...)` → `ProcessingEngine.process(...)`，`TranscodeEngineResult` → `ProcessingEngineResult`，`TranscodeChangeCode` → `ProcessingChangeCode`，`TranscodeQueue` → `ProcessingQueue`，`TranscodePlanningResult` → `ProcessingPlanningResult`。
+
+**三处对 §4.2 / §6.1 原稿的偏离**（每处都已在代码 KDoc 里写明理由）：
+
+1. **`OutputTarget` 保留了 `id: OutputTargetId`**。§4.2 给出的签名没有 `id`，但 §6.1 同时要求输出名保持 `"${baseName}_${target.id.value}.mp4"`——没有 `id` 就无法重建那个文件名，而文件名是用户可见的。`id` 也因此成为「用户选了哪一档」的唯一身份，替代了被删除的 `version`。
+2. **`fileExtension` 由容器派生，而不是恒写 `.mp4`**。三档预设的容器都是 `video/mp4`，故输出名与改前逐字相同；派生之后阶段 2 步骤 7 加入 WebM/Ogg/ADTS 输出时不需要再动命名逻辑。
+3. **新增 `hasQualityParameters`**，把「这个目标是否要求改变质量」显式化。它是 planner 判定顺序更正的一部分（见下条）。
+
+**判定顺序的一处更正（实质性）。** §4.2 的规则①是「目标三元组与源一致且无质量参数 → REMUX」、规则②是「目标 muxer 接受源 codec → REMUX」。照字面实现，`OutputTargets.Compatible`（`video/mp4` + `video/avc` + `audio/mp4a-latm`）对一个 MP4/H.264/AAC 源会**命中规则②被判成 REMUX**——用户点「压缩」却拿到一个原样复制的文件。因此实现把**质量参数挡在 remux 之前**：
+
+```
+operation = if (target.hasQualityParameters || videoCodecChanged || audioCodecChanged) TRANSCODE else REMUX
+```
+
+即规则①必须是「三元组一致 **且** 无质量参数」，规则②必须是「无质量参数 **且** 目标 muxer 接受源 codec」。同时 `REMUX` **不再查编码器**（查了会把「把 VP9/Opus 的 MKV 换容器成 MP4」错误拒绝，而那正是 M9 的主要场景）；`HDR_TO_SDR` 与 `FRAME_RATE_CAPPED` 两个 change 也只在实际走编码器时产生（remux 不改像素格式与帧率）。
+
+**第二个真源被消掉。** 域层的 `FREE_SPACE_RESERVE_BYTES = 128 MiB` 与调度侧 `MediaContainer.MINIMUM_FREE_BYTES = 256 MiB` 原本互相矛盾。现在只有一个 `PROCESSING_FREE_SPACE_RESERVE_BYTES = 256 MiB`（顶层公开常量），调度侧直接引用它。
+
+**验证。** `app/src/test/java/seeyuer/yingli/player/domain/processing/ProcessingPlanContractsTest.kt`（9 例）与 `ProcessingFallbackContractTest.kt`（4 例）替换了原先的 `TranscodeContractsTest.kt` / `TranscodeFallbackContractTest.kt`。其中 **`preset planning is field identical to the pre refactor transcode plan` 就是 §15.2 要求的 golden test**：同一组输入在重构前后必须产出字段级相同的计划——断言 `operation == TRANSCODE`、`targetWidth/Height = 1920/1080`、`retainedTrackIds = {1}`、`outputDisplayName == "Sample_Video_compatible_mp4.mp4"`、`changes == emptyList()`、`range == null`、`requiredFreeBytes - estimatedOutputBytes == PROCESSING_FREE_SPACE_RESERVE_BYTES`，且 `estimatedOutputBytes` 等于原公式 `(((8_000_000 + 192_000) / 8.0) * 60.0 * 1.15).toLong()`（**刻意不写十进制字面量**：`1.15` 在二进制下不精确，写死会假失败，而估算公式本身一字未改，故与原实现逐位相同）。另三例分别锁定「无质量参数的同容器同 codec 是 REMUX 且不需要编码器」「区间超出片长被拒绝而不是被夹紧」「区间按时长比例缩短体积估算」。
+
+**改名副作用（已修）。** 全仓改名脚本把 `Media3TranscodeEngine`（类名）也一并改名，类现在是 `Media3ProcessingEngine`，文件已重命名为 `Media3ProcessingEngine.kt`。改名脚本还把小写开头的**标识符**大写化（PowerShell `-replace` 默认大小写不敏感），`ProcessingViewModel.kt` / `MediaContainer.kt` / `ProcessingScreen.kt` 里的 `processingQueue` / `outputTarget` / `processingPlan` / `processingPlanning` 已逐一改回。**教训：本仓的批量改名必须用大小写敏感的替换。**
+
+**本步骤未做的事（留给步骤 6）：** UI 层的 `ProcessingTab.TRANSCODE`、`TranscodePanel`、`planTranscode` / `enqueueTranscode`、以及 `TranscodeCoordinator` / `TranscodeProcessingExecutor` 的类名都仍然带着「Transcode」这个词——它们描述的是**处理任务**而不是域模型，与步骤 6 的「两个引擎合并成一个 `ProcessingEngine`」是同一处收敛，故不在本步骤改名。
+
+#### 14.3.2 步骤 6 落地（引擎合并与 planner 路由，2026-10-09）
+
+**做了什么。** 新增两个引擎实现与一个路由器，并删除第四套平行抽象：
+
+| 文件 | 内容 |
+|---|---|
+| `app/src/main/java/seeyuer/yingli/player/data/processing/PlatformRemuxEngine.kt` | **新增**。封装层引擎（`ProcessingOperation.REMUX`）：`MediaExtractor` + `MediaMuxer` 纯搬运，**`plan.range` 为 `null` 时就是整文件换容器**，非空时就是切片——`PlatformClipEngine.fastCut` 与「整文件 remux」在这里合成同一个 `process(...)`（步骤 8 的「时间区间参数改为可选」由此提前在形态上成立） |
+| `app/src/main/java/seeyuer/yingli/player/data/processing/RoutingProcessingEngine.kt` | **新增**。按 `plan.operation` 把任务分派给两个引擎之一；`cancel()` 两边都发（调用方不知道当前跑的是哪一个） |
+| `app/src/main/java/seeyuer/yingli/player/data/processing/clips/PlatformClipEngine.kt` | **已删除** |
+| `domain/clips/ClipContracts.kt` 的 `ClipEngine` / `ClipSource` / `ClipCapabilities` / `ClipEngineResult` | **已删除**（原地留一段 KDoc 说明为何不留兼容层） |
+
+删除的理由是它们与处理管线**逐条重复**：`fastCut` ≡ `PlatformRemuxEngine.process`，`accurateCut` ≡ `Media3ProcessingEngine.process`，`probe` ≡ `MediaCapabilityProbe.source`。`ClipProcessingExecutor` 改为「用 planner 造计划 → 交给路由引擎 → 用共享 verifier 验证」，构造参数从 `engine: ClipEngine` 变为 `probe` / `engine: ProcessingEngine` / `verifier` / `availableBytes`。`MediaContainer` 只造**一个** `RoutingProcessingEngine`（内部持有 `PlatformRemuxEngine` 与 `Media3ProcessingEngine`），切片与压缩/格式转换两个执行器共用它。
+
+**切片不再有动作开关。** 切片的 `OutputTarget` 是「容器 `video/mp4`、codec 留空（同源）、无质量参数、带 `MediaRange`」，快速与精确的差别只有 `frameAccurateCut`。
+
+**新增 `OutputTarget.frameAccurateCut`（对 §4.2 的第四处偏离）。** §4.2 假定「目标三元组 + 质量参数」足以推出动作，但**「快速（无损封装）还是精确（重编码）」推不出来**：精确切的目标容器与 codec 与源完全相同、也没有质量参数，照 §4.2 会判成 `REMUX`，而关键帧吸附会让实际起点早于请求起点。参考实现（REX-Player 的 `ClipExportSheet`）同样把它做成显式的用户二选一、不设默认（§9）。因此它是**用户意图**，不是质量参数，单独作为 `OutputTarget` 的字段：`operation = if (hasQualityParameters || videoCodecChanged || audioCodecChanged || frameAccurateCut) TRANSCODE else REMUX`。
+
+**`ProcessingEngineResult.Completed` 新增 `actualRange`。** 无损封装走 `MediaExtractor.SEEK_TO_PREVIOUS_SYNC`，**实际起点必然 ≤ 请求起点**（请求 10.0 s、实际 9.4 s 是常态）。Q220/Q537 要求把「实际起止」如实告诉用户，因此由引擎回报而不是由调用方假定请求值。原先这个回报通道是 `ClipEngineResult.Success(actualStartMillis, actualEndMillis)`，随 `ClipEngine` 一起删除后由 `actualRange` 承接。
+
+**verifier 的期望时长跟着区间走。** 带区间任务的产出是区间而不是整段源，`MediaExtractorOutputVerifier` 的时长比对改为 `plan.range?.durationMillis ?: plan.source.durationMillis`（容差沿用 1500 ms；remux 的实际时长可能因关键帧前移而略长于请求区间）。
+
+**remux 的轨道选择与「只保留首个音轨」一致。** 视频轨全部保留，音轨只保留 `plan.retainedTrackIds` 点名的那些；集合为空表示「目标不要音轨」，不是「保留全部」——否则计划里 `EXTRA_AUDIO_TRACKS_REMOVED` 这个后果会与实际产出不一致。
+
+**本步骤的边界（留给步骤 7/8）。** `PlatformRemuxEngine` 只写 MP4（平台 `MediaMuxer` 的能力），codec 白名单仍是硬编码常量 `MP4_REMUX_MIME_TYPES`，**G11 依然存在**：WebM(VP9/Opus) 源走快速路径仍会失败，错误码从 `FAST_CONTAINER_UNSUPPORTED` 变为 `REMUX_CODEC_UNSUPPORTED`。步骤 8 用 `Muxer.Factory.getSupportedSampleMimeTypes()` 反查替换这个常量。**（已由步骤 8 完成——`PlatformRemuxEngine.kt` 已被 `InAppRemuxEngine.kt` 替换、常量已删除，见 §14.3.4。）**
+
+**行为变化（有意，不是回归）。** 精确切片现在要求设备有**源 codec** 的编码器；拿不到就 `VIDEO_ENCODER_UNAVAILABLE`，而不是像以前那样让库静默换一个 codec 编（那正是 G6 要禁的事）。代价是「HEVC 源 + 无 HEVC 编码器的设备」不再能精确切片。
+
+**验证。** 新增 `app/src/test/java/seeyuer/yingli/player/data/processing/RoutingProcessingEngineTest.kt`（3 例：REMUX 计划只进封装引擎、TRANSCODE 计划只进编码引擎、`cancel` 到达两个引擎）与 `ProcessingPlanContractsTest.kt` 的新用例 `frame accurate cut forces transcode even though container and codecs are unchanged`（同一源、同一区间：`frameAccurateCut=false` → `REMUX` 且 `changes` 为空、`frameAccurateCut=true` → `TRANSCODE`）。全门禁（`testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest`）通过。
+
+**未验证。** 封装路径（`PlatformRemuxEngine`）**没有真机测量用例**：本项目的 instrumented 测量测试只覆盖转码路径（阶段 1 的 `Stage1*MeasurementTest`）。切片路径在原实现下同样没有真机用例，本次合并没有让它变差，但「连续切片真机不产黑帧」仍是一条**未验证**的要求，不得据此声称切片路径已实测通过。
+
+#### 14.3.3 步骤 7 落地（容器适配器与 build 前校验，2026-10-09）
+
+**做了什么。**
+
+| 文件 | 内容 |
+|---|---|
+| `app/src/main/java/seeyuer/yingli/player/data/processing/muxer/ContainerMuxerFactory.kt` | **新增**。`MuxerContainer` 枚举（容器 → 该容器**实际允许写入的样本 mime**）+ `ContainerMuxerFactory : Muxer.Factory`（非 MP4 容器的适配器） |
+| `gradle/libs.versions.toml`、`app/build.gradle.kts` | 显式声明 `androidx.media3:media3-muxer`。它此前只是 `media3-transformer` 的传递依赖（G4 的前半段） |
+| `app/src/main/java/seeyuer/yingli/player/data/processing/transcode/Media3ProcessingEngine.kt` | ① 在 build **之前**按容器能力表拒绝「容器收不下这个编码」的组合；② 只有非 MP4 容器才调用 `setMuxerFactory(...)` |
+
+**MP4 刻意不接管（`Transformer` 侧）。** `Transformer.Builder` 的默认封装器是 `DefaultMuxer.Factory`（同样产出 MP4），它带着 `videoDurationUs`、元数据收集与 faststart 相关配置；用裸 `Mp4Muxer` 顶替它，**能力增量是零**（MP4 本来就可输出），换掉的却是一段已在真机上取证过的默认行为（阶段 1 的码率与 HDR 证据全跑在这条路径上）。因此 `Media3ProcessingEngine` 只在 `plan.target.containerMimeType != MimeTypes.VIDEO_MP4` 时才调用 `setMuxerFactory(...)`。
+
+> **步骤 8 修正（2026-10-09）。** 本步骤最初把这条规则写成 `ContainerMuxerFactory.forContainerMimeType("video/mp4")` 返回 `null`，让调用方据此跳过——那是**把调用方的取舍塞进了工厂的语义**。步骤 8 起工厂对四个容器一视同仁（手写搬运管线 `InAppRemuxEngine` 需要 MP4 的 `Mp4Muxer`，而且**只有它**能把 VP9/Opus 写进 MP4，即 G11 的修法），「MP4 不交给本类」这句话改由 `Media3ProcessingEngine` 显式表达。`MuxerContainer.Mp4` 的职责始终只是**能力表**（供下方的前置校验使用）。
+
+**能力表只有一个真源。** MP4 一行直接取 `Mp4Muxer.SUPPORTED_VIDEO_SAMPLE_MIME_TYPES` / `SUPPORTED_AUDIO_SAMPLE_MIME_TYPES`，不手写；`ContainerMuxerFactory.getSupportedSampleMimeTypes(trackType)` 回报的也是同一张表。手写第二份清单正是 G3/G11 的成因（`PlatformClipEngine.kt` 的 `FAST_MP4_MIME_TYPES`）。
+
+**容器名沿用域层既有词汇。** ADTS 的容器 mime 写 `"audio/aac"`（与 `OutputTarget.fileExtension` 的 `"audio/aac" → .aac` 一致），**不是** `MimeTypes.AUDIO_AAC`——后者是 `"audio/mp4a-latm"`，那是**样本** mime，不是容器 mime。
+
+**新增三个拒绝码**（都在 build 之前返回，不产生输出文件）：`TARGET_CONTAINER_UNSUPPORTED`（容器不在表里）、`CONTAINER_VIDEO_CODEC_UNSUPPORTED`、`CONTAINER_AUDIO_CODEC_UNSUPPORTED`。这是 F19 的用法：`Transformer.Builder.build()` 在 muxer 不收所请求 mime 时抛异常，而那时**整段编码已经花掉了**。
+
+**本步骤对现有可达路径零行为变化。** 三档预设与切片目标全部是 `video/mp4` + `video/avc` + `audio/mp4a-latm`，容器表全部接受；新增的拒绝分支对它们不可达（`ContainerMuxerFactoryTest` 里有一条用例逐个断言）。所以 §14.3 表格把它标为「非破坏性」是成立的。
+
+**本步骤没有让 WebM/Ogg/ADTS 输出变得端到端可达。** `OutputTargets.all` 与切片目标都是 MP4，**目前没有任何产品路径会选中非 MP4 容器**。本步骤落地的是「接入封装器 + build 前校验」这两件事本身；真正产出 `.webm` / `.ogg` / `.aac` 还需要 planner/UI 能选到那种目标（当前不存在），音频专用输出（无视频轨）也不可达——引擎始终构造带视频轨的 `EditedMediaItemSequence`。
+
+**验证。** 新增 `app/src/test/java/seeyuer/yingli/player/data/processing/muxer/ContainerMuxerFactoryTest.kt`（7 例：MP4 不接管、WebM/Ogg/ADTS 有适配器、未知容器无适配器、三档预设被自己的容器接受、MP4 能力表与 `Mp4Muxer` 静态表逐项相同、容器可达性随编码而异（HEVC 进 MP4、不进 WebM）、工厂经 `Muxer.Factory` 接口回报同一张表）。全门禁（`testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest`）通过。
+
+**未验证。** ① 「`setMuxerFactory` 有没有真的被调用」本测试**看不见**——`Transformer` 不提供读回封装工厂的 getter，与 G1 的 `.setEncoderFactory(...)` 是同一类盲区，唯一证据是真机产出（而当前没有能选到非 MP4 容器的入口）；② `WebmMuxer` / `OggMuxer` / `AacMuxer` 在本项目里的实际写出行为**无任何真机用例**；③ 常量命名踩坑记录：Media3 用 `MimeTypes.VIDEO_H264` / `VIDEO_H265`，`VIDEO_AVC` / `VIDEO_HEVC` 是 Android `MediaFormat` 的命名，在 media3-common 里不存在。
+
+> **步骤 8 修正（2026-10-09）。** 上条 ① 对**封装层**已不再成立：`InAppRemuxEngine` 直接持 `ContainerMuxerFactory.create(...)` 的返回值，真机用例证明了 `Mp4Muxer` / `WebmMuxer` / `OggMuxer` / `AacMuxer` 的实际写出行为（见 §14.3.4）。盲区只剩 `Transformer` 侧那一条路径。
+
+#### 14.3.4 步骤 8 落地（白名单反查与「时间区间可选」，2026-10-09）
+
+**做了什么。**
+
+| 文件 | 内容 |
+|---|---|
+| `app/src/main/java/seeyuer/yingli/player/data/processing/InAppRemuxEngine.kt` | **重写**（原 `PlatformRemuxEngine.kt`，已删除）。封装层引擎（`ProcessingOperation.REMUX`）改为「`MediaExtractor` 读样本 + Media3 `Muxer` 写样本」，**不再用平台 `MediaMuxer`**；容器能力改由 `ContainerMuxerFactory.supports(...)` 反查。`plan.range == null` 即整文件换容器，非空即切片（步骤 8 要求的「时间区间参数可选」） |
+| `app/src/main/java/seeyuer/yingli/player/data/processing/muxer/ContainerMuxerFactory.kt` | `forContainerMimeType(...)` 改为**四个容器一视同仁**（含 MP4 → `Mp4Muxer`）；「MP4 不顶替 `Transformer` 自带封装器」这条规则移交调用方 |
+| `app/src/main/java/seeyuer/yingli/player/data/processing/transcode/Media3ProcessingEngine.kt` | 只在 `plan.target.containerMimeType != MimeTypes.VIDEO_MP4` 时调用 `setMuxerFactory(...)` |
+| `app/src/androidTest/java/seeyuer/yingli/player/data/processing/Stage2RemuxContainerMeasurementTest.kt` | **新增**。5 个真机用例（见下） |
+
+**G3/G11 的修法就是「删掉那份清单」。** 旧实现里 `MP4_REMUX_MIME_TYPES = setOf("video/avc","video/hevc","video/mp4v-es","audio/mp4a-latm","audio/mpeg")` 是手写的第二真源；现在唯一的判据是 `ContainerMuxerFactory.supports(trackType, mime)`，而它转手问的就是 `Muxer.Factory.getSupportedSampleMimeTypes(...)`——**库自己写样本前问的同一个方法**，因此「我们的白名单」与「库会不会拒绝」不可能漂移。对 `video/mp4` 而言这份表由 `Mp4Muxer.SUPPORTED_VIDEO_SAMPLE_MIME_TYPES` / `SUPPORTED_AUDIO_SAMPLE_MIME_TYPES` 提供，**它包含 `video/x-vnd.on2.vp9` 与 `audio/opus`**，所以 G11（「WebM(VP9/Opus) 源走快速路径必然失败」）在形态上被消除。
+
+**真机 5 例（`25102RKBEC` / API 36，全绿）。**
+
+| 用例 | 请求 | 实测 |
 |---|---|---|
-| 5 | 引入 `OutputTarget` / `ProcessingOperation`，把 `TranscodePreset` 折叠为命名常量（§6.1） | **是**（域模型重命名） |
-| 6 | 合并 `PlatformClipEngine.fastCut` 与 `Media3TranscodeEngine` 到统一 `ProcessingEngine` + planner 路由 | **是**（接口与执行器重构） |
-| 7 | 接入 `Muxer.Factory` 适配器，开放 WebM/Ogg/AAC 输出（G4） | 否 |
-| 8 | 白名单改为 muxer 反查（G3、G11）；`fastCut` 的时间区间参数改为可选 | **是**（删除硬编码白名单） |
+| 1 VP9+Opus → MP4 | `video/mp4`，源自带 VP9 CodecPrivate | `Completed`，输出轨道 = `[video/x-vnd.on2.vp9, audio/opus]` |
+| 2 Ogg 收视频 | `audio/ogg`，源带 VP9 视频轨 | `Failed(REMUX_CONTAINER_UNSUPPORTED)`，无输出 |
+| 3 未接入容器 | `video/x-matroska` | `Failed(REMUX_CONTAINER_UNSUPPORTED)`，无输出 |
+| 4 区间搬运 | `video/mp4`，请求 `MediaRange(200, 600)` | `Completed`，实际 `MediaRange(200, 580)` |
+| 5 VP9 无 CodecPrivate → MP4 | `video/mp4` | `Failed(REMUX_FAILED)`（缺口 G27，见下） |
+
+证据归档在 `docs/architecture/evidence/stage2/`（每用例一份 JSON，含 `device` / `androidApi` / `requested` / `measured`）。
+
+**区间语义：沿用，不是新引入。** 实测请求 `(200, 600)` 得到 `(200, 580)`，差 20 ms 是最后一个音频帧的时间戳。核 `git show f3ce9a7:.../clips/PlatformClipEngine.kt`（阶段 10 的实现，原始提交 `7a5d2a6`）逐行一致：`if (sourceTrack < 0 || sampleTime < 0 || sampleTime >= endMicros) break` + `lastSampleMicros = sampleTime`。⇒ **实际终点恒 ≤ 请求终点**。用例 4 的断言因此写成「实际起点 ≤ 请求起点 ∧ 实际终点 ≤ 请求终点 ∧ 实际终点 ≥ 请求终点 − 25 ms（一个视频样本间隔，不得提前截断）」。（我第一版断言写的是「实际终点必须 ≥ 请求终点」，**那是错的**，已按代码事实改正。）
+
+**新缺口 G27：VP9 → MP4 的无损搬运仅在源自带 CodecPrivate 时可达。** 真机失败原因是 `java.lang.IllegalArgumentException: csd-0 is not found in the format for vpcC box`。核对 media3 1.10.1 `libraries/muxer/.../Boxes.java`：`vpcCBox(Format)` 第一句即 `checkArgument(!format.initializationData.isEmpty(), "csd-0 is not found in the format for vpcC box")`，随后才把 WebM 的「VP9 Codec Feature Metadata」（`ID/长度/数据` 三元组）或已是 vpcC 负载的 csd-0 包成 `vpcC`。**而这份 csd 只有源文件带 CodecPrivate 才有**——`refer/video-transcode-repos/FFmpeg/libavformat/matroskaenc.c:1150-1228` 的 `mkv_assemble_native_codecprivate` 只对 Vorbis/Theora/AV1/FLAC/H264/HEVC/AAC 等特判，VP9 落到 `default:` 分支（`:1219-1224`，仅当 `extradata_size > 0` 时原样写 extradata），libvpx 的 VP9 **没有 extradata** ⇒ **ffmpeg 产出的 VP9 WebM 通常不带 CodecPrivate**，本引擎必然 `REMUX_FAILED`。ffmpeg 自己能把 VP9 封进 MP4，是因为它在 MP4 侧**合成** `vpcC`（`ff_isom_write_vpcc`），media3 的 `Mp4Muxer` 不做这件事。
+⇒ 结论：能力表说「收」不等于「写得进去」。**G11 的修法（反查 muxer 能力）管不到这一层**——白名单校验通过之后才在写样本时抛异常。用例 5 把该缺口**钉住**（断言 `Failed(REMUX_FAILED)` 且失败原因含 `vpcC`，注释写明「补上 csd 合成后这条要改成 `Completed`」），而不是把它伪装成通过。补法是自行合成 csd-0（profile/level/bitDepth/chroma 缺省 0/10/8/0，颜色字段取 `Format.colorInfo`），本期未做。
+
+**新增引擎日志（可观测性）。** `InAppRemuxEngine` 现注入 `AppLogger`，失败时记 `PROCESSING_REMUX_FAILED`，属性 `containerMimeType` / `failureType`（异常简单类名）/ `failureMessage` / `failureSite`（栈顶 `className.methodName`，比文本稳定）。**没有这层日志，G27 只能看到 `REMUX_FAILED` 一个码**——这条缺口就是靠它定位的。不记录路径与文件名（日志统一经 `RedactingAppLogger` + `SensitiveValueRedactor` 脱敏）。
+
+**踩坑记录（media3 1.10.1，都会在真机上才暴露）。**
+- **手工构造的 `Format` 必须设 `language`**：`WebmMuxer` 写 Matroska `TrackEntry` 的 LANGUAGE 元素时 `Util.getUtf8Bytes(null)` 会 NPE（栈顶 `WebmElements.getCommonTrackEntry`）。经 `MediaExtractor` 来的真格式一定带语言，所以只有合成源会踩。
+- **平台 WebM 解析器把音轨排在视频轨之前**（实测 `[audio/opus, video/x-vnd.on2.vp9]`）⇒ `retainedTrackIds` 不能写死索引，改为按类型从探测结果推导。
+- `ProcessingEngineResult.Completed` 是 `data class`（带 `fallbacks`），`toString()` 是 `Completed(fallbacks=[])`：测试的 `describe(...)` 需要在 `fallbacks` 为空时输出 `"Completed"`，否则真出现意外回退时反而被吞掉。
+
 
 ### 14.4 阶段 3：去重模型归并
 
@@ -1756,9 +1889,11 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 | G7 实测 | — | **已完成（2026-10-09）**：竖屏源实测记录表见 **§20.1.1**；原始快照 `docs/architecture/evidence/stage0/stage0-g7-portrait.json`；取证测试 `TranscodeDeviceCapabilityMeasurementTest.kt` |
 | G1 码率 | `TranscodeContractsTest.kt` 现有全部用例 | 断言 `OutputTarget.videoBitrate` 出现在构造出的 `VideoEncoderSettings` 中；断言 `Compatible` 与 `Balanced` 的编码参数**不再相等** |
 | G2 HDR | 断言 `HDR_TO_SDR` 在 `supportsHdr=false` 时 `requiresConfirmation=true` | ✅ `TranscodeContractsTest`（确认语义）、`Media3EncoderSettingsTest`（`hdrMode` 两分支 + `supportsHdr` 两取值）、`Stage1HdrToneMappingMeasurementTest`（真机：能力探测实测化 + HDR 源 `Completed` 而非拒绝）；见 14.2.3 |
-| G3/G11 白名单 | `ClipContractsTest.kt` 现有全部用例 | 断言白名单来自 muxer 查询；断言 VP9/Opus 源可走 remux；断言被删除的硬编码表不存在（防止回退） |
+| G3/G11 白名单 | ✅ 硬编码表 `MP4_REMUX_MIME_TYPES` 已随 `PlatformRemuxEngine.kt` 一起删除 | ✅ 判据只有一个真源 `ContainerMuxerFactory.supports(...)` → `Muxer.Factory.getSupportedSampleMimeTypes(...)`（库自己写样本前问的同一方法）。JVM：`ContainerMuxerFactoryTest`（7 例）。真机：`Stage2RemuxContainerMeasurementTest` 用例 1 证明 **VP9+Opus 源确实能 remux 进 MP4**（旧实现必然 `REMUX_CODEC_UNSUPPORTED`）；用例 3 证明未接入容器仍被拒绝。**但见 G27**：能力表通过 ≠ 写得进去（VP9 缺 CodecPrivate 时 `Mp4Muxer` 在写样本时抛 `vpcC` 异常），用例 5 把这个缺口钉住 |
+| 步骤 8（白名单反查与区间可选） | ✅ `ContainerMuxerFactoryTest` 7 例全绿（工厂对四容器一视同仁后语义未变） | ✅ 同上；`InAppRemuxEngine` 的区间语义由真机用例 4 断言（实际区间 ≤ 请求区间且不提前截断）。**看不见 `Media3ProcessingEngine` 是否真的用了自定义封装器**（`Transformer` 无 getter，与 G1 同类盲区） |
 | G6 回退 | ✅ `Media3FallbackMappingTest`、`TranscodeFallbackContractTest` | 用真实的 `TransformationRequest` 触发 `onFallbackApplied` 的映射，断言产生 `requiresConfirmation = true` 的 change；断言不支持的目标在 build 之前就被拒绝（不进入引擎）；断言九种后果码的确认语义各自固定 |
-| G8 码率回读 | — | 断言 verifier 会读输出的 `KEY_BIT_RATE` 并在与请求值偏离超过容差时报错 |
+| G8 码率回读 | ✅ `Media3EncoderSettingsTest`、`Media3FallbackContractTest`（口径已改） | 断言 `OutputTarget.videoBitrate` / `audioBitrate` 出现在构造出的 `VideoEncoderSettings` / `AudioEncoderSettings` 中，且 `Compatible` 与 `Balanced` 的编码参数不再相等（**「请求已下发」**）；verifier 只报告 `averageBitrateBitsPerSecond`，**不断言它等于请求值**（官方说明编码器可以忽略请求码率；`KEY_BIT_RATE` 在本设备读不到，见 §14.2.1）。「预设码率是否真的生效」由真机输出字节数分离回答（§15.3） |
+| 步骤 7（容器适配） | ✅ 无既有用例被改动（三档预设的容器组合全部被新表接受） | ✅ `ContainerMuxerFactoryTest`（7 例）：MP4 不被接管、WebM/Ogg/ADTS 有适配器、未知容器无适配器、三档预设被自己的容器接受、MP4 能力表与 `Mp4Muxer` 静态表逐项相同、容器可达性随编码而异（HEVC 进 MP4、不进 WebM）、工厂经 `Muxer.Factory` 回报同一张表。**看不见「`setMuxerFactory` 是否真被调用」**（与 G1 同类盲区，见 14.3.3） |
 | 阶段 2 重构 | 上述全部 | 同一组输入在重构前后产出**字段级相同**的 plan（golden test） |
 | 步骤 9/10（`forRange`） | `ClipContractsTest.kt` / `ProcessingViewModelTest` 现有全部用例 | `forRange` 边界：`start=0`、`end=duration`、`end=duration+1`（拒绝）、`start=end`（拒绝）、A 与 B 互换后仍合法；golden：同一 `LibraryMedia` 经 `createProject` 产出的 `ClipProject` 与改前**字段级相同** |
 | 步骤 11（播放页入队） | `PlayerViewModelTest.kt` 现有全部用例 | AB 未激活时动作不可用；AB 激活时**入队恰好一次**；AB 被清除或切换媒体后到达的异步结果被丢弃（generation 守卫）；`pointA` / `pointB` 被原样固化进 `ClipSegment` |
@@ -1792,7 +1927,7 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 当前 `docs/architecture/phase-11-14-tdd-report.md` 记录真机 Xiaomi M2012K11AC 被 MIUI 以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝，`connectedDebugAndroidTest` **不计为通过**（U7）。**该阻塞已于 2026-10-09 解除**：Xiaomi 25102RKBEC（Android 16 / API 36）上 `adb install -r -t` 与 instrumentation 均正常。以下矩阵现在**全部可执行**，但**除已标注"已完成"的项外，其余仍未验证，不得声称通过**：
 
 - **竖屏源 × 三档预设**：**已完成**，见 §20.1.1 —— 输出 `KEY_WIDTH`/`KEY_HEIGHT` 与旋转元数据的实测值已记录（唯一证据来源）。
-- SDR 源 × 三档预设：验证产出体积随码率单调下降，且 verifier 读回的 `KEY_BIT_RATE` 与预设一致（G1 + G8 的外部证据）。
+- SDR 源 × 三档预设：验证产出体积随码率单调下降（G1 + G8 的外部证据）。**注意 G8 的原始口径已作废**：本设备输出的 MP4 视频轨读不到 `KEY_BIT_RATE`，故这里断言的是**输出字节数单调分离**，不是「verifier 读回的值等于请求值」（见 §14.2.1 与 §20.1.3）。
 - **请求 HEVC 但设备无 HEVC 编码器**：验证 `onFallbackApplied` 被触发、用户收到确认而非静默拿到 H.264（G6）。
 - HDR10 源：验证 tone mapping 产出 SDR 且颜色未错标；在 MediaCodec 路径不可用的设备上验证抛 `ExportException` 后的用户可见行为（G2）。
 - MKV(H.265) → MP4：验证 remux 路径且逐样本时间戳正确。
@@ -1927,7 +2062,8 @@ libx264 / OpenH264 / libvpx 软编按 F17 与产品决策 Q497（"默认追求�
 | `docs/architecture/phase-12-duplicate-algorithm-card.md` | ✅ **已完成（2026-10-09）：整篇重写**，L0–L4 分层、判定结果直接落在 `media_locations`、删除三张 group 表、补 `hashAlgorithmVersion` 与 `duplicate_ignores` 语义 |
 | `docs/architecture/phase-12-duplicate-algorithm-card.md:9` | ✅ **已完成（2026-10-09，`:51`）**：删除计划约束从「必须覆盖整组」放宽为**子集关系**，并写明理由与旧 `INCOMPLETE_SELECTION` 的成因 |
 | `docs/architecture/phase-11-transcode-contract.md` | ✅ **已完成（2026-10-09，阶段 1 步骤 1–3）**："预设码率接线（G1/G8）"、"HDR（G2）"、"编码器回退（G6）"三节已改为已实现；"已知限制"两条已更新。**注**：本条原写的"**删除**多音轨保留需要多条 `EditedMediaItemSequence`"与"**删除**多轨需要 API 26+"，经 grep 核实**这两句从未出现在该契约文档中**（只存在于本设计稿的早期版本，见 §20 修正表）。§6.1 的 `OutputTarget` 折叠**留到阶段 2 步骤 5**（破坏性改动） |
-| `docs/architecture/phase-10-clips-contract.md` | ✅ **已完成（2026-10-09）**：已补「轨道白名单的来源（G11 / 阶段 2 步骤 7）」一节，写明 `FAST_MP4_MIME_TYPES` 的硬编码缺口与改为 muxer 反查的目标 |
+| `docs/architecture/phase-10-clips-contract.md` | ✅ **已完成（2026-10-09，阶段 2 步骤 8 收尾）**：「轨道白名单的来源」一节已从「【现状 — 缺陷】/【目标】」改写为「**【已实现】** + **【已实测】** + **【重要限制 — G27】**」；开头「快速模式仅接受平台 MP4 Muxer 支持的 AVC/HEVC/MPEG-4/AAC/MP3」也已改为「由 `ContainerMuxerFactory.supports(...)` 反查」 |
+| `docs/architecture/phase-11-transcode-contract.md`（步骤 8 追加） | ✅ **已完成（2026-10-09）**：「封装层」一节补「两个引擎共用同一份能力来源」与「G27」；「MP4 刻意不接管」的表述从「工厂返回 `null`」改为「取舍写在 `Media3ProcessingEngine`」；「无真机用例」一条按真机结果收窄为仅 `AacMuxer`（ADTS） |
 | `docs/09-tdd-phased-development-checklist.md:951-957` | ✅ **已完成（2026-10-09）**：任务 12.6 已按 D1 改为子集关系并列出必须重指向的七类引用、加「归并事务失败必须整体回滚」；任务 12.2 已改为 L0–L4、三元组缓存键，并补「同哈希不同算法版本」「同哈希不同文件大小」用例 |
 | `docs/09-tdd-phased-development-checklist.md:820-889`（Phase 11） | ✅ **已完成（2026-10-09）**：任务 11.6 已补「落点（裁决 D0）：该 UI 落在**处理中心**，不在整理页新建第二套配置界面；压缩与格式转换共用同一套配置与结果对比界面」 |
 | 新增 ADR | ✅ **已创建（2026-10-09，`docs/architecture/adr/`）**：`ADR-DEDUP-002-media-item-as-content-equivalence-class.md`、`ADR-RECYCLE-003-storage-backend.md`、`ADR-RECYCLE-004-delete-confirmation-by-ownership.md`、`ADR-DEDUP-003-similar-video-reopen-preconditions.md`、`ADR-TRANSCODE-002-dual-engine-boundary.md`（另有 `README.md` 索引） |

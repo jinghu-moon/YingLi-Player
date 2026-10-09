@@ -1,4 +1,4 @@
-package seeyuer.yingli.player.domain.transcode
+package seeyuer.yingli.player.domain.processing
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,19 +13,19 @@ import seeyuer.yingli.player.core.model.media.MediaItemId
  * 以及不支持的目标是否在规划阶段就被拒绝。真机上的实际回退行为由
  * `Media3FallbackMappingTest`（用真实的 `TransformationRequest`）覆盖。
  */
-class TranscodeFallbackContractTest {
+class ProcessingFallbackContractTest {
 
     @Test
     fun `every change code has an explicit confirmation verdict`() {
-        val requiresConfirmation = TranscodeChangeCode.entries.filter { it.requiresConfirmation() }.toSet()
+        val requiresConfirmation = ProcessingChangeCode.entries.filter { it.requiresConfirmation() }.toSet()
         assertEquals(
             setOf(
-                TranscodeChangeCode.EXTRA_AUDIO_TRACKS_REMOVED,
-                TranscodeChangeCode.SUBTITLES_NOT_EMBEDDED,
-                TranscodeChangeCode.HDR_TO_SDR,
-                TranscodeChangeCode.FRAME_RATE_CAPPED,
-                TranscodeChangeCode.VIDEO_CODEC_FALLBACK,
-                TranscodeChangeCode.AUDIO_CODEC_FALLBACK,
+                ProcessingChangeCode.EXTRA_AUDIO_TRACKS_REMOVED,
+                ProcessingChangeCode.SUBTITLES_NOT_EMBEDDED,
+                ProcessingChangeCode.HDR_TO_SDR,
+                ProcessingChangeCode.FRAME_RATE_CAPPED,
+                ProcessingChangeCode.VIDEO_CODEC_FALLBACK,
+                ProcessingChangeCode.AUDIO_CODEC_FALLBACK,
             ),
             requiresConfirmation,
         )
@@ -33,37 +33,37 @@ class TranscodeFallbackContractTest {
 
     @Test
     fun `fallback change codes demand confirmation through the change and the plan`() {
-        // TranscodeChange 不再自带布尔字段：确认语义唯一来自 code。
-        assertTrue(TranscodeChange(TranscodeChangeCode.VIDEO_CODEC_FALLBACK).requiresConfirmation)
-        assertTrue(TranscodeChange(TranscodeChangeCode.AUDIO_CODEC_FALLBACK).requiresConfirmation)
-        assertFalse(TranscodeChange(TranscodeChangeCode.RESOLUTION_REDUCED).requiresConfirmation)
+        // ProcessingChange 不再自带布尔字段：确认语义唯一来自 code。
+        assertTrue(ProcessingChange(ProcessingChangeCode.VIDEO_CODEC_FALLBACK).requiresConfirmation)
+        assertTrue(ProcessingChange(ProcessingChangeCode.AUDIO_CODEC_FALLBACK).requiresConfirmation)
+        assertFalse(ProcessingChange(ProcessingChangeCode.RESOLUTION_REDUCED).requiresConfirmation)
     }
 
     @Test
     fun `completed result carrying a fallback asks for confirmation`() {
-        assertFalse(TranscodeEngineResult.Completed().requiresConfirmation)
+        assertFalse(ProcessingEngineResult.Completed().requiresConfirmation)
         assertTrue(
-            TranscodeEngineResult.Completed(setOf(TranscodeChangeCode.VIDEO_CODEC_FALLBACK)).requiresConfirmation,
+            ProcessingEngineResult.Completed(setOf(ProcessingChangeCode.VIDEO_CODEC_FALLBACK)).requiresConfirmation,
         )
         assertTrue(
-            TranscodeEngineResult.Completed(
-                setOf(TranscodeChangeCode.VIDEO_CODEC_FALLBACK, TranscodeChangeCode.AUDIO_CODEC_FALLBACK),
+            ProcessingEngineResult.Completed(
+                setOf(ProcessingChangeCode.VIDEO_CODEC_FALLBACK, ProcessingChangeCode.AUDIO_CODEC_FALLBACK),
             ).requiresConfirmation,
         )
     }
 
     @Test
     fun `planner rejects a target video codec the device cannot encode`() {
-        val preset = TranscodePresets.Compatible.copy(targetVideoMimeType = "video/hevc")
+        val target = OutputTargets.Compatible.copy(videoCodecMimeType = "video/hevc")
 
-        val result = DefaultTranscodePlanner.plan(
+        val result = DefaultProcessingPlanner.plan(
             source(),
             capabilities(), // 只有 video/avc 编码器：与阶段 0 实测「HEVC 编码器不是平台必需项」一致
-            preset,
+            target,
             Long.MAX_VALUE,
         )
 
-        assertEquals(TranscodePlanningResult.Rejected("VIDEO_ENCODER_UNAVAILABLE"), result)
+        assertEquals(ProcessingPlanningResult.Rejected("VIDEO_ENCODER_UNAVAILABLE"), result)
     }
 
     private fun capabilities(encoders: List<EncoderCapability> = listOf(

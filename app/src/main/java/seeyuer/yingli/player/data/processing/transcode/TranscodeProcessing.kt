@@ -16,26 +16,26 @@ import seeyuer.yingli.player.domain.processing.ProcessingProjectType
 import seeyuer.yingli.player.domain.processing.ProcessingRepository
 import seeyuer.yingli.player.domain.processing.ProcessingTask
 import seeyuer.yingli.player.domain.processing.ProcessingTaskId
-import seeyuer.yingli.player.domain.transcode.DefaultTranscodePlanner
-import seeyuer.yingli.player.domain.transcode.MediaCapabilityProbe
-import seeyuer.yingli.player.domain.transcode.OutputVerifier
-import seeyuer.yingli.player.domain.transcode.TranscodeEngine
-import seeyuer.yingli.player.domain.transcode.TranscodeEngineResult
-import seeyuer.yingli.player.domain.transcode.TranscodePlan
-import seeyuer.yingli.player.domain.transcode.TranscodePlanningResult
-import seeyuer.yingli.player.domain.transcode.TranscodePresets
-import seeyuer.yingli.player.domain.transcode.TranscodeQueue
+import seeyuer.yingli.player.domain.processing.DefaultProcessingPlanner
+import seeyuer.yingli.player.domain.processing.MediaCapabilityProbe
+import seeyuer.yingli.player.domain.processing.OutputVerifier
+import seeyuer.yingli.player.domain.processing.ProcessingEngine
+import seeyuer.yingli.player.domain.processing.ProcessingEngineResult
+import seeyuer.yingli.player.domain.processing.ProcessingPlan
+import seeyuer.yingli.player.domain.processing.ProcessingPlanningResult
+import seeyuer.yingli.player.domain.processing.OutputTargets
+import seeyuer.yingli.player.domain.processing.ProcessingQueue
 
 class TranscodeCoordinator(
     private val repository: ProcessingRepository,
     private val idGenerator: IdGenerator,
     private val clock: AppClock,
-) : TranscodeQueue {
-    private val mutablePlans = MutableStateFlow<Map<ProcessingProjectId, TranscodePlan>>(emptyMap())
+) : ProcessingQueue {
+    private val mutablePlans = MutableStateFlow<Map<ProcessingProjectId, ProcessingPlan>>(emptyMap())
     override val pendingPlans = mutablePlans.asStateFlow()
 
     override suspend fun enqueue(
-        plan: TranscodePlan,
+        plan: ProcessingPlan,
         destructiveChangesConfirmed: Boolean,
     ): ProcessingProjectId {
         require(!plan.requiresConfirmation || destructiveChangesConfirmed)
@@ -47,7 +47,7 @@ class TranscodeCoordinator(
             inputMediaIds = listOf(plan.source.mediaId),
             outputPolicy = listOf(
                 POLICY_PREFIX,
-                plan.preset.id.value,
+                plan.target.id.value,
                 encode(plan.source.uri),
                 if (destructiveChangesConfirmed) "1" else "0",
             ).joinToString(SEPARATOR),
@@ -64,7 +64,7 @@ class TranscodeCoordinator(
         return projectId
     }
 
-    override suspend fun plan(projectId: ProcessingProjectId): TranscodePlan? = mutablePlans.value[projectId]
+    override suspend fun plan(projectId: ProcessingProjectId): ProcessingPlan? = mutablePlans.value[projectId]
 
     companion object {
         const val POLICY_PREFIX = "TRANSCODE"
@@ -82,7 +82,7 @@ class TranscodeCoordinator(
 class TranscodeProcessingExecutor(
     private val processingRepository: ProcessingRepository,
     private val probe: MediaCapabilityProbe,
-    private val engine: TranscodeEngine,
+    private val engine: ProcessingEngine,
     private val verifier: OutputVerifier,
     private val artifacts: ProcessingArtifactStore,
     private val availableBytes: () -> Long,
@@ -97,7 +97,7 @@ class TranscodeProcessingExecutor(
         if (policy.size != 4 || policy[0] != TranscodeCoordinator.POLICY_PREFIX) {
             return ProcessingExecutionResult.Failure("INVALID_TRANSCODE_POLICY")
         }
-        val preset = TranscodePresets.all.firstOrNull { it.id.value == policy[1] }
+        val preset = OutputTargets.all.firstOrNull { it.id.value == policy[1] }
             ?: return ProcessingExecutionResult.Failure("PRESET_NOT_FOUND")
         val sourceUri = TranscodeCoordinator.decode(policy[2])
             ?: return ProcessingExecutionResult.Failure("INVALID_TRANSCODE_SOURCE")
@@ -107,19 +107,19 @@ class TranscodeProcessingExecutor(
         onProgress(ProcessingProgress("probe", 0))
         val source = probe.source(mediaId, sourceUri, task.operationKey)
             ?: return ProcessingExecutionResult.Failure("PROBE_FAILED")
-        val planned = DefaultTranscodePlanner.plan(source, probe.deviceCapabilities(), preset, availableBytes())
-        val plan = (planned as? TranscodePlanningResult.Ready)?.plan
-            ?: return ProcessingExecutionResult.Failure((planned as TranscodePlanningResult.Rejected).code)
+        val planned = DefaultProcessingPlanner.plan(source, probe.deviceCapabilities(), preset, availableBytes())
+        val plan = (planned as? ProcessingPlanningResult.Ready)?.plan
+            ?: return ProcessingExecutionResult.Failure((planned as ProcessingPlanningResult.Rejected).code)
         if (plan.requiresConfirmation && !confirmed) {
             return ProcessingExecutionResult.Failure("DEGRADATION_CONFIRMATION_REQUIRED")
         }
         val artifact = artifacts.allocate(task.id, plan.outputDisplayName)
         return try {
-            val result = engine.transcode(plan, artifact.temporaryPath) { fraction ->
+            val result = engine.process(plan, artifact.temporaryPath) { fraction ->
                 onProgress(ProcessingProgress("transcode", (fraction * PROGRESS_TOTAL).toLong(), PROGRESS_TOTAL))
             }
             when (result) {
-                is TranscodeEngineResult.Completed -> {
+                is ProcessingEngineResult.Completed -> {
                     // G6：库在编码格式被静默回退时**依然报告成功**。用户点的是「HEVC」，
                     // 拿到的却是 H.264，这不是一个可以提交的结果——「输出成功」不能覆盖
                     // 「输出不是你要求的东西」。确认前置检查（上面那次）管不到运行期才发现
@@ -138,11 +138,11 @@ class TranscodeProcessingExecutor(
                         }
                     }
                 }
-                is TranscodeEngineResult.Failed -> {
+                is ProcessingEngineResult.Failed -> {
                     artifacts.abort(artifact)
                     ProcessingExecutionResult.Failure(result.errorCode)
                 }
-                TranscodeEngineResult.Canceled -> {
+                ProcessingEngineResult.Canceled -> {
                     artifacts.abort(artifact)
                     ProcessingExecutionResult.Canceled
                 }

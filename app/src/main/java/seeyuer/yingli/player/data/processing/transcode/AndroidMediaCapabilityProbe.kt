@@ -15,13 +15,13 @@ import kotlinx.coroutines.withContext
 import seeyuer.yingli.player.core.common.AppClock
 import seeyuer.yingli.player.core.common.AppDispatchers
 import seeyuer.yingli.player.core.model.media.MediaItemId
-import seeyuer.yingli.player.domain.transcode.DeviceMediaCapabilities
-import seeyuer.yingli.player.domain.transcode.EncoderCapability
-import seeyuer.yingli.player.domain.transcode.HdrFormat
-import seeyuer.yingli.player.domain.transcode.MediaCapabilityProbe
-import seeyuer.yingli.player.domain.transcode.MediaTrackInfo
-import seeyuer.yingli.player.domain.transcode.MediaTrackType
-import seeyuer.yingli.player.domain.transcode.SourceMediaInfo
+import seeyuer.yingli.player.domain.processing.DeviceMediaCapabilities
+import seeyuer.yingli.player.domain.processing.EncoderCapability
+import seeyuer.yingli.player.domain.processing.HdrFormat
+import seeyuer.yingli.player.domain.processing.MediaCapabilityProbe
+import seeyuer.yingli.player.domain.processing.MediaTrackInfo
+import seeyuer.yingli.player.domain.processing.MediaTrackType
+import seeyuer.yingli.player.domain.processing.SourceMediaInfo
 
 @OptIn(UnstableApi::class)
 class AndroidMediaCapabilityProbe(

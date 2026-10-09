@@ -42,13 +42,13 @@ import seeyuer.yingli.player.domain.processing.ProcessingPresentationMapper
 import seeyuer.yingli.player.domain.processing.ProcessingRepository
 import seeyuer.yingli.player.domain.processing.ProcessingTask
 import seeyuer.yingli.player.domain.processing.ProcessingTaskId
-import seeyuer.yingli.player.domain.transcode.DefaultTranscodePlanner
-import seeyuer.yingli.player.domain.transcode.MediaCapabilityProbe
-import seeyuer.yingli.player.domain.transcode.TranscodePlan
-import seeyuer.yingli.player.domain.transcode.TranscodePlanningResult
-import seeyuer.yingli.player.domain.transcode.TranscodePreset
-import seeyuer.yingli.player.domain.transcode.TranscodePresets
-import seeyuer.yingli.player.domain.transcode.TranscodeQueue
+import seeyuer.yingli.player.domain.processing.DefaultProcessingPlanner
+import seeyuer.yingli.player.domain.processing.MediaCapabilityProbe
+import seeyuer.yingli.player.domain.processing.ProcessingPlan
+import seeyuer.yingli.player.domain.processing.ProcessingPlanningResult
+import seeyuer.yingli.player.domain.processing.OutputTarget
+import seeyuer.yingli.player.domain.processing.OutputTargets
+import seeyuer.yingli.player.domain.processing.ProcessingQueue
 
 data class ProcessingTaskItem(
     val task: ProcessingTask,
@@ -62,9 +62,9 @@ data class ProcessingUiState(
     val editor: ClipEditState? = null,
     val exporting: Boolean = false,
     val timelineFrames: List<TimelineFrame> = emptyList(),
-    val transcodePreset: TranscodePreset = TranscodePresets.Balanced,
-    val transcodePlan: TranscodePlan? = null,
-    val transcodePlanning: Boolean = false,
+    val outputTarget: OutputTarget = OutputTargets.Balanced,
+    val processingPlan: ProcessingPlan? = null,
+    val processingPlanning: Boolean = false,
     val transcodeErrorCode: String? = null,
 )
 
@@ -79,15 +79,15 @@ class ProcessingViewModel(
     private val clock: AppClock,
     private val timelineFrameProvider: TimelineFrameProvider,
     private val mediaCapabilityProbe: MediaCapabilityProbe,
-    private val transcodeQueue: TranscodeQueue,
+    private val processingQueue: ProcessingQueue,
     private val availableBytes: () -> Long,
 ) : ViewModel() {
     private val editor = MutableStateFlow<ClipEditState?>(null)
     private val exporting = MutableStateFlow(false)
     private val timelineFrames = MutableStateFlow<List<TimelineFrame>>(emptyList())
-    private val transcodePreset = MutableStateFlow(TranscodePresets.Balanced)
-    private val transcodePlan = MutableStateFlow<TranscodePlan?>(null)
-    private val transcodePlanning = MutableStateFlow(false)
+    private val outputTarget = MutableStateFlow(OutputTargets.Balanced)
+    private val processingPlan = MutableStateFlow<ProcessingPlan?>(null)
+    private val processingPlanning = MutableStateFlow(false)
     private val transcodeErrorCode = MutableStateFlow<String?>(null)
     private val saveRequests = MutableSharedFlow<ClipProject>(
         extraBufferCapacity = 1,
@@ -97,9 +97,9 @@ class ProcessingViewModel(
         .map { result -> (result as? LibraryResult.Success)?.value?.items.orEmpty() }
     private val editorSnapshot = combine(editor, exporting, timelineFrames, ::EditorSnapshot)
     private val transcodeSnapshot = combine(
-        transcodePreset,
-        transcodePlan,
-        transcodePlanning,
+        outputTarget,
+        processingPlan,
+        processingPlanning,
         transcodeErrorCode,
         ::TranscodeSnapshot,
     )
@@ -118,9 +118,9 @@ class ProcessingViewModel(
             editor = editorState.editor,
             exporting = editorState.exporting,
             timelineFrames = editorState.frames,
-            transcodePreset = transcodeState.preset,
-            transcodePlan = transcodeState.plan,
-            transcodePlanning = transcodeState.planning,
+            outputTarget = transcodeState.preset,
+            processingPlan = transcodeState.plan,
+            processingPlanning = transcodeState.planning,
             transcodeErrorCode = transcodeState.errorCode,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), ProcessingUiState())
@@ -223,48 +223,48 @@ class ProcessingViewModel(
     fun retry(id: ProcessingTaskId) = controller.retry(id)
     fun clearHistory() = viewModelScope.launch { processingRepository.clearTerminal() }
 
-    fun setTranscodePreset(preset: TranscodePreset) {
-        transcodePreset.value = preset
-        transcodePlan.value = null
+    fun setOutputTarget(preset: OutputTarget) {
+        outputTarget.value = preset
+        processingPlan.value = null
         transcodeErrorCode.value = null
     }
 
     fun planTranscode(media: LibraryMedia) {
-        if (transcodePlanning.value) return
+        if (processingPlanning.value) return
         viewModelScope.launch {
-            transcodePlanning.value = true
-            transcodePlan.value = null
+            processingPlanning.value = true
+            processingPlan.value = null
             transcodeErrorCode.value = null
             val source = mediaCapabilityProbe.source(media.id, media.uri.value, media.fileName)
             val result = if (source == null) {
-                TranscodePlanningResult.Rejected("PROBE_FAILED")
+                ProcessingPlanningResult.Rejected("PROBE_FAILED")
             } else {
-                DefaultTranscodePlanner.plan(
+                DefaultProcessingPlanner.plan(
                     source,
                     mediaCapabilityProbe.deviceCapabilities(),
-                    transcodePreset.value,
+                    outputTarget.value,
                     availableBytes(),
                 )
             }
             when (result) {
-                is TranscodePlanningResult.Ready -> transcodePlan.value = result.plan
-                is TranscodePlanningResult.Rejected -> transcodeErrorCode.value = result.code
+                is ProcessingPlanningResult.Ready -> processingPlan.value = result.plan
+                is ProcessingPlanningResult.Rejected -> transcodeErrorCode.value = result.code
             }
-            transcodePlanning.value = false
+            processingPlanning.value = false
         }
     }
 
-    fun dismissTranscodePlan() {
-        transcodePlan.value = null
+    fun dismissProcessingPlan() {
+        processingPlan.value = null
         transcodeErrorCode.value = null
     }
 
     fun enqueueTranscode(destructiveChangesConfirmed: Boolean) {
-        val plan = transcodePlan.value ?: return
+        val plan = processingPlan.value ?: return
         if (plan.requiresConfirmation && !destructiveChangesConfirmed) return
         viewModelScope.launch {
-            runCatching { transcodeQueue.enqueue(plan, destructiveChangesConfirmed) }
-                .onSuccess { transcodePlan.value = null }
+            runCatching { processingQueue.enqueue(plan, destructiveChangesConfirmed) }
+                .onSuccess { processingPlan.value = null }
                 .onFailure { transcodeErrorCode.value = "QUEUE_FAILED" }
         }
     }
@@ -287,8 +287,8 @@ class ProcessingViewModel(
     )
 
     private data class TranscodeSnapshot(
-        val preset: TranscodePreset,
-        val plan: TranscodePlan?,
+        val preset: OutputTarget,
+        val plan: ProcessingPlan?,
         val planning: Boolean,
         val errorCode: String?,
     )
@@ -320,7 +320,7 @@ class ProcessingViewModel(
             clock: AppClock,
             timelineFrameProvider: TimelineFrameProvider,
             mediaCapabilityProbe: MediaCapabilityProbe,
-            transcodeQueue: TranscodeQueue,
+            processingQueue: ProcessingQueue,
             availableBytes: () -> Long,
         ) = viewModelFactory {
             initializer {
@@ -334,7 +334,7 @@ class ProcessingViewModel(
                     clock,
                     timelineFrameProvider,
                     mediaCapabilityProbe,
-                    transcodeQueue,
+                    processingQueue,
                     availableBytes,
                 )
             }

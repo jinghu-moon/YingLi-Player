@@ -3,7 +3,7 @@ package seeyuer.yingli.player.data.processing.transcode
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.TransformationRequest
-import seeyuer.yingli.player.domain.transcode.TranscodeChangeCode
+import seeyuer.yingli.player.domain.processing.ProcessingChangeCode
 
 /**
  * 把 Media3 的「回退通知」翻译成领域层的后果码（G6 的前半）。
@@ -23,16 +23,16 @@ internal object Media3FallbackMapping {
      * @param fallback 库**实际采用**的转换，即 `onFallbackApplied` 的第三个参数。
      */
     @OptIn(UnstableApi::class)
-    fun changes(original: TransformationRequest, fallback: TransformationRequest): Set<TranscodeChangeCode> =
+    fun changes(original: TransformationRequest, fallback: TransformationRequest): Set<ProcessingChangeCode> =
         buildSet {
             // 只有「明确请求过、并且被换成了别的」才算回退。
             // null 表示「跟随输入推断」（TransformationRequest.Builder 的默认值），
             // 此时并没有对用户做出任何编码格式承诺，换成什么都不是回退。
             if (original.videoMimeType != null && original.videoMimeType != fallback.videoMimeType) {
-                add(TranscodeChangeCode.VIDEO_CODEC_FALLBACK)
+                add(ProcessingChangeCode.VIDEO_CODEC_FALLBACK)
             }
             if (original.audioMimeType != null && original.audioMimeType != fallback.audioMimeType) {
-                add(TranscodeChangeCode.AUDIO_CODEC_FALLBACK)
+                add(ProcessingChangeCode.AUDIO_CODEC_FALLBACK)
             }
         }
 }

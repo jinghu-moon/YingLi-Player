@@ -217,31 +217,19 @@ data class ClipExportPlan(
     }
 }
 
-data class ClipSource(
-    val uri: String,
-    val durationMillis: Long,
-    val hasVideo: Boolean,
-    val hasAudio: Boolean,
-)
-
-data class ClipCapabilities(
-    val fastCut: Boolean,
-    val accurateCut: Boolean,
-    val diagnosticCode: String? = null,
-)
-
-sealed interface ClipEngineResult {
-    data class Success(val actualStartMillis: Long, val actualEndMillis: Long) : ClipEngineResult
-    data class Unsupported(val diagnosticCode: String) : ClipEngineResult
-    data class Failed(val diagnosticCode: String) : ClipEngineResult
-    data object Canceled : ClipEngineResult
-}
-
-interface ClipEngine {
-    suspend fun probe(uri: String): Pair<ClipSource, ClipCapabilities>?
-    suspend fun fastCut(source: ClipSource, segment: ClipSegment, outputPath: String): ClipEngineResult
-    suspend fun accurateCut(source: ClipSource, segment: ClipSegment, outputPath: String): ClipEngineResult
-}
+/**
+ * 切片不再有自己的引擎抽象。
+ *
+ * 原先这里定义过 `ClipEngine`（`probe` / `fastCut` / `accurateCut`）与配套的 `ClipSource`、
+ * `ClipCapabilities`、`ClipEngineResult`。它们是**第四套与处理管线平行的抽象**：
+ * `fastCut` 与 `InAppRemuxEngine` 做的是同一件事（`MediaExtractor` + `Muxer` 搬运），
+ * `accurateCut` 与 `Media3ProcessingEngine` 做的是同一件事（`Transformer` 重编码），
+ * 而 `probe` 与 `MediaCapabilityProbe.source` 重复。
+ *
+ * 2026-10-09 阶段 2 步骤 6 已把它们合并到统一的 `ProcessingEngine` + planner 路由
+ * （设计稿 §4.3、§6.2）：切片 = 「目标容器 MP4、codec 同源、带时间区间」的一个 `ProcessingPlan`，
+ * 快速与精确的差别只是 `OutputTarget.frameAccurateCut`。此处不留兼容层。
+ */
 
 data class TimelineFrameRequest(
     val sourceUri: String,

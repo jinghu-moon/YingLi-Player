@@ -197,6 +197,28 @@
 
 > **修改测试是因为预期行为发生了正确变化，而不是为了让错误实现通过测试。**
 
+### 设备仪器化测试的前提（小米 / MIUI）
+
+在 MIUI 设备上运行 Compose UI 用例（`androidx.compose.ui.test.junit4.*`）时，测试框架需要启动测试宿主 Activity（`androidx.activity.ComponentActivity`）。
+MIUI 的后台弹出界面管控会把这次启动**静默拒绝**，用例于是永远卡在 `waitForIdle`（`am instrument` 只打印 `INSTRUMENTATION_STATUS_CODE: 1`，不再前进），而**不是**测试代码有问题。
+
+一次性修复（无需 root）：
+
+```powershell
+adb shell appops set seeyuer.yingli.player 10021 allow   # 10021 = MIUI「后台弹出界面」
+```
+
+自查与复现：
+
+```powershell
+adb shell appops get seeyuer.yingli.player 10021          # 期望 allow；ignore 即会被拦截
+adb shell logcat -d | Select-String "ComponentActivity"   # result code=102 即被拦截
+```
+
+`connectedDebugAndroidTest`（Gradle）会先强停应用，因此同样受该管控影响；CI/本机排查阶段可直接用
+`adb shell am instrument -w -r -e class <FQCN> seeyuer.yingli.player.test/androidx.test.runner.AndroidJUnitRunner`
+并**先手动把应用切到前台**，作为该托管不可用时的替代路径。
+
 ### 验证证据
 
 完成修改时，应明确说明：

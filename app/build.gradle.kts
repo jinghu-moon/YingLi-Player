@@ -135,6 +135,9 @@ dependencies {
     implementation(libs.androidx.media3.transformer)
     implementation(libs.androidx.media3.inspector.frame)
     implementation(libs.androidx.media3.effect)
+    // 步骤 7（G4）：`Transformer` 只带 MP4 封装，WebM/Ogg/ADTS 的 muxer 在 media3-muxer 里。
+    // 此前它只是 media3-transformer 的传递依赖，本步骤起由我们直接使用它的公开 API。
+    implementation(libs.androidx.media3.muxer)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)

@@ -19,12 +19,12 @@ import seeyuer.yingli.player.Stage0EvidenceRecorder
 import seeyuer.yingli.player.core.common.DefaultAppDispatchers
 import seeyuer.yingli.player.core.common.SystemAppClock
 import seeyuer.yingli.player.core.model.media.MediaItemId
-import seeyuer.yingli.player.domain.transcode.DefaultTranscodePlanner
-import seeyuer.yingli.player.domain.transcode.EncoderCapability
-import seeyuer.yingli.player.domain.transcode.TranscodeEngineResult
-import seeyuer.yingli.player.domain.transcode.TranscodePlanningResult
-import seeyuer.yingli.player.domain.transcode.TranscodePreset
-import seeyuer.yingli.player.domain.transcode.TranscodePresets
+import seeyuer.yingli.player.domain.processing.DefaultProcessingPlanner
+import seeyuer.yingli.player.domain.processing.EncoderCapability
+import seeyuer.yingli.player.domain.processing.ProcessingEngineResult
+import seeyuer.yingli.player.domain.processing.ProcessingPlanningResult
+import seeyuer.yingli.player.domain.processing.OutputTarget
+import seeyuer.yingli.player.domain.processing.OutputTargets
 import java.io.File
 
 /**
@@ -176,7 +176,7 @@ class TranscodeDeviceCapabilityMeasurementTest {
         report.appendLine("  \"presets\": [")
 
         val rows = mutableListOf<String>()
-        for (preset in TranscodePresets.all) {
+        for (preset in OutputTargets.all) {
             rows += measurePreset(preset, sourceFile, source!!, capabilities)
         }
         report.appendLine(rows.joinToString(",\n"))
@@ -186,48 +186,48 @@ class TranscodeDeviceCapabilityMeasurementTest {
 
         // 测量本身有效：三档预设都跑出了结果（成功或带结构化错误码的失败），
         // 而不是抛异常把整轮测量炸掉。
-        assertTrue("三档预设的测量行数不对", rows.size == TranscodePresets.all.size)
+        assertTrue("三档预设的测量行数不对", rows.size == OutputTargets.all.size)
     }
 
     private suspend fun measurePreset(
-        preset: TranscodePreset,
+        preset: OutputTarget,
         sourceFile: File,
-        source: seeyuer.yingli.player.domain.transcode.SourceMediaInfo,
-        capabilities: seeyuer.yingli.player.domain.transcode.DeviceMediaCapabilities,
+        source: seeyuer.yingli.player.domain.processing.SourceMediaInfo,
+        capabilities: seeyuer.yingli.player.domain.processing.DeviceMediaCapabilities,
     ): String {
         val outFile = File(workDir, "out_${preset.id.value}.mp4")
-        val plan = DefaultTranscodePlanner.plan(
+        val plan = DefaultProcessingPlanner.plan(
             source = source,
             capabilities = capabilities,
-            preset = preset,
+            target = preset,
             availableBytes = workDir.usableSpace,
         )
         val plannerTarget = when (plan) {
-            is TranscodePlanningResult.Ready -> "\"${plan.plan.targetWidth}x${plan.plan.targetHeight}\""
-            is TranscodePlanningResult.Rejected -> null
+            is ProcessingPlanningResult.Ready -> "\"${plan.plan.targetWidth}x${plan.plan.targetHeight}\""
+            is ProcessingPlanningResult.Rejected -> null
         }
-        if (plan is TranscodePlanningResult.Rejected) {
+        if (plan is ProcessingPlanningResult.Rejected) {
             return """
     { "preset": "${preset.id.value}", "plannerRejected": "${plan.code}" }""".trimIndent()
         }
-        val ready = plan as TranscodePlanningResult.Ready
+        val ready = plan as ProcessingPlanningResult.Ready
 
-        val engine = Media3TranscodeEngine(context, dispatchers)
-        val result = engine.transcode(ready.plan, outFile.absolutePath) { }
-        val verification = if (result is TranscodeEngineResult.Completed) {
+        val engine = Media3ProcessingEngine(context, dispatchers)
+        val result = engine.process(ready.plan, outFile.absolutePath) { }
+        val verification = if (result is ProcessingEngineResult.Completed) {
             MediaExtractorOutputVerifier(dispatchers).verify(outFile.absolutePath, ready.plan)
         } else {
             null
         }
-        val outFacts = if (result is TranscodeEngineResult.Completed) readTrackFacts(outFile) else null
+        val outFacts = if (result is ProcessingEngineResult.Completed) readTrackFacts(outFile) else null
 
         return buildString {
             append("    { ")
             append("\"preset\": \"${preset.id.value}\", ")
-            append("\"requestedVideoBitrate\": ${preset.targetVideoBitrate}, ")
+            append("\"requestedVideoBitrate\": ${preset.videoBitrate}, ")
             append("\"maximumLongEdge\": ${preset.maximumLongEdge}, ")
             append("\"plannerTarget\": $plannerTarget, ")
-            append("\"engineResult\": \"${result::class.simpleName}${if (result is TranscodeEngineResult.Failed) "(${result.errorCode})" else ""}\", ")
+            append("\"engineResult\": \"${result::class.simpleName}${if (result is ProcessingEngineResult.Failed) "(${result.errorCode})" else ""}\", ")
             append("\"outputFacts\": ${outFacts?.toJson() ?: "null"}, ")
             append("\"verifier\": ${verification?.toJson() ?: "null"}, ")
             append("\"outputBytes\": ${if (outFile.isFile) outFile.length() else 0}, ")
@@ -450,7 +450,7 @@ private fun MediaFormat.getIntOrNull(key: String): Int? =
 private fun MediaFormat.getLongOrNull(key: String): Long? =
     if (containsKey(key)) runCatching { getLong(key) }.getOrNull() else null
 
-private fun seeyuer.yingli.player.domain.transcode.DeviceMediaCapabilities.toJson(): String =
+private fun seeyuer.yingli.player.domain.processing.DeviceMediaCapabilities.toJson(): String =
     buildString {
         append("{ \"capturedAt\": $capturedAtEpochMillis, \"diagnostics\": ")
         append(diagnosticCodes.joinToString(",", "[", "]") { "\"$it\"" })
@@ -463,7 +463,7 @@ private fun EncoderCapability.toJson(): String =
     "{ \"mime\": \"$mimeType\", \"max\": \"${maxWidth}x$maxHeight\", " +
         "\"maxFps\": $maxFrameRate, \"supportsHdr\": $supportsHdr, \"hw\": $hardwareAccelerated }"
 
-private fun seeyuer.yingli.player.domain.transcode.OutputVerification.toJson(): String =
+private fun seeyuer.yingli.player.domain.processing.OutputVerification.toJson(): String =
     "{ \"valid\": $valid, \"errorCodes\": " +
         errorCodes.joinToString(",", "[", "]") { "\"$it\"" } +
         ", \"width\": ${width ?: "null"}, \"height\": ${height ?: "null"}, " +

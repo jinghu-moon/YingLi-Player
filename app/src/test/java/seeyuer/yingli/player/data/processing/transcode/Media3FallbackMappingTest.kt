@@ -4,7 +4,7 @@ import androidx.media3.transformer.TransformationRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import seeyuer.yingli.player.domain.transcode.TranscodeChangeCode
+import seeyuer.yingli.player.domain.processing.ProcessingChangeCode
 
 /**
  * G6 的核心测试：Media3 请求了不支持的输出编码格式时会静默回退，
@@ -25,7 +25,7 @@ class Media3FallbackMappingTest {
             fallback = request(video = "video/avc"),
         )
 
-        assertEquals(setOf(TranscodeChangeCode.VIDEO_CODEC_FALLBACK), changes)
+        assertEquals(setOf(ProcessingChangeCode.VIDEO_CODEC_FALLBACK), changes)
     }
 
     @Test
@@ -35,7 +35,7 @@ class Media3FallbackMappingTest {
             fallback = request(audio = "audio/mp4a-latm"),
         )
 
-        assertEquals(setOf(TranscodeChangeCode.AUDIO_CODEC_FALLBACK), changes)
+        assertEquals(setOf(ProcessingChangeCode.AUDIO_CODEC_FALLBACK), changes)
     }
 
     @Test
@@ -46,7 +46,7 @@ class Media3FallbackMappingTest {
         )
 
         assertEquals(
-            setOf(TranscodeChangeCode.VIDEO_CODEC_FALLBACK, TranscodeChangeCode.AUDIO_CODEC_FALLBACK),
+            setOf(ProcessingChangeCode.VIDEO_CODEC_FALLBACK, ProcessingChangeCode.AUDIO_CODEC_FALLBACK),
             changes,
         )
     }
@@ -80,7 +80,7 @@ class Media3FallbackMappingTest {
             fallback = request(video = "video/avc", audio = "audio/mp4a-latm"),
         )
 
-        assertEquals(setOf(TranscodeChangeCode.VIDEO_CODEC_FALLBACK), changes)
+        assertEquals(setOf(ProcessingChangeCode.VIDEO_CODEC_FALLBACK), changes)
     }
 
     private fun request(video: String? = null, audio: String? = null): TransformationRequest =

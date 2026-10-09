@@ -9,13 +9,13 @@ import androidx.media3.transformer.Codec
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.VideoEncoderSettings
-import seeyuer.yingli.player.domain.transcode.TranscodeChangeCode
-import seeyuer.yingli.player.domain.transcode.TranscodePlan
+import seeyuer.yingli.player.domain.processing.ProcessingChangeCode
+import seeyuer.yingli.player.domain.processing.ProcessingPlan
 
 /**
- * G1 的唯一接线点：把 `TranscodePreset` 的目标码率送进 Media3 的编码器设置。
+ * G1 的唯一接线点：把 `OutputTarget` 的目标码率送进 Media3 的编码器设置。
  *
- * 修复前 `Media3TranscodeEngine` 只设了容器与 mime，**没有设码率**，实际码率完全由
+ * 修复前 `Media3ProcessingEngine` 只设了容器与 mime，**没有设码率**，实际码率完全由
  * `DefaultEncoderFactory.getSuggestedBitrate()` 按设备能力推导，于是三档预设在码率维度上
  * 完全等价。真机实测（`docs/architecture/Organizing-Page-Function-Design.md` §20.1.2）：
  * `compatible_mp4` 与 `balanced_mp4` 输出字节数完全相同（473 598），
@@ -33,18 +33,22 @@ import seeyuer.yingli.player.domain.transcode.TranscodePlan
  */
 @OptIn(UnstableApi::class)
 internal object Media3EncoderSettings {
-    fun video(plan: TranscodePlan): VideoEncoderSettings =
-        VideoEncoderSettings.Builder()
-            .setBitrate(plan.preset.targetVideoBitrate)
+    fun video(plan: ProcessingPlan): VideoEncoderSettings {
+        val builder = VideoEncoderSettings.Builder()
             .setBitrateMode(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
-            .build()
+        // `OutputTarget` 的码率可空（设计稿 §4.2）：为空表示「只换容器/尺寸，不约束码率」。
+        // 此时**不下发**码率，交给库按设备能力推导，而不是把 0 当成用户请求的真值下发。
+        plan.target.videoBitrate?.let(builder::setBitrate)
+        return builder.build()
+    }
 
-    fun audio(plan: TranscodePlan): AudioEncoderSettings =
-        AudioEncoderSettings.Builder()
-            .setBitrate(plan.preset.targetAudioBitrate)
-            .build()
+    fun audio(plan: ProcessingPlan): AudioEncoderSettings {
+        val builder = AudioEncoderSettings.Builder()
+        plan.target.audioBitrate?.let(builder::setBitrate)
+        return builder.build()
+    }
 
-    fun encoderFactory(context: Context, plan: TranscodePlan): Codec.EncoderFactory =
+    fun encoderFactory(context: Context, plan: ProcessingPlan): Codec.EncoderFactory =
         DefaultEncoderFactory.Builder(context)
             .setRequestedVideoEncoderSettings(video(plan))
             .setRequestedAudioEncoderSettings(audio(plan))
@@ -53,7 +57,7 @@ internal object Media3EncoderSettings {
     /**
      * G2 的唯一接线点：把「计划是否要把 HDR 转成 SDR」映射成 [Composition.HdrMode]。
      *
-     * 修复前 `Media3TranscodeEngine` 见到 `HDR_TO_SDR` 就直接
+     * 修复前 `Media3ProcessingEngine` 见到 `HDR_TO_SDR` 就直接
      * `Failed("HDR_TONE_MAPPING_UNAVAILABLE")`，而 `supportsHdr` 又硬编码为 `false`，
      * 于是每一个 HDR 源都必然走进那条失败分支——HDR 视频完全无法转码，与事实（tone mapping
      * 自 API 29 起可用，本项目 minSdk 31）矛盾。
@@ -79,8 +83,8 @@ internal object Media3EncoderSettings {
      * `KEEP_HDR` 分支本来就等于默认值，仍然显式写出来——两个分支是同一个产品决策的两面，
      * 写成显式分支后读者不必去查默认值是多少。
      */
-    fun hdrMode(plan: TranscodePlan): Int =
-        if (plan.changes.any { it.code == TranscodeChangeCode.HDR_TO_SDR }) {
+    fun hdrMode(plan: ProcessingPlan): Int =
+        if (plan.changes.any { it.code == ProcessingChangeCode.HDR_TO_SDR }) {
             Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL
         } else {
             Composition.HDR_MODE_KEEP_HDR

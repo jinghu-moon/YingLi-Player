@@ -92,7 +92,7 @@ class ProcessingScreenTest {
                     onCancel = {},
                     onRetry = {},
                     onClearHistory = {},
-                    onTranscodePreset = {},
+                    onOutputTarget = {},
                     onPlanTranscode = {},
                     onDismissTranscode = {},
                     onEnqueueTranscode = {},

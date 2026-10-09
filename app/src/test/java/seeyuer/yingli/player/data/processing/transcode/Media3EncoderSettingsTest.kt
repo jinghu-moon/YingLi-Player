@@ -8,23 +8,23 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import seeyuer.yingli.player.core.model.media.MediaItemId
-import seeyuer.yingli.player.domain.transcode.DefaultTranscodePlanner
-import seeyuer.yingli.player.domain.transcode.DeviceMediaCapabilities
-import seeyuer.yingli.player.domain.transcode.EncoderCapability
-import seeyuer.yingli.player.domain.transcode.HdrFormat
-import seeyuer.yingli.player.domain.transcode.MediaTrackInfo
-import seeyuer.yingli.player.domain.transcode.MediaTrackType
-import seeyuer.yingli.player.domain.transcode.SourceMediaInfo
-import seeyuer.yingli.player.domain.transcode.TranscodeChangeCode
-import seeyuer.yingli.player.domain.transcode.TranscodePlan
-import seeyuer.yingli.player.domain.transcode.TranscodePlanningResult
-import seeyuer.yingli.player.domain.transcode.TranscodePreset
-import seeyuer.yingli.player.domain.transcode.TranscodePresets
+import seeyuer.yingli.player.domain.processing.DefaultProcessingPlanner
+import seeyuer.yingli.player.domain.processing.DeviceMediaCapabilities
+import seeyuer.yingli.player.domain.processing.EncoderCapability
+import seeyuer.yingli.player.domain.processing.HdrFormat
+import seeyuer.yingli.player.domain.processing.MediaTrackInfo
+import seeyuer.yingli.player.domain.processing.MediaTrackType
+import seeyuer.yingli.player.domain.processing.SourceMediaInfo
+import seeyuer.yingli.player.domain.processing.ProcessingChangeCode
+import seeyuer.yingli.player.domain.processing.ProcessingPlan
+import seeyuer.yingli.player.domain.processing.ProcessingPlanningResult
+import seeyuer.yingli.player.domain.processing.OutputTarget
+import seeyuer.yingli.player.domain.processing.OutputTargets
 
 /**
  * G1 的改后断言：预设码率**必须**真的进入编码器设置。
  *
- * 修复前 [Media3TranscodeEngine] 只设了容器与 mime，实际码率由
+ * 修复前 [Media3ProcessingEngine] 只设了容器与 mime，实际码率由
  * `DefaultEncoderFactory.getSuggestedBitrate()` 按设备能力推导，于是三档预设在码率维度上完全等价。
  * 真机实测（`docs/architecture/Organizing-Page-Function-Design.md` §20.1.2）给出了该缺陷的可执行证据：
  * `compatible_mp4` 与 `balanced_mp4` 输出字节数完全相同（473 598）。
@@ -38,11 +38,11 @@ import seeyuer.yingli.player.domain.transcode.TranscodePresets
 class Media3EncoderSettingsTest {
     @Test
     fun `every preset bitrate reaches the video encoder settings`() {
-        for (preset in TranscodePresets.all) {
+        for (preset in OutputTargets.all) {
             val settings = Media3EncoderSettings.video(planFor(preset))
             assertEquals(
                 "预设 ${preset.id.value} 的目标视频码率必须进入 VideoEncoderSettings",
-                preset.targetVideoBitrate,
+                preset.videoBitrate,
                 settings.bitrate,
             )
         }
@@ -50,11 +50,11 @@ class Media3EncoderSettingsTest {
 
     @Test
     fun `every preset bitrate reaches the audio encoder settings`() {
-        for (preset in TranscodePresets.all) {
+        for (preset in OutputTargets.all) {
             val settings = Media3EncoderSettings.audio(planFor(preset))
             assertEquals(
                 "预设 ${preset.id.value} 的目标音频码率必须进入 AudioEncoderSettings",
-                preset.targetAudioBitrate,
+                preset.audioBitrate,
                 settings.bitrate,
             )
         }
@@ -62,8 +62,8 @@ class Media3EncoderSettingsTest {
 
     @Test
     fun `compatible and balanced no longer produce identical encoder settings`() {
-        val compatible = Media3EncoderSettings.video(planFor(TranscodePresets.Compatible))
-        val balanced = Media3EncoderSettings.video(planFor(TranscodePresets.Balanced))
+        val compatible = Media3EncoderSettings.video(planFor(OutputTargets.Compatible))
+        val balanced = Media3EncoderSettings.video(planFor(OutputTargets.Balanced))
 
         assertNotEquals(
             "compatible 与 balanced 的编码参数必须可区分，否则两档预设等价（G1 回归）",
@@ -74,7 +74,7 @@ class Media3EncoderSettingsTest {
 
     @Test
     fun `the three presets request three distinct video bitrates`() {
-        val bitrates = TranscodePresets.all
+        val bitrates = OutputTargets.all
             .map { Media3EncoderSettings.video(planFor(it)).bitrate }
 
         assertEquals(bitrates.size, bitrates.toSet().size)
@@ -82,7 +82,7 @@ class Media3EncoderSettingsTest {
 
     @Test
     fun `video bitrate mode is vbr because cq is unavailable on this device`() {
-        val settings = Media3EncoderSettings.video(planFor(TranscodePresets.Balanced))
+        val settings = Media3EncoderSettings.video(planFor(OutputTargets.Balanced))
 
         // 真机实测（§20.1.5）：全分辨率硬件编码器只报 VBR / CBR，BITRATE_MODE_CQ 只存在于
         // 尺寸上限 128–512 的编码器上。VideoEncoderSettings.BitrateMode 的 @IntDef 也只有这两档。
@@ -95,20 +95,20 @@ class Media3EncoderSettingsTest {
 
     @Test
     fun `planner produces a plan for every preset so wiring cannot silently no-op`() {
-        for (preset in TranscodePresets.all) {
+        for (preset in OutputTargets.all) {
             val plan = planFor(preset)
             assertNotNull(plan)
-            assertEquals(preset, plan.preset)
+            assertEquals(preset, plan.target)
         }
     }
 
     @Test
     fun `hdr source on an sdr encoder asks for tone mapping instead of refusing`() {
-        val plan = planFor(TranscodePresets.Compatible, hdrFormat = HdrFormat.HDR10, supportsHdr = false)
+        val plan = planFor(OutputTargets.Compatible, hdrFormat = HdrFormat.HDR10, supportsHdr = false)
 
         assertTrue(
             "HDR 源 + 不支持 HDR 的编码器必须产生 HDR_TO_SDR 变更",
-            plan.changes.any { it.code == TranscodeChangeCode.HDR_TO_SDR },
+            plan.changes.any { it.code == ProcessingChangeCode.HDR_TO_SDR },
         )
         // G2 回归：修复前引擎对这份计划直接返回 Failed("HDR_TONE_MAPPING_UNAVAILABLE")，
         // 于是「每个 HDR 源都必然不可转码」。现在改为请求 tone mapping。
@@ -120,11 +120,11 @@ class Media3EncoderSettingsTest {
 
     @Test
     fun `hdr source on an hdr capable encoder keeps hdr`() {
-        val plan = planFor(TranscodePresets.Compatible, hdrFormat = HdrFormat.HDR10, supportsHdr = true)
+        val plan = planFor(OutputTargets.Compatible, hdrFormat = HdrFormat.HDR10, supportsHdr = true)
 
         assertTrue(
             "编码器支持 HDR 时不得产生 HDR_TO_SDR（否则会白白丢 HDR）",
-            plan.changes.none { it.code == TranscodeChangeCode.HDR_TO_SDR },
+            plan.changes.none { it.code == ProcessingChangeCode.HDR_TO_SDR },
         )
         assertEquals(Composition.HDR_MODE_KEEP_HDR, Media3EncoderSettings.hdrMode(plan))
     }
@@ -133,16 +133,16 @@ class Media3EncoderSettingsTest {
     fun `sdr source keeps hdr mode even though nothing is hdr`() {
         assertEquals(
             Composition.HDR_MODE_KEEP_HDR,
-            Media3EncoderSettings.hdrMode(planFor(TranscodePresets.Compatible)),
+            Media3EncoderSettings.hdrMode(planFor(OutputTargets.Compatible)),
         )
     }
 
     private fun planFor(
-        preset: TranscodePreset,
+        target: OutputTarget,
         hdrFormat: HdrFormat = HdrFormat.SDR,
         supportsHdr: Boolean = false,
-    ): TranscodePlan {
-        val result = DefaultTranscodePlanner.plan(
+    ): ProcessingPlan {
+        val result = DefaultProcessingPlanner.plan(
             source = SourceMediaInfo(
                 mediaId = MediaItemId("media-1"),
                 uri = "content://media/1",
@@ -165,9 +165,9 @@ class Media3EncoderSettingsTest {
                 ),
                 capturedAtEpochMillis = 1,
             ),
-            preset = preset,
+            target = target,
             availableBytes = Long.MAX_VALUE,
         )
-        return (result as TranscodePlanningResult.Ready).plan
+        return (result as ProcessingPlanningResult.Ready).plan
     }
 }

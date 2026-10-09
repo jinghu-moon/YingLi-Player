@@ -47,7 +47,7 @@ internal object Media3CodecAvailability {
     private const val DEFAULT_CHANNEL_COUNT = 2
 
     /**
-     * 与 `DefaultTranscodePlanner` 的拒绝码保持一致——同一个原因（没有可用编码器）
+     * 与 `DefaultProcessingPlanner` 的拒绝码保持一致——同一个原因（没有可用编码器）
      * 不应该因为「在哪一层发现」而出现两个不同的码。
      */
     private const val VideoCodecErrorCode = "VIDEO_ENCODER_UNAVAILABLE"

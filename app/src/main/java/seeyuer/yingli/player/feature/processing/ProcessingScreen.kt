@@ -48,10 +48,10 @@ import seeyuer.yingli.player.domain.processing.ProcessingAction
 import seeyuer.yingli.player.domain.processing.ProcessingTaskId
 import seeyuer.yingli.player.domain.processing.ProcessingTaskState
 import seeyuer.yingli.player.domain.processing.ProcessingTone
-import seeyuer.yingli.player.domain.transcode.TranscodeChangeCode
-import seeyuer.yingli.player.domain.transcode.TranscodePlan
-import seeyuer.yingli.player.domain.transcode.TranscodePreset
-import seeyuer.yingli.player.domain.transcode.TranscodePresets
+import seeyuer.yingli.player.domain.processing.ProcessingChangeCode
+import seeyuer.yingli.player.domain.processing.ProcessingPlan
+import seeyuer.yingli.player.domain.processing.OutputTarget
+import seeyuer.yingli.player.domain.processing.OutputTargets
 
 private enum class ProcessingTab { TASKS, CLIPS, TRANSCODE }
 
@@ -81,9 +81,9 @@ fun ProcessingRoute(
         onCancel = viewModel::cancel,
         onRetry = viewModel::retry,
         onClearHistory = viewModel::clearHistory,
-        onTranscodePreset = viewModel::setTranscodePreset,
+        onOutputTarget = viewModel::setOutputTarget,
         onPlanTranscode = viewModel::planTranscode,
-        onDismissTranscode = viewModel::dismissTranscodePlan,
+        onDismissTranscode = viewModel::dismissProcessingPlan,
         onEnqueueTranscode = viewModel::enqueueTranscode,
         onOpenOutput = onOpenOutput,
         modifier = modifier,
@@ -110,7 +110,7 @@ fun ProcessingScreen(
     onCancel: (ProcessingTaskId) -> Unit,
     onRetry: (ProcessingTaskId) -> Unit,
     onClearHistory: () -> Unit,
-    onTranscodePreset: (TranscodePreset) -> Unit,
+    onOutputTarget: (OutputTarget) -> Unit,
     onPlanTranscode: (LibraryMedia) -> Unit,
     onDismissTranscode: () -> Unit,
     onEnqueueTranscode: (Boolean) -> Unit,
@@ -169,7 +169,7 @@ fun ProcessingScreen(
             )
             ProcessingTab.TRANSCODE -> TranscodePanel(
                 state,
-                onTranscodePreset,
+                onOutputTarget,
                 onPlanTranscode,
                 onDismissTranscode,
                 onEnqueueTranscode,
@@ -182,13 +182,13 @@ fun ProcessingScreen(
 @Composable
 private fun TranscodePanel(
     state: ProcessingUiState,
-    onPreset: (TranscodePreset) -> Unit,
+    onPreset: (OutputTarget) -> Unit,
     onPlan: (LibraryMedia) -> Unit,
     onDismiss: () -> Unit,
     onEnqueue: (Boolean) -> Unit,
     modifier: Modifier,
 ) {
-    var confirmed by remember(state.transcodePlan) { mutableStateOf(false) }
+    var confirmed by remember(state.processingPlan) { mutableStateOf(false) }
     LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(YingLiTheme.components.itemSpacing)) {
         item {
             Text(stringResource(R.string.transcode_preset), style = MaterialTheme.typography.titleLarge)
@@ -198,8 +198,8 @@ private fun TranscodePanel(
                     stringResource(R.string.transcode_preset_balanced),
                     stringResource(R.string.transcode_preset_space_saver),
                 ),
-                selectedIndex = TranscodePresets.all.indexOf(state.transcodePreset),
-                onSelected = { onPreset(TranscodePresets.all[it]) },
+                selectedIndex = OutputTargets.all.indexOf(state.outputTarget),
+                onSelected = { onPreset(OutputTargets.all[it]) },
             )
         }
         state.transcodeErrorCode?.let { code ->
@@ -210,9 +210,9 @@ private fun TranscodePanel(
                 )
             }
         }
-        state.transcodePlan?.let { plan ->
+        state.processingPlan?.let { plan ->
             item {
-                TranscodePlanSummary(plan)
+                ProcessingPlanSummary(plan)
                 if (plan.requiresConfirmation) {
                     YingLiCheckbox(
                         label = stringResource(R.string.transcode_confirm_changes),
@@ -242,7 +242,7 @@ private fun TranscodePanel(
         } ?: run {
             item {
                 Text(
-                    if (state.transcodePlanning) stringResource(R.string.transcode_planning)
+                    if (state.processingPlanning) stringResource(R.string.transcode_planning)
                     else stringResource(R.string.transcode_choose_source),
                     style = MaterialTheme.typography.titleMedium,
                 )
@@ -251,7 +251,7 @@ private fun TranscodePanel(
                 YingLiButton(
                     text = media.title,
                     onClick = { onPlan(media) },
-                    enabled = !state.transcodePlanning && media.durationMillis?.let { it > 0 } == true,
+                    enabled = !state.processingPlanning && media.durationMillis?.let { it > 0 } == true,
                     leadingIcon = YingLiIcon.PROCESSING,
                 )
             }
@@ -260,7 +260,7 @@ private fun TranscodePanel(
 }
 
 @Composable
-private fun TranscodePlanSummary(plan: TranscodePlan) {
+private fun ProcessingPlanSummary(plan: ProcessingPlan) {
     Surface(color = YingLiTheme.colors.surfaceComponent, shape = YingLiTheme.components.componentCorner) {
         Column(
             Modifier.fillMaxWidth().padding(YingLiTheme.components.pagePadding),
@@ -289,16 +289,16 @@ private fun TranscodePlanSummary(plan: TranscodePlan) {
 
 private fun Long.toMegabytes(): Long = (this + 1024 * 1024 - 1) / (1024 * 1024)
 
-private fun TranscodeChangeCode.labelResource(): Int = when (this) {
-    TranscodeChangeCode.RESOLUTION_REDUCED -> R.string.transcode_change_resolution
-    TranscodeChangeCode.VIDEO_CODEC_CHANGED -> R.string.transcode_change_video_codec
-    TranscodeChangeCode.AUDIO_CODEC_CHANGED -> R.string.transcode_change_audio_codec
-    TranscodeChangeCode.EXTRA_AUDIO_TRACKS_REMOVED -> R.string.transcode_change_audio_tracks
-    TranscodeChangeCode.SUBTITLES_NOT_EMBEDDED -> R.string.transcode_change_subtitles
-    TranscodeChangeCode.HDR_TO_SDR -> R.string.transcode_change_hdr
-    TranscodeChangeCode.FRAME_RATE_CAPPED -> R.string.transcode_change_frame_rate
-    TranscodeChangeCode.VIDEO_CODEC_FALLBACK -> R.string.transcode_change_video_codec_fallback
-    TranscodeChangeCode.AUDIO_CODEC_FALLBACK -> R.string.transcode_change_audio_codec_fallback
+private fun ProcessingChangeCode.labelResource(): Int = when (this) {
+    ProcessingChangeCode.RESOLUTION_REDUCED -> R.string.transcode_change_resolution
+    ProcessingChangeCode.VIDEO_CODEC_CHANGED -> R.string.transcode_change_video_codec
+    ProcessingChangeCode.AUDIO_CODEC_CHANGED -> R.string.transcode_change_audio_codec
+    ProcessingChangeCode.EXTRA_AUDIO_TRACKS_REMOVED -> R.string.transcode_change_audio_tracks
+    ProcessingChangeCode.SUBTITLES_NOT_EMBEDDED -> R.string.transcode_change_subtitles
+    ProcessingChangeCode.HDR_TO_SDR -> R.string.transcode_change_hdr
+    ProcessingChangeCode.FRAME_RATE_CAPPED -> R.string.transcode_change_frame_rate
+    ProcessingChangeCode.VIDEO_CODEC_FALLBACK -> R.string.transcode_change_video_codec_fallback
+    ProcessingChangeCode.AUDIO_CODEC_FALLBACK -> R.string.transcode_change_audio_codec_fallback
 }
 
 @Composable

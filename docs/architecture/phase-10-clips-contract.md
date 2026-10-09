@@ -13,7 +13,7 @@
 | 快速 | MediaExtractor + MediaMuxer | 从前一个安全关键帧开始 | 不支持的轨道/加密样本提示使用精确模式 |
 | 精确 | Media3 Transformer | 按请求区间重新编码/混流 | 编码失败返回稳定错误码，不静默降质 |
 
-快速模式仅接受平台 MP4 Muxer 支持的 AVC/HEVC/MPEG-4 Video/AAC/MP3 轨道。所有输出都必须再次 probe；探测失败不得标记成功。
+快速模式仅接受**目标封装器自己声明支持的**轨道（2026-10-09 阶段 2 步骤 8 起由 `ContainerMuxerFactory.supports(...)` 反查，不再是一张写死的表；见下）。所有输出都必须再次 probe；探测失败不得标记成功。
 
 ### 轨道白名单的来源（G11 / 阶段 2 步骤 7）
 
@@ -22,6 +22,12 @@
 **【目标】** 删除硬编码集合，改为在探测阶段**反查实际 muxer 的能力**：平台路径用 `MediaCodecInfo.CodecCapabilities.getSupportedSampleMimeTypes()`，Media3 路径用 `Mp4Muxer.SUPPORTED_VIDEO_SAMPLE_MIME_TYPES` / `SUPPORTED_AUDIO_SAMPLE_MIME_TYPES`（正是 `Muxer.Factory.getSupportedSampleMimeTypes()` 的现成来源）。**这是破坏性改动**：白名单从常量变成探测结果，`ClipCapabilities` 的构造点与所有依赖它的判断都要改。
 
 **【目标】** 该反查与 Phase 11 的格式转换入口共用同一份能力来源，不再各写一份。
+
+**【已实现 — 2026-10-09 阶段 2 步骤 8】** 硬编码集合与它所在的引擎一起被删除：`PlatformClipEngine.kt` 已由 `app/src/main/java/seeyuer/yingli/player/data/processing/InAppRemuxEngine.kt` 取代（封装层引擎 `ProcessingOperation.REMUX`，`MediaExtractor` 读样本 + Media3 `Muxer` 写样本），白名单的唯一判据是 `app/src/main/java/seeyuer/yingli/player/data/processing/muxer/ContainerMuxerFactory.kt` 的 `supports(trackType, sampleMimeType)`，它转手问的就是 `Muxer.Factory.getSupportedSampleMimeTypes(...)`——**库自己写样本前问的同一个方法**。Phase 11 的 `Media3ProcessingEngine` 用同一个类做 build 前校验，两份能力来源已合一。
+
+**【已实测 — 同一台设备】** `app/src/androidTest/java/seeyuer/yingli/player/data/processing/Stage2RemuxContainerMeasurementTest.kt` 用例 1 证明 **VP9 + Opus 的 WebM 源确实能被搬进 MP4**（`Completed`，输出轨道 `[video/x-vnd.on2.vp9, audio/opus]`）；`docs/architecture/evidence/stage2/stage2-remux-case1-vp9-opus-into-mp4.json`。
+
+**【重要限制 — 缺口 G27】** 能力表说「收」**不等于**「写得进去」：`Mp4Muxer` 写 VP9 轨道时 `Boxes.vpcCBox` 要求 csd-0，而 **ffmpeg 产出的 VP9 WebM 通常不带 CodecPrivate**（`refer/video-transcode-repos/FFmpeg/libavformat/matroskaenc.c:1219-1224` 的 `default:` 分支仅在 `extradata_size > 0` 时写 extradata），此时会抛 `IllegalArgumentException: csd-0 is not found in the format for vpcC box`。因此「WebM(VP9/Opus) 源可走快速路径」这条结论**只在源自带 VP9 CodecPrivate 时成立**；否则快速模式仍会失败（错误码为 `REMUX_FAILED`，不再是 `FAST_CONTAINER_UNSUPPORTED`）。补法是自行合成 csd-0（profile/level/bitDepth/chroma 缺省 0/10/8/0，颜色取 `Format.colorInfo`），本期未做。详见 `docs/architecture/Organizing-Page-Function-Design.md` §14.3.4 与 G27。
 
 ## 批量导出
 

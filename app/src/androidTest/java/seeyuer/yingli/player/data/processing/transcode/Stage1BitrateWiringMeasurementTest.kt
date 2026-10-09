@@ -17,13 +17,13 @@ import seeyuer.yingli.player.Stage0EvidenceRecorder
 import seeyuer.yingli.player.core.common.DefaultAppDispatchers
 import seeyuer.yingli.player.core.common.SystemAppClock
 import seeyuer.yingli.player.core.model.media.MediaItemId
-import seeyuer.yingli.player.domain.transcode.DefaultTranscodePlanner
-import seeyuer.yingli.player.domain.transcode.DeviceMediaCapabilities
-import seeyuer.yingli.player.domain.transcode.SourceMediaInfo
-import seeyuer.yingli.player.domain.transcode.TranscodeEngineResult
-import seeyuer.yingli.player.domain.transcode.TranscodePlanningResult
-import seeyuer.yingli.player.domain.transcode.TranscodePreset
-import seeyuer.yingli.player.domain.transcode.TranscodePresets
+import seeyuer.yingli.player.domain.processing.DefaultProcessingPlanner
+import seeyuer.yingli.player.domain.processing.DeviceMediaCapabilities
+import seeyuer.yingli.player.domain.processing.SourceMediaInfo
+import seeyuer.yingli.player.domain.processing.ProcessingEngineResult
+import seeyuer.yingli.player.domain.processing.ProcessingPlanningResult
+import seeyuer.yingli.player.domain.processing.OutputTarget
+import seeyuer.yingli.player.domain.processing.OutputTargets
 import java.io.File
 import java.util.Random
 
@@ -32,7 +32,7 @@ import java.util.Random
  *
  * ## 为什么这条证据必须落在真机上
  *
- * G1 的缺陷是「`Media3TranscodeEngine` 没有把预设码率交给编码器」。要在 JVM 单测里发现它，
+ * G1 的缺陷是「`Media3ProcessingEngine` 没有把预设码率交给编码器」。要在 JVM 单测里发现它，
  * 必须有办法读到 `Transformer.Builder` 里的 `EncoderFactory` —— 而 Media3 不提供这样的 getter。
  *
  * 唯一能观测到的信号是**输出本身**：如果码率真的下发了，三档预设（8 / 5 / 2.5 Mbps）在同一源上
@@ -50,7 +50,7 @@ import java.util.Random
  * ## 怎么用它做改前 / 改后
  *
  * 同一份代码、同一个源，跑两次：
- * - **改前**：临时注释掉 `Media3TranscodeEngine` 里的 `.setEncoderFactory(...)` 一行；
+ * - **改前**：临时注释掉 `Media3ProcessingEngine` 里的 `.setEncoderFactory(...)` 一行；
  * - **改后**：保留该行。
  *
  * 两次的 JSON 都归档进 `docs/architecture/evidence/stage1/`。**本类刻意不断言「字节数必须分离」**：
@@ -89,7 +89,7 @@ class Stage1BitrateWiringMeasurementTest {
         val phaseLabel = InstrumentationRegistry.getArguments().getString("phaseLabel") ?: "unlabelled"
 
         val rows = mutableListOf<String>()
-        for (preset in TranscodePresets.all) {
+        for (preset in OutputTargets.all) {
             rows += measurePreset(preset, sourceFile, source!!, capabilities)
         }
 
@@ -106,13 +106,13 @@ class Stage1BitrateWiringMeasurementTest {
         }
         Stage0EvidenceRecorder.record(context, "stage1-bitrate-$phaseLabel.json", report)
 
-        assertTrue("三档预设的测量行数不对", rows.size == TranscodePresets.all.size)
+        assertTrue("三档预设的测量行数不对", rows.size == OutputTargets.all.size)
     }
 
     // ────────────────────────────────────────────────────────────────────────
 
     private suspend fun measurePreset(
-        preset: TranscodePreset,
+        preset: OutputTarget,
         sourceFile: File,
         source: SourceMediaInfo,
         capabilities: DeviceMediaCapabilities,
@@ -120,30 +120,30 @@ class Stage1BitrateWiringMeasurementTest {
         val outFile = File(workDir, "out_${preset.id.value}.mp4")
         if (outFile.exists()) outFile.delete()
 
-        val plan = DefaultTranscodePlanner.plan(
+        val plan = DefaultProcessingPlanner.plan(
             source = source,
             capabilities = capabilities,
-            preset = preset,
+            target = preset,
             availableBytes = workDir.usableSpace,
         )
-        if (plan is TranscodePlanningResult.Rejected) {
+        if (plan is ProcessingPlanningResult.Rejected) {
             return "    { \"preset\": \"${preset.id.value}\", \"plannerRejected\": \"${plan.code}\" }"
         }
-        val ready = plan as TranscodePlanningResult.Ready
+        val ready = plan as ProcessingPlanningResult.Ready
         // 三档预设的长边上限分别是 1920 / 1920 / 1280，源是 1920x1080，
         // 所以期望目标宽度就是 `min(1920, preset.maximumLongEdge)`（编码器上限远大于此）。
         assertEquals(
             "planner 的目标宽度不等于预设长边上限，码率对比的前提被破坏",
-            minOf(1920, preset.maximumLongEdge),
+            minOf(1920, requireNotNull(preset.maximumLongEdge)),
             ready.plan.targetWidth,
         )
 
-        val engine = Media3TranscodeEngine(context, dispatchers)
-        val result = engine.transcode(ready.plan, outFile.absolutePath) { }
-        if (result !is TranscodeEngineResult.Completed) {
+        val engine = Media3ProcessingEngine(context, dispatchers)
+        val result = engine.process(ready.plan, outFile.absolutePath) { }
+        if (result !is ProcessingEngineResult.Completed) {
             return "    { \"preset\": \"${preset.id.value}\", " +
                 "\"engineResult\": \"${result::class.simpleName}" +
-                "${if (result is TranscodeEngineResult.Failed) "(${result.errorCode})" else ""}\" }"
+                "${if (result is ProcessingEngineResult.Failed) "(${result.errorCode})" else ""}\" }"
         }
 
         val verification = MediaExtractorOutputVerifier(dispatchers).verify(outFile.absolutePath, ready.plan)
@@ -153,7 +153,7 @@ class Stage1BitrateWiringMeasurementTest {
         return buildString {
             append("    { ")
             append("\"preset\": \"${preset.id.value}\", ")
-            append("\"requestedVideoBitrate\": ${preset.targetVideoBitrate}, ")
+            append("\"requestedVideoBitrate\": ${preset.videoBitrate}, ")
             append("\"outBytes\": $bytes, ")
             append("\"outDurationMillis\": ${durationMillis ?: "null"}, ")
             append("\"outAverageBitrate\": ${verification.averageBitrateBitsPerSecond ?: "null"}, ")

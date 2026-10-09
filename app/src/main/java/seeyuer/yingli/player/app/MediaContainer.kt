@@ -73,8 +73,9 @@ import seeyuer.yingli.player.domain.processing.SchedulerConditions
 import seeyuer.yingli.player.domain.clips.ClipProjectRepository
 import seeyuer.yingli.player.domain.clips.ClipExportQueue
 import seeyuer.yingli.player.domain.clips.TimelineFrameProvider
-import seeyuer.yingli.player.domain.transcode.MediaCapabilityProbe
-import seeyuer.yingli.player.domain.transcode.TranscodeQueue
+import seeyuer.yingli.player.domain.processing.MediaCapabilityProbe
+import seeyuer.yingli.player.domain.processing.PROCESSING_FREE_SPACE_RESERVE_BYTES
+import seeyuer.yingli.player.domain.processing.ProcessingQueue
 import seeyuer.yingli.player.domain.duplicates.DuplicateDeletionExecutor
 import seeyuer.yingli.player.domain.duplicates.DuplicateRepository
 import seeyuer.yingli.player.domain.duplicates.DuplicateScanner
@@ -125,7 +126,7 @@ data class MediaContainer(
     val clipExportQueue: ClipExportQueue,
     val timelineFrameProvider: TimelineFrameProvider,
     val mediaCapabilityProbe: MediaCapabilityProbe,
-    val transcodeQueue: TranscodeQueue,
+    val processingQueue: ProcessingQueue,
     val duplicateRepository: DuplicateRepository,
     val duplicateScanner: DuplicateScanner,
     val duplicateDeletionExecutor: DuplicateDeletionExecutor,
@@ -268,31 +269,45 @@ object ProductionMediaContainerFactory {
             foundation.idGenerator,
         )
         val clipRepository = seeyuer.yingli.player.data.processing.clips.RoomClipProjectRepository(database)
-        val clipEngine = seeyuer.yingli.player.data.processing.clips.PlatformClipEngine(context, foundation.dispatchers)
         val mediaCapabilityProbe = seeyuer.yingli.player.data.processing.transcode.AndroidMediaCapabilityProbe(
             context,
             foundation.dispatchers,
             foundation.clock,
         )
-        val transcodeQueue = seeyuer.yingli.player.data.processing.transcode.TranscodeCoordinator(
+        val processingQueue = seeyuer.yingli.player.data.processing.transcode.TranscodeCoordinator(
             processingRepository,
             foundation.idGenerator,
             foundation.clock,
         )
+        val outputVerifier = seeyuer.yingli.player.data.processing.transcode.MediaExtractorOutputVerifier(
+            foundation.dispatchers,
+        )
+        // 一个引擎对象走遍全部四个产品入口：由 planner 的 `operation` 决定走哪条实现，
+        // 调用方（切片执行器、压缩执行器）只交计划，不选引擎（设计稿 §6.2）。
+        val processingEngine = seeyuer.yingli.player.data.processing.RoutingProcessingEngine(
+            seeyuer.yingli.player.data.processing.InAppRemuxEngine(context, foundation.dispatchers, foundation.logger),
+            seeyuer.yingli.player.data.processing.transcode.Media3ProcessingEngine(context, foundation.dispatchers),
+        )
+        val availableBytes = {
+            runCatching { StatFs(context.cacheDir.absolutePath).availableBytes }.getOrDefault(0)
+        }
         val clipExecutor = seeyuer.yingli.player.data.processing.clips.ClipProcessingExecutor(
             processingRepository,
             clipRepository,
             playbackRepository,
-            clipEngine,
+            mediaCapabilityProbe,
+            processingEngine,
+            outputVerifier,
             artifactStore,
+            availableBytes = availableBytes,
         )
         val transcodeExecutor = seeyuer.yingli.player.data.processing.transcode.TranscodeProcessingExecutor(
             processingRepository,
             mediaCapabilityProbe,
-            seeyuer.yingli.player.data.processing.transcode.Media3TranscodeEngine(context, foundation.dispatchers),
-            seeyuer.yingli.player.data.processing.transcode.MediaExtractorOutputVerifier(foundation.dispatchers),
+            processingEngine,
+            outputVerifier,
             artifactStore,
-            availableBytes = { runCatching { StatFs(context.cacheDir.absolutePath).availableBytes }.getOrDefault(0) },
+            availableBytes = availableBytes,
         )
         val processingScope = CoroutineScope(SupervisorJob() + foundation.dispatchers.main)
         val scheduler = seeyuer.yingli.player.data.processing.InAppProcessingScheduler(
@@ -374,7 +389,7 @@ object ProductionMediaContainerFactory {
             clipExportQueue,
             seeyuer.yingli.player.data.processing.clips.AndroidTimelineFrameProvider(context, foundation.dispatchers),
             mediaCapabilityProbe,
-            transcodeQueue,
+            processingQueue,
             duplicateRepository,
             duplicateScanner,
             duplicateDeletionExecutor,
@@ -394,7 +409,8 @@ object ProductionMediaContainerFactory {
         val availableBytes = runCatching { StatFs(cacheDir.absolutePath).availableBytes }.getOrDefault(0)
         return SchedulerConditions(
             batteryLow = capacity in 0..LOW_BATTERY_PERCENT,
-            storageAvailable = availableBytes >= MINIMUM_FREE_BYTES,
+            // 与 planner 的预留量共用同一个常量：调度侧与 plan 侧各写一个值会互相矛盾。
+            storageAvailable = availableBytes >= PROCESSING_FREE_SPACE_RESERVE_BYTES,
             // F24：前台服务配额用尽后不再启动新任务（见 YingLiProcessingService.onTimeout）。
             foregroundServiceUnavailable =
                 seeyuer.yingli.player.app.processing.YingLiProcessingService.isForegroundTimeExhausted(),
@@ -402,5 +418,4 @@ object ProductionMediaContainerFactory {
     }
 
     private const val LOW_BATTERY_PERCENT = 15
-    private const val MINIMUM_FREE_BYTES = 256L * 1024 * 1024
 }

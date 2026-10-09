@@ -18,13 +18,13 @@ import seeyuer.yingli.player.Stage0EvidenceRecorder
 import seeyuer.yingli.player.core.common.DefaultAppDispatchers
 import seeyuer.yingli.player.core.common.SystemAppClock
 import seeyuer.yingli.player.core.model.media.MediaItemId
-import seeyuer.yingli.player.domain.transcode.DefaultTranscodePlanner
-import seeyuer.yingli.player.domain.transcode.HdrFormat
-import seeyuer.yingli.player.domain.transcode.SourceMediaInfo
-import seeyuer.yingli.player.domain.transcode.TranscodeChangeCode
-import seeyuer.yingli.player.domain.transcode.TranscodeEngineResult
-import seeyuer.yingli.player.domain.transcode.TranscodePlanningResult
-import seeyuer.yingli.player.domain.transcode.TranscodePresets
+import seeyuer.yingli.player.domain.processing.DefaultProcessingPlanner
+import seeyuer.yingli.player.domain.processing.HdrFormat
+import seeyuer.yingli.player.domain.processing.SourceMediaInfo
+import seeyuer.yingli.player.domain.processing.ProcessingChangeCode
+import seeyuer.yingli.player.domain.processing.ProcessingEngineResult
+import seeyuer.yingli.player.domain.processing.ProcessingPlanningResult
+import seeyuer.yingli.player.domain.processing.OutputTargets
 import java.io.File
 import java.util.Random
 
@@ -36,7 +36,7 @@ import java.util.Random
  * 1. **`supportsHdr` 不再是硬编码**。修复前 `AndroidMediaCapabilityProbe` 把每个编码器的
  *    `supportsHdr` 写成常量 `false`（§20.1.4 记录该硬编码与设备实际能力矛盾：本机有
  *    HEVC Main10、`COLOR_FormatYUVP010` 与专用 HDR 编码器 `c2.qti.hevc.encoder.hdr`）。
- * 2. **HDR 源不再必然不可转码**。修复前 `Media3TranscodeEngine` 一看到计划里含
+ * 2. **HDR 源不再必然不可转码**。修复前 `Media3ProcessingEngine` 一看到计划里含
  *    `HDR_TO_SDR` 就直接返回 `Failed("HDR_TONE_MAPPING_UNAVAILABLE")`，而
  *    `AndroidMediaCapabilityProbe` 的硬编码又保证**每个** HDR 源都会产生 `HDR_TO_SDR` ——
  *    两者叠加使 HDR 视频在当前实现下完全无法转码。
@@ -126,22 +126,22 @@ class Stage1HdrToneMappingMeasurementTest {
         val plan = if (source == null) {
             null
         } else {
-            DefaultTranscodePlanner.plan(
+            DefaultProcessingPlanner.plan(
                 source = source,
                 capabilities = capabilities,
-                preset = TranscodePresets.Compatible,
+                target = OutputTargets.Compatible,
                 availableBytes = workDir.usableSpace,
             )
         }
-        val ready = plan as? TranscodePlanningResult.Ready
+        val ready = plan as? ProcessingPlanningResult.Ready
 
         val outFile = File(workDir, "out_hdr.mp4")
         if (outFile.exists()) outFile.delete()
 
-        val engine = Media3TranscodeEngine(context, dispatchers)
-        val result = ready?.let { engine.transcode(it.plan, outFile.absolutePath) { } }
+        val engine = Media3ProcessingEngine(context, dispatchers)
+        val result = ready?.let { engine.process(it.plan, outFile.absolutePath) { } }
 
-        val verification = if (result is TranscodeEngineResult.Completed) {
+        val verification = if (result is ProcessingEngineResult.Completed) {
             MediaExtractorOutputVerifier(dispatchers).verify(outFile.absolutePath, ready.plan)
         } else {
             null
@@ -158,7 +158,7 @@ class Stage1HdrToneMappingMeasurementTest {
             appendLine("  \"sourceHdrFormat\": ${source?.hdrFormat?.let { "\"$it\"" } ?: "null"},")
             appendLine("  \"plannerResult\": ${plan?.let { "\"${it::class.simpleName}\"" } ?: "null"},")
             appendLine("  \"changes\": ${(ready?.plan?.changes?.joinToString(",", "[", "]") { "\"${it.code}\"" }) ?: "null"},")
-            appendLine("  \"engineResult\": ${result?.let { "\"${it::class.simpleName}${if (it is TranscodeEngineResult.Failed) "(${it.errorCode})" else ""}\"" } ?: "null"},")
+            appendLine("  \"engineResult\": ${result?.let { "\"${it::class.simpleName}${if (it is ProcessingEngineResult.Failed) "(${it.errorCode})" else ""}\"" } ?: "null"},")
             appendLine("  \"outBytes\": ${if (outFile.isFile) outFile.length() else 0},")
             appendLine("  \"verifierValid\": ${verification?.valid ?: "null"},")
             appendLine("  \"verifierErrors\": ${verification?.errorCodes?.joinToString(",", "[", "]") { "\"$it\"" } ?: "[]"}")
@@ -176,12 +176,12 @@ class Stage1HdrToneMappingMeasurementTest {
         assertTrue("计划被拒绝：$plan", ready != null)
         assertTrue(
             "HDR 源在没有 HDR 能力的 AVC 目标下必须产生 HDR_TO_SDR 变更",
-            ready!!.plan.changes.any { it.code == TranscodeChangeCode.HDR_TO_SDR },
+            ready!!.plan.changes.any { it.code == ProcessingChangeCode.HDR_TO_SDR },
         )
         assertTrue("HDR_TO_SDR 必须要求用户确认", ready.plan.requiresConfirmation)
         assertTrue(
             "引擎拒绝了 HDR 转码（G2 回归）：$result",
-            result is TranscodeEngineResult.Completed,
+            result is ProcessingEngineResult.Completed,
         )
         assertTrue(
             "HDR 转码产物未通过独立验证：${verification?.errorCodes}",

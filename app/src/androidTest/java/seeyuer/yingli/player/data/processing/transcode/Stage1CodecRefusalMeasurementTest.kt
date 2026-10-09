@@ -15,14 +15,15 @@ import seeyuer.yingli.player.Stage0EvidenceRecorder
 import seeyuer.yingli.player.core.common.DefaultAppDispatchers
 import seeyuer.yingli.player.core.common.SystemAppClock
 import seeyuer.yingli.player.core.model.media.MediaItemId
-import seeyuer.yingli.player.domain.transcode.HdrFormat
-import seeyuer.yingli.player.domain.transcode.MediaTrackInfo
-import seeyuer.yingli.player.domain.transcode.MediaTrackType
-import seeyuer.yingli.player.domain.transcode.SourceMediaInfo
-import seeyuer.yingli.player.domain.transcode.TranscodeChange
-import seeyuer.yingli.player.domain.transcode.TranscodeEngineResult
-import seeyuer.yingli.player.domain.transcode.TranscodePlan
-import seeyuer.yingli.player.domain.transcode.TranscodePresets
+import seeyuer.yingli.player.domain.processing.HdrFormat
+import seeyuer.yingli.player.domain.processing.MediaTrackInfo
+import seeyuer.yingli.player.domain.processing.MediaTrackType
+import seeyuer.yingli.player.domain.processing.ProcessingOperation
+import seeyuer.yingli.player.domain.processing.SourceMediaInfo
+import seeyuer.yingli.player.domain.processing.ProcessingChange
+import seeyuer.yingli.player.domain.processing.ProcessingEngineResult
+import seeyuer.yingli.player.domain.processing.ProcessingPlan
+import seeyuer.yingli.player.domain.processing.OutputTargets
 import java.io.File
 
 /**
@@ -48,7 +49,7 @@ import java.io.File
  * ## 为什么不需要真实源文件
  *
  * 前置校验发生在 `Transformer` 被构建之前，只依赖计划里的目标编码格式与目标尺寸，
- * 不读任何媒体数据。所以本测试直接用构造出的 [TranscodePlan] 调用引擎，
+ * 不读任何媒体数据。所以本测试直接用构造出的 [ProcessingPlan] 调用引擎，
  * 不需要编码一份噪声源，也不依赖设备上有没有测试视频。
  *
  * 其中的「对照组」用不存在的源路径：它应当走到**后面**的失败
@@ -85,17 +86,17 @@ class Stage1CodecRefusalMeasurementTest {
         )
 
         val videoOut = File(workDir, "refused-video.mp4")
-        val videoResult = Media3TranscodeEngine(context, dispatchers)
-            .transcode(videoPlan(missingVideo!!), videoOut.absolutePath) { }
+        val videoResult = Media3ProcessingEngine(context, dispatchers)
+            .process(videoPlan(missingVideo!!), videoOut.absolutePath) { }
 
         val audioOut = File(workDir, "refused-audio.mp4")
-        val audioResult = Media3TranscodeEngine(context, dispatchers)
-            .transcode(audioPlan(missingAudio!!), audioOut.absolutePath) { }
+        val audioResult = Media3ProcessingEngine(context, dispatchers)
+            .process(audioPlan(missingAudio!!), audioOut.absolutePath) { }
 
         // 对照组：编码格式本机支持，只是源不存在 —— 必须走到别的失败上。
         val controlOut = File(workDir, "control.mp4")
-        val controlResult = Media3TranscodeEngine(context, dispatchers)
-            .transcode(supportedControlPlan(encoders), controlOut.absolutePath) { }
+        val controlResult = Media3ProcessingEngine(context, dispatchers)
+            .process(supportedControlPlan(encoders), controlOut.absolutePath) { }
 
         val report = buildString {
             appendLine("{")
@@ -161,33 +162,33 @@ class Stage1CodecRefusalMeasurementTest {
         candidates.firstOrNull { it !in encoders && !hasEncoder(it) }
 
     private fun videoPlan(mime: String) = plan(
-        preset = TranscodePresets.Compatible.copy(targetVideoMimeType = mime),
-        retainedAudioTrackIds = emptySet(),
+        target = OutputTargets.Compatible.copy(videoCodecMimeType = mime),
+        retainedTrackIds = emptySet(),
     )
 
     private fun audioPlan(mime: String) = plan(
-        preset = TranscodePresets.Compatible.copy(targetAudioMimeType = mime),
-        retainedAudioTrackIds = setOf(1),
+        target = OutputTargets.Compatible.copy(audioCodecMimeType = mime),
+        retainedTrackIds = setOf(1),
     )
 
     /**
      * 源指向不存在的文件：前置校验不读源，所以它能通过；
      * 真正的编码阶段会失败——这正是我们想看到的「没有被前置校验拒掉」。
      */
-    private fun supportedControlPlan(encoders: Set<String>): TranscodePlan {
+    private fun supportedControlPlan(encoders: Set<String>): ProcessingPlan {
         val supportedVideo = encoders.first { MimeTypes.isVideo(it) }
         val supportedAudio = encoders.firstOrNull { MimeTypes.isAudio(it) }
         return plan(
-            preset = TranscodePresets.Compatible.copy(
-                targetVideoMimeType = supportedVideo,
-                targetAudioMimeType = supportedAudio ?: TranscodePresets.Compatible.targetAudioMimeType,
+            target = OutputTargets.Compatible.copy(
+                videoCodecMimeType = supportedVideo,
+                audioCodecMimeType = supportedAudio ?: OutputTargets.Compatible.audioCodecMimeType,
             ),
-            retainedAudioTrackIds = if (supportedAudio == null) emptySet() else setOf(1),
+            retainedTrackIds = if (supportedAudio == null) emptySet() else setOf(1),
         )
     }
 
-    private fun plan(preset: seeyuer.yingli.player.domain.transcode.TranscodePreset, retainedAudioTrackIds: Set<Int>) =
-        TranscodePlan(
+    private fun plan(target: seeyuer.yingli.player.domain.processing.OutputTarget, retainedTrackIds: Set<Int>) =
+        ProcessingPlan(
             source = SourceMediaInfo(
                 MediaItemId("stage1-refusal"),
                 "file://${File(workDir, "does-not-exist.mp4").absolutePath}",
@@ -204,10 +205,11 @@ class Stage1CodecRefusalMeasurementTest {
                     MediaTrackInfo(1, MediaTrackType.AUDIO, "audio/mp4a-latm", "und", 2),
                 ),
             ),
-            preset = preset,
+            target = target,
+            operation = ProcessingOperation.TRANSCODE,
             targetWidth = PROBE_WIDTH,
             targetHeight = PROBE_HEIGHT,
-            retainedAudioTrackIds = retainedAudioTrackIds,
+            retainedTrackIds = retainedTrackIds,
             estimatedOutputBytes = 1_000_000,
             requiredFreeBytes = 1_000_000,
             outputDisplayName = "refusal.mp4",
@@ -215,10 +217,10 @@ class Stage1CodecRefusalMeasurementTest {
             changes = emptyList(),
         )
 
-    private fun describe(result: TranscodeEngineResult): String = when (result) {
-        is TranscodeEngineResult.Failed -> "Failed(${result.errorCode})"
-        is TranscodeEngineResult.Completed -> "Completed(fallbacks=${result.fallbacks.map { it.name }})"
-        TranscodeEngineResult.Canceled -> "Canceled"
+    private fun describe(result: ProcessingEngineResult): String = when (result) {
+        is ProcessingEngineResult.Failed -> "Failed(${result.errorCode})"
+        is ProcessingEngineResult.Completed -> "Completed(fallbacks=${result.fallbacks.map { it.name }})"
+        ProcessingEngineResult.Canceled -> "Canceled"
     }
 
     private companion object {

@@ -23,6 +23,7 @@ Desktop.ini
 
 # Local research material and generated previews
 refer/
+.research/
 .tmp-*/
 
 # Logs

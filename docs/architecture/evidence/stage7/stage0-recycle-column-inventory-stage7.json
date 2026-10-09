@@ -1,0 +1,27 @@
+            { "apiLevel": 36
+            , "permissions": { "readMediaVideo": false
+, "readMediaVisualUserSelected": false
+, "readExternalStorage": false
+, "manageMediaDeclared": false
+, "canManageMedia": false
+, "isExternalStorageManager": false
+}
+            , "device": "25102RKBEC"
+            , "ownPackage": "seeyuer.yingli.player"
+            , "projection": ["_id","_display_name","owner_package_name","is_trashed","date_expires","date_added","relative_path"]
+            , "defaultQueryError": null
+            , "trashedOnlyQueryError": null
+            , "includeTrashedQueryError": null
+            , "cursorColumns": ["_id","_display_name","owner_package_name","is_trashed","date_expires","date_added","relative_path"]
+            , "firstRowRaw": {}
+            , "defaultCount": 0
+            , "trashedOnlyCount": 0
+            , "includeTrashedCount": 0
+            , "ownPackageCount": 0
+            , "foreignPackageCount": 0
+            , "nullOwnerCount": 0
+            , "rowsWithNonZeroDateExpires": 0
+            , "distinctOwners": []
+            , "samples": []
+            , "trashedSamples": []
+            }

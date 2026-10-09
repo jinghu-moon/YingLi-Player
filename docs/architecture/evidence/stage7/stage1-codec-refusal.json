@@ -1,0 +1,11 @@
+{
+  "capturedAtEpochMillis": 1791578397984,
+  "deviceEncoders": ["audio/3gpp","audio/amr-wb","audio/flac","audio/mihc","audio/mp4a-latm","audio/opus","image/vnd.android.heic","video/3gpp","video/apv","video/av01","video/avc","video/hevc","video/mp4v-es","video/x-mvhevc","video/x-vnd.on2.vp8","video/x-vnd.on2.vp9"],
+  "requestedMissingVideoMime": "video/mpeg2",
+  "requestedMissingAudioMime": "audio/ac3",
+  "videoResult": "Failed(CONTAINER_VIDEO_CODEC_UNSUPPORTED)",
+  "audioResult": "Failed(CONTAINER_AUDIO_CODEC_UNSUPPORTED)",
+  "controlResult": "Failed(TRANSCODE_FAILED)",
+  "videoOutputCreated": false,
+  "audioOutputCreated": false
+}

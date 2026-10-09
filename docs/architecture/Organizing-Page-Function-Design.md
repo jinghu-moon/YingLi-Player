@@ -2037,6 +2037,94 @@ L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher
 
 复用阶段 0-A 基线，执行相同构建、Lint/静态检查与单测，并额外执行 §15 的功能测试矩阵。**逐项记录通过、失败、未覆盖及原因。**
 
+#### 14.8.1 阶段 7 回归记录（2026-10-11）
+
+**1. 门禁（§15.5 原命令，不允许减少断言/跳过测试）**
+
+```
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
+```
+
+结果：**BUILD SUCCESSFUL**。`lintDebug` 0 错误；三个 assemble 目标通过。JVM 单测用 `--rerun` 强制重跑（避免 up-to-date 复用旧结果）后聚合 `app/build/test-results/testDebugUnitTest/TEST-*.xml` = **117 suites / 774 tests / 0 failures / 0 errors / 0 skipped**。
+
+与 §15.1 基线对照：阶段 0-A 记录的是 `testDebugUnitTest` **136 tests**、`lintDebug` 0 错误（当时真机 `connectedDebugAndroidTest` 被 MIUI 拒、计 0 tests）。**136 → 774** 的增量来自去重、回收站、转码与整理页新增用例；门禁口径未放宽。
+
+**2. 真机功能矩阵（Xiaomi 25102RKBEC，Android 16 / API 36，serial `f3ba305a`）**
+
+| 批次 | 范围 | 类数 | 用例数 | 结果 | 耗时 |
+|---|---|---|---|---|---|
+| A | data / room / engine | 16 | 80 | **全部通过** | 153.9 s |
+| B | UI 与应用层 | 12 | 62 | 60 通过 + **2 例既有失败**（见 3） | 2788.8 s |
+| C | 测量取证（转码 / 封装 / 回收站平台行为） | 6 | 15 | **全部通过**（首跑 1 失败，见 4） | 7.5 s |
+
+批次 C 复跑 `-e phaseLabel stage7 -e configTag stage7`，输出 `OK (15 tests)`。
+
+**3. 既有失败（不是本次回归，未修）**
+
+`DisplayPositionInstrumentedTest` 两例（`:61`、`:106`）在批次 B 失败：
+
+```
+java.lang.IllegalStateException: Player is accessed on the wrong thread.
+  Current thread: 'Instr: androidx.test.runner.AndroidJUnitRunner' / Expected thread: 'main'
+  ExoPlayerImpl.verifyApplicationThread(ExoPlayerImpl.java:3113)
+  ← ExoPlayerImpl.getCurrentPosition(ExoPlayerImpl.java:1218)
+  ← ServicePlaybackEngine.currentPositionMillis(ServicePlaybackEngine.kt:256)
+  ← PlaybackSessionRuntime.currentPositionMillis(PlaybackSessionRuntime.kt:145)
+```
+
+阶段 5 已记录该失败；最后一次改动这三个文件的是 `c597599`，早于阶段 5/6 的 diff。按「不顺手改与本任务无关的代码」保持原样，**仍是遗留问题**。
+
+**4. 阶段 7 发现的真实问题（已按根因修复，只改测试）**
+
+`Stage1CodecRefusalMeasurementTest.unsupportedTargetCodecIsRefusedBeforeEncoding` 失败：
+
+```
+expected:<Failed([VIDEO_ENCODER_UNAVAILABLE])> but was:<Failed([CONTAINER_VIDEO_CODEC_UNSUPPORTED])>
+```
+
+根因：**阶段 2 步骤 7 引入的容器门排在编码器门之前**，而该用例挑选「本机没有编码器」的候选 mime 时用的是容器级格式（`video/mpeg2`、`video/quicktime`、`video/x-msvideo`、`video/x-ms-wmv`），它们**同样不被 MP4 muxer 接受**，于是先撞上容器门。`Media3ProcessingEngine` 的两道门都发生在**编码之前**，都**不产生输出文件**，因此**用户可见行为未变**，变的只是错误码；而本机所有「MP4 容器收」的视频格式都有编码器，所以在真机上根本走不到编码器门。
+
+修法（不动实现、不为了让测试变绿而调整校验顺序）：
+
+1. 视频/音频断言改为「落在该侧**两条编码前拒绝码**之一」（`PRE_ENCODE_VIDEO_REFUSALS` / `PRE_ENCODE_AUDIO_REFUSALS`），断言的不变量是「编码前拒绝 + 不产生输出 + 对照组不被拒」；
+2. **修对照组的多余盲点**：旧写法只排除编码器码（`startsWith("Failed(VIDEO_ENCODER_UNAVAILABLE)")`），因此容器门把对照组拒掉时它照样变绿。新写法要求对照组「**既被目标容器接受、又有本机编码器**」（`encodableAndAccepted(encoders, MuxerContainer.Mp4.videoSampleMimeTypes)`），并断言它不被任一条编码前码拒掉。**这一改动立刻暴露出第二处盲点**：旧写法的 `encoders.firstOrNull { MimeTypes.isAudio(it) }` 会挑到 `audio/flac` / `audio/opus`（本机有编码器但 MP4 不收），对照组其实一直被容器门拒掉却静默通过。
+
+修复后：单类 `OK (1 test)`；整批 C `OK (15 tests)`。
+
+新证据归档 `docs/architecture/evidence/stage7/`（14 份）：
+
+- `stage1-codec-refusal.json`：`videoResult = Failed(CONTAINER_VIDEO_CODEC_UNSUPPORTED)`、`audioResult = Failed(CONTAINER_AUDIO_CODEC_UNSUPPORTED)`、`controlResult = Failed(TRANSCODE_FAILED)`、`videoOutputCreated = false`、`audioOutputCreated = false`（对照组走的仍是「格式没问题、源不存在」的后段失败 ⇒ 前置校验具有选择性）；
+- `stage1-bitrate-stage7.json`：`compatible` 5,956,424 / `balanced` 3,865,446 / `space_saver` 1,859,021 字节，与阶段 1 归档值（5,968,431 / 3,868,755 / 1,867,993）相差 < 0.5% ⇒ **码率接线未回退**；
+- 其余为阶段 0/1/2 快照在阶段 7 复跑时的再生值。
+
+**5. §15.3 逐条状态**
+
+| §15.3 条目 | 状态 | 依据 / 原因 |
+|---|---|---|
+| 竖屏源 × 三档预设 | ✅ | §20.1.1 |
+| SDR 源 × 三档（字节单调分离） | ✅ | `stage1-bitrate-stage7.json`（5.96 → 3.87 → 1.86 MB） |
+| 请求 HEVC 但设备无 HEVC 编码器 | ⚠ 本机不可复现 | 本机具备 HEVC/AV1/VP9/VP8/H.263/MPEG-4 编码器；改由「请求本机确实没有的格式 ⇒ 编码前拒绝」覆盖（`stage1-codec-refusal.json`）+ JVM 侧 planner 测试 |
+| HDR10 源 tone mapping | 🟡 部分闭合 | 合成 HDR 色彩源已走通（`stage1-hdr-tonemap.json`，阶段 7 复跑 2 例通过）；**本机媒体库无真实 HDR10/HLG 素材**，真实素材色偏与多设备矩阵未验证 |
+| MKV(H.265) → MP4 | ❌ 未验证 | 无语料 |
+| MKV(VP9+Opus) → MP4 | ✅ | `stage2-remux-case1`，阶段 7 复跑 5 例通过 |
+| 多音轨源的确认/丢弃 | ❌ 未验证 | 无语料 |
+| VFR 源 / 旋转元数据 / 空间耗尽 | ❌ 未验证 | 无语料与故障注入手段 |
+| 超长任务 `onTimeout` | ❌ **未验证** | 结构由 JVM 单测覆盖；系统真的调用 `onTimeout` 未触发，**未用缩短时限伪造** |
+| `YingLiDatabaseMigrationTest` 扩展至 v11 | ✅ | 批次 A 14 例通过 |
+| `content://` 与 `file://` 移入/恢复/删除端到端 | ✅ | `RecycleBinStorageDeviceTest` 2 例通过 |
+| R1 `IS_TRASHED` 在查询中不可见 | ❌ 未单独断言 | 只断言了移入后仍可读、永久删除后不可读 |
+| R2 副本目录与 UUID 命名 | ✅ | 设备用例断言 `filesDir/recycle-bin/items/<uuid>`；`staging → items` 原子 rename 无故障注入，仅单测顺序 |
+| 从 AB 循环导出 | ❌ 未验证 | 无语料（阶段 2 步骤 6/8 只做了 remux 与区间） |
+| 故障注入（8 项） | ❌ 全部未验证 | 需要可控的杀进程/撤权/离线时序 harness |
+| 到期清理与恢复同时触发 | ❌ 未验证 | 同上 |
+| 同一媒体上压缩与移入同时请求 | ❌ 未验证 | 同上 |
+| 回归（首页/视频列表/搜索/播放/多选/刷新/任务中心/切片/压缩） | 🟡 部分 | 批次 B 覆盖 `MediaHomeStateTest`、`LibraryScreenTest`、`OrganizeScreenTest`、`ProcessingScreenTest`、`SettingsScreenTest`、`SecurityScreensTest`、`AdaptiveAppShellTest` 与播放 4 类；**真机端到端手工回归未做** |
+| 权限与系统版本矩阵 API 31/33/34/35/36 | 🟡 仅 API 36 | 只有一台设备；其余 API 未在模拟器上补齐 |
+
+**6. 未覆盖原因归纳**：① 设备语料只有普通 SDR / AVC / MP4，缺 HDR、多音轨、VFR、MKV、损坏文件；② 只有一台设备、只有 API 36；③ 故障注入需要可控的杀进程 / 撤权 / 卷离线时序，本阶段未搭 harness；④ 6 小时前台服务超时在真实设备上无法于本阶段内跑到。
+
+**结论**：门禁全绿；可执行的设备用例全绿（除 2 例既有失败）；阶段 7 发现的 1 个真实问题按根因修复且**只改测试、未掩盖实现**；未覆盖项**逐条列出并标注未验证，不声称通过**。
+
 ---
 
 ## 15. 测试要求（改前 / 改后）

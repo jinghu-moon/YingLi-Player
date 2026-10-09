@@ -1,0 +1,13 @@
+{
+  "device": "Xiaomi 25102RKBEC",
+  "androidApi": 36,
+  "source": "合成 WebM：VP9 视频轨（假样本）+ Opus 音频轨（真 OpusHead）",
+  "requested": {
+    "containerMimeType": "audio\/ogg",
+    "sourceVideoMimeType": "video\/x-vnd.on2.vp9"
+  },
+  "measured": {
+    "engineResult": "Failed(REMUX_CODEC_UNSUPPORTED)",
+    "outputExists": "false"
+  }
+}

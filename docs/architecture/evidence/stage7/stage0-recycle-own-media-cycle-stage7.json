@@ -1,0 +1,33 @@
+            { "apiLevel": 36
+            , "permissions": { "readMediaVideo": false
+, "readMediaVisualUserSelected": false
+, "readExternalStorage": false
+, "manageMediaDeclared": false
+, "canManageMedia": false
+, "isExternalStorageManager": false
+}
+            , "uri": "content://media/external/video/media/15658"
+            , "before": { "isTrashed": "0"
+, "dateExpires": null
+, "dateAdded": "1791578399"
+, "owner": "seeyuer.yingli.player"
+, "cursorColumns": ["_id","_display_name","owner_package_name","is_trashed","date_expires","date_added","relative_path"]
+}
+            , "setTrashedTrue": "ok"
+            , "afterTrash": { "isTrashed": "1"
+, "dateExpires": "1794170399"
+, "dateAdded": "1791578399"
+, "owner": "seeyuer.yingli.player"
+, "cursorColumns": ["_id","_display_name","owner_package_name","is_trashed","date_expires","date_added","relative_path"]
+}
+            , "visibleInDefaultQueryWhileTrashed": 0
+            , "visibleInTrashedQueryWhileTrashed": 1
+            , "setTrashedFalse": "ok"
+            , "afterRestore": { "isTrashed": "0"
+, "dateExpires": null
+, "dateAdded": "1791578399"
+, "owner": "seeyuer.yingli.player"
+, "cursorColumns": ["_id","_display_name","owner_package_name","is_trashed","date_expires","date_added","relative_path"]
+}
+            , "visibleInDefaultQueryAfterRestore": 1
+            }

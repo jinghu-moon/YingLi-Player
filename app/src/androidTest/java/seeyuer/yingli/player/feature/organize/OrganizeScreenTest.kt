@@ -48,6 +48,15 @@ class OrganizeScreenTest {
                     onRequestDuplicateDeletion = {},
                     onDismissDuplicateDeletion = {},
                     onConfirmDuplicateDeletion = {},
+                    onOpenTrash = {},
+                    onCloseTrash = {},
+                    onRestore = {},
+                    onRequestPurge = {},
+                    onDismissPurge = {},
+                    onConfirmPurge = {},
+                    onRequestClearTrash = {},
+                    onDismissClearTrash = {},
+                    onConfirmClearTrash = {},
                 )
             }
         }

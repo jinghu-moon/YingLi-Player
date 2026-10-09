@@ -135,7 +135,6 @@ import seeyuer.yingli.player.domain.library.SortSpec
 import seeyuer.yingli.player.domain.library.LibraryMedia
 import seeyuer.yingli.player.domain.library.LibrarySortField
 import seeyuer.yingli.player.domain.library.LibraryViewMode
-import seeyuer.yingli.player.domain.library.TrashEntry
 import seeyuer.yingli.player.domain.playback.PlaybackQueueSource
 
 @Composable
@@ -166,9 +165,6 @@ fun LibraryRoute(
         onToggleSelection = viewModel::toggleSelection,
         onClearSelection = viewModel::clearSelection,
         onTrashSelected = viewModel::trashSelected,
-        onToggleTrash = viewModel::toggleTrash,
-        onRestore = viewModel::restore,
-        onPurge = viewModel::purge,
         onMediaSelected = { mediaId ->
             val queueSource = when (state.browseMode) {
                 LibraryBrowseMode.ALL_VIDEOS -> PlaybackQueueSource.allVideos()
@@ -211,9 +207,6 @@ fun LibraryScreen(
     onToggleSelection: (LibraryMedia) -> Unit,
     onClearSelection: () -> Unit,
     onTrashSelected: () -> Unit,
-    onToggleTrash: () -> Unit,
-    onRestore: (TrashEntry) -> Unit,
-    onPurge: (TrashEntry) -> Unit,
     onMediaSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     thumbnailRepository: ThumbnailLoader? = null,
@@ -229,7 +222,6 @@ fun LibraryScreen(
     onRescan: () -> Unit = {},
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
-    var confirmPurge by remember { mutableStateOf<TrashEntry?>(null) }
     // Nested library navigation is not part of the global route stack; intercept
     // system back (gesture / predictive) so it does not finish the activity.
     BackHandler(
@@ -250,7 +242,6 @@ fun LibraryScreen(
             onToggleMore = onToggleMore,
             onCloseMore = onCloseMore,
             onToggleFilter = onToggleFilter,
-            onOpenTrash = onToggleTrash,
             onAddDirectory = onAddDirectory,
             onRescan = onRescan,
             onClearSelection = onClearSelection,
@@ -286,9 +277,6 @@ fun LibraryScreen(
             onEnterFolder = onEnterFolder,
             onClearSelection = onClearSelection,
             onRequestDelete = { confirmDelete = true },
-            onToggleTrash = onToggleTrash,
-            onRestore = onRestore,
-            onRequestPurge = { confirmPurge = it },
             thumbnailRepository = thumbnailRepository,
             modifier = Modifier.weight(1f),
         )
@@ -316,20 +304,6 @@ fun LibraryScreen(
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.library_cancel)) } },
         )
     }
-    confirmPurge?.let { entry ->
-        AlertDialog(
-            onDismissRequest = { confirmPurge = null },
-            title = { Text(stringResource(R.string.library_purge_confirm_title)) },
-            text = { Text(stringResource(R.string.library_purge_confirm_message)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmPurge = null
-                    onPurge(entry)
-                }) { Text(stringResource(R.string.library_purge), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { confirmPurge = null }) { Text(stringResource(R.string.library_cancel)) } },
-        )
-    }
 }
 
 @Composable
@@ -340,7 +314,6 @@ private fun LibraryTopBar(
     onToggleMore: () -> Unit,
     onCloseMore: () -> Unit,
     onToggleFilter: () -> Unit,
-    onOpenTrash: () -> Unit,
     onAddDirectory: () -> Unit,
     onRescan: () -> Unit,
     onClearSelection: () -> Unit,
@@ -402,7 +375,6 @@ private fun LibraryTopBar(
                     YingLiDropdownMenuItem(text = "添加媒体目录", onClick = onAddDirectory)
                     YingLiDropdownMenuItem(text = "重新扫描", onClick = onRescan)
                     YingLiDropdownMenuItem(text = stringResource(R.string.library_view_settings), onClick = onToggleFilter)
-                    YingLiDropdownMenuItem(text = stringResource(R.string.library_trash), onClick = onOpenTrash)
                 }
             }
         },
@@ -558,9 +530,6 @@ private fun LibraryContent(
     onEnterFolder: (LibraryPathSegment) -> Unit,
     onClearSelection: () -> Unit,
     onRequestDelete: () -> Unit,
-    onToggleTrash: () -> Unit,
-    onRestore: (TrashEntry) -> Unit,
-    onRequestPurge: (TrashEntry) -> Unit,
     thumbnailRepository: ThumbnailLoader?,
     modifier: Modifier,
 ) {
@@ -592,7 +561,6 @@ private fun LibraryContent(
             SelectionToolbar(state.selectedIds.size, onClearSelection, onRequestDelete)
         }
         when {
-            state.trashOpen -> TrashPanel(state.trashEntries, onToggleTrash, onRestore, onRequestPurge, Modifier.weight(1f))
             state.browseMode == LibraryBrowseMode.FOLDER && state.keyword.isBlank() -> {
                 val folderPathKey = state.currentPath.lastOrNull()?.path.orEmpty()
                 AnimatedContent(
@@ -912,48 +880,6 @@ private fun PagingErrorState(onRetry: () -> Unit, modifier: Modifier) {
         Text(stringResource(R.string.library_error_title), style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.library_error_message), color = YingLiTheme.colors.textSecondary)
         TextButton(onClick = onRetry) { Text(stringResource(R.string.library_load_more_retry)) }
-    }
-}
-
-@Composable
-private fun TrashPanel(
-    entries: List<TrashEntry>,
-    onClose: () -> Unit,
-    onRestore: (TrashEntry) -> Unit,
-    onPurge: (TrashEntry) -> Unit,
-    modifier: Modifier,
-) {
-    Column(modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.library_trash), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            YingLiButton(stringResource(R.string.action_back), onClose)
-        }
-        if (entries.isEmpty()) {
-            YingLiEmptyState(
-                stringResource(R.string.library_trash_empty),
-                stringResource(R.string.library_trash_empty_message),
-                Modifier.weight(1f),
-            )
-        } else {
-            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(12.dp)) {
-                items(entries, key = { it.mediaId.value }) { entry ->
-                    Surface(color = YingLiTheme.colors.surfaceComponent) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(entry.mediaId.value, modifier = Modifier.weight(1f))
-                            YingLiButton(stringResource(R.string.library_restore), { onRestore(entry) })
-                            Button(
-                                onClick = { onPurge(entry) },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            ) { Text(stringResource(R.string.library_purge)) }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
     }
 }
 

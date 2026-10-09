@@ -44,7 +44,7 @@ class LibraryViewModelTest {
     @Test
     fun `rapid search only executes final debounced keyword`() = runTest {
         val repository = FakeLibraryRepository()
-        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository(), FakeTrashRepository())
+        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository())
         val collectJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.state.collect {} }
         advanceTimeBy(250)
         runCurrent()
@@ -66,7 +66,7 @@ class LibraryViewModelTest {
     @Test
     fun `quick settings persist independent folder and video columns`() = runTest {
         val preferences = FakePreferenceRepository()
-        val viewModel = LibraryViewModel(FakeLibraryRepository(), preferences, FakeMutationRepository(), FakeTrashRepository())
+        val viewModel = LibraryViewModel(FakeLibraryRepository(), preferences, FakeMutationRepository())
 
         viewModel.applyQuickSettings(
             LibraryBrowseMode.FOLDER,
@@ -87,7 +87,7 @@ class LibraryViewModelTest {
     @Test
     fun `folder header count includes current folder descendants`() = runTest {
         val repository = FakeLibraryRepository(folderTreeCount = 7)
-        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository(), FakeTrashRepository())
+        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository())
 
         viewModel.enterFolder(LibraryPathSegment("DCIM", "DCIM"))
         val state = viewModel.state.first { it.folderTreeVideoCount == 7 }
@@ -99,7 +99,7 @@ class LibraryViewModelTest {
     @Test
     fun `all videos mode does not query folders`() = runTest {
         val repository = FakeLibraryRepository()
-        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository(), FakeTrashRepository())
+        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository())
         val collectJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.state.collect {} }
         runCurrent()
         repository.folderQueries.clear()
@@ -117,7 +117,7 @@ class LibraryViewModelTest {
     @Test
     fun `whitespace keyword still queries folders as empty search`() = runTest {
         val repository = FakeLibraryRepository()
-        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository(), FakeTrashRepository())
+        val viewModel = LibraryViewModel(repository, FakePreferenceRepository(), FakeMutationRepository())
         val collectJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.state.collect {} }
         runCurrent()
         repository.folderQueries.clear()
@@ -193,14 +193,6 @@ class LibraryViewModelTest {
             BatchOperationSummary(items.size, emptyMap())
         override suspend fun restore(entry: TrashEntry): FileOperationResult = FileOperationResult.Success(entry.originalUri)
         override suspend fun purge(entry: TrashEntry): FileOperationResult = FileOperationResult.Success(entry.originalUri)
-    }
-
-    private class FakeTrashRepository : seeyuer.yingli.player.domain.library.TrashRepository {
-        override fun observe() = MutableStateFlow<List<TrashEntry>>(emptyList())
-        override suspend fun put(entry: TrashEntry) = Unit
-        override suspend fun updateState(mediaId: seeyuer.yingli.player.core.model.media.MediaItemId, state: seeyuer.yingli.player.domain.library.TrashState) = Unit
-        override suspend fun remove(mediaId: seeyuer.yingli.player.core.model.media.MediaItemId) = Unit
-        override suspend fun expired(nowEpochMillis: Long) = emptyList<TrashEntry>()
     }
 
 }

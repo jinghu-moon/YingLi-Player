@@ -44,8 +44,6 @@ import seeyuer.yingli.player.domain.library.LibraryPathSegment
 import seeyuer.yingli.player.domain.library.LibraryFolder
 import seeyuer.yingli.player.domain.library.SortDirection
 import seeyuer.yingli.player.domain.library.SortSpec
-import seeyuer.yingli.player.domain.library.TrashEntry
-import seeyuer.yingli.player.domain.library.TrashRepository
 
 data class LibraryUiState(
     val totalCount: Int = 0,
@@ -64,8 +62,6 @@ data class LibraryUiState(
     val moreMenuOpen: Boolean = false,
     val displayFields: LibraryDisplayFields = LibraryDisplayFields(),
     val lastBatchResult: BatchOperationSummary? = null,
-    val trashEntries: List<TrashEntry> = emptyList(),
-    val trashOpen: Boolean = false,
     val folders: List<LibraryFolder> = emptyList(),
 )
 
@@ -74,7 +70,6 @@ class LibraryViewModel(
     private val repository: LibraryPagingRepository,
     private val preferenceRepository: LibraryPreferenceRepository,
     private val mutationRepository: LibraryMutationRepository,
-    private val trashRepository: TrashRepository,
 ) : ViewModel() {
     private data class LibraryNavigationState(
         val mode: LibraryBrowseMode = LibraryBrowseMode.FOLDER,
@@ -93,7 +88,6 @@ class LibraryViewModel(
     private val moreMenuOpen = MutableStateFlow(false)
     private val displayFields = MutableStateFlow(LibraryDisplayFields())
     private val lastBatchResult = MutableStateFlow<BatchOperationSummary?>(null)
-    private val trashOpen = MutableStateFlow(false)
 
     init {
         viewModelScope.launch {
@@ -173,8 +167,6 @@ class LibraryViewModel(
         moreMenuOpen,
         displayFields,
         lastBatchResult,
-        trashRepository.observe(),
-        trashOpen,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         InteractionState(
@@ -185,8 +177,6 @@ class LibraryViewModel(
             moreMenuOpen = values[4] as Boolean,
             displayFields = values[5] as LibraryDisplayFields,
             batchResult = values[6] as BatchOperationSummary?,
-            trashEntries = values[7] as List<TrashEntry>,
-            trashOpen = values[8] as Boolean,
         )
     }
 
@@ -214,8 +204,6 @@ class LibraryViewModel(
             moreMenuOpen = interaction.moreMenuOpen,
             displayFields = interaction.displayFields,
             lastBatchResult = interaction.batchResult,
-            trashEntries = interaction.trashEntries,
-            trashOpen = interaction.trashOpen,
             folders = folderRows,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), LibraryUiState())
@@ -317,10 +305,6 @@ class LibraryViewModel(
         }
     }
 
-    fun toggleTrash() {
-        trashOpen.update { !it }
-    }
-
     fun setSort(field: LibrarySortField) {
         val updated = if (sort.value.field == field) {
             sort.value.copy(
@@ -375,14 +359,6 @@ class LibraryViewModel(
         }
     }
 
-    fun restore(entry: TrashEntry) {
-        viewModelScope.launch { mutationRepository.restore(entry) }
-    }
-
-    fun purge(entry: TrashEntry) {
-        viewModelScope.launch { mutationRepository.purge(entry) }
-    }
-
     companion object {
         private const val SEARCH_DEBOUNCE_MILLIS = 250L
         private const val STOP_TIMEOUT = 5_000L
@@ -393,9 +369,8 @@ class LibraryViewModel(
             repository: LibraryPagingRepository,
             preferenceRepository: LibraryPreferenceRepository,
             mutationRepository: LibraryMutationRepository,
-            trashRepository: TrashRepository,
         ) = viewModelFactory {
-            initializer { LibraryViewModel(repository, preferenceRepository, mutationRepository, trashRepository) }
+            initializer { LibraryViewModel(repository, preferenceRepository, mutationRepository) }
         }
     }
 
@@ -424,7 +399,5 @@ class LibraryViewModel(
         val moreMenuOpen: Boolean,
         val displayFields: LibraryDisplayFields,
         val batchResult: BatchOperationSummary?,
-        val trashEntries: List<TrashEntry>,
-        val trashOpen: Boolean,
     )
 }

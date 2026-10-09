@@ -79,9 +79,6 @@ class LibraryScreenTest {
                     onToggleSelection = {},
                     onClearSelection = {},
                     onTrashSelected = {},
-                    onToggleTrash = {},
-                    onRestore = {},
-                    onPurge = {},
                     onMediaSelected = {},
                     onToggleSearch = { searchOpen = !searchOpen },
                 )

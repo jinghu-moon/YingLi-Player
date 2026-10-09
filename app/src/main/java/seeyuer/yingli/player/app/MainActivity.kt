@@ -119,7 +119,6 @@ class MainActivity : ComponentActivity() {
             media.libraryRepository,
             media.libraryPreferenceRepository,
             media.libraryMutationRepository,
-            media.trashRepository,
         )
     }
     private val organizeViewModel: OrganizeViewModel by viewModels {
@@ -131,6 +130,9 @@ class MainActivity : ComponentActivity() {
             media.duplicateScanner,
             media.duplicateDeletionExecutor,
             app.container.clock,
+            media.libraryMutationRepository,
+            media.trashRepository,
+            media.homeRepository,
         )
     }
     private val homeViewModel: HomeViewModel by viewModels {
@@ -167,7 +169,7 @@ class MainActivity : ComponentActivity() {
             app.container.clock,
             media.timelineFrameProvider,
             media.mediaCapabilityProbe,
-            media.transcodeQueue,
+            media.processingQueue,
             availableBytes = { runCatching { StatFs(cacheDir.absolutePath).availableBytes }.getOrDefault(0) },
         )
     }

@@ -44,6 +44,20 @@ const val DISPLAY_POSITION_TICK_MILLIS: Long = 250
  * - **无媒体 / Idle / Preparing / Ready / Buffering / Ended / Failed**：没有正在推进的位置可显示，
  *   交出快照里该相位的权威位置（引擎在状态跳变时带上的真实位置）后挂起等待；
  * - 播放重新开始时**立即**再读一次，不需要等满一个 tick。
+ *
+ * ## 测试契约：播放中的这条流**永不静止**
+ *
+ * 播放期间的 tick 没有终止条件，因此在 `kotlinx-coroutines-test` 的虚拟时间调度器上
+ * `advanceUntilIdle()` **永远不会返回** —— 每一拍的 `delay` 都被立刻推进并重新排队，
+ * "调度器静止"这个前置条件不成立。
+ *
+ * 真机现场：`ShortsViewModelTest` 用 `advanceUntilIdle()` 等初始化完成，导致整个
+ * `testDebugUnitTest` 任务挂死 40 分钟且无任何产物落盘；`jstack` 的唯一忙线程停在
+ * `TestCoroutineScheduler.sendDispatchEvent`，协程编号已经到 `#3629`。
+ *
+ * 因此：断言"初始化/flush 完成"用 `runCurrent()`；需要跨过某个具体延时时用
+ * `advanceTimeBy(...)` + `runCurrent()`（范式见 `PlayerDisplayPositionTest`）。
+ * 需要"等某个状态出现"时用有界轮询，不要用 `advanceUntilIdle()`。
  */
 fun displayPositionMillis(sessionClient: PlaybackSessionClient): Flow<Long> =
     flow {

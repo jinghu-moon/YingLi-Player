@@ -1,5 +1,6 @@
 package seeyuer.yingli.player.feature.organize
 
+import android.content.IntentSender
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -32,14 +33,19 @@ import seeyuer.yingli.player.domain.duplicates.DuplicateRepository
 import seeyuer.yingli.player.domain.duplicates.DuplicateScanQueue
 import seeyuer.yingli.player.domain.duplicates.DuplicateScanner
 import seeyuer.yingli.player.domain.home.HomeRepository
-import seeyuer.yingli.player.domain.library.FileOperationFailure
-import seeyuer.yingli.player.domain.library.FileOperationResult
-import seeyuer.yingli.player.domain.library.LibraryMutationRepository
-import seeyuer.yingli.player.domain.library.TrashEntry
-import seeyuer.yingli.player.domain.library.TrashRepository
 import seeyuer.yingli.player.domain.processing.ProcessingProjectId
 import seeyuer.yingli.player.domain.processing.ProcessingRepository
 import seeyuer.yingli.player.domain.processing.ProcessingTaskState
+import seeyuer.yingli.player.domain.recycle.RecycleAction
+import seeyuer.yingli.player.domain.recycle.RecycleAuthorizationRequest
+import seeyuer.yingli.player.domain.recycle.RecycleQueue
+import seeyuer.yingli.player.domain.recycle.RecycleTarget
+import seeyuer.yingli.player.domain.recycle.TrashEntry
+import seeyuer.yingli.player.domain.recycle.TrashOperationOutcome
+import seeyuer.yingli.player.domain.recycle.TrashRepository
+import seeyuer.yingli.player.domain.recycle.TrashService
+import seeyuer.yingli.player.domain.recycle.TrashState
+import seeyuer.yingli.player.data.recycle.RecycleAuthorizationLauncher
 
 enum class OrganizeEditorKind {
     TAG,
@@ -66,6 +72,11 @@ data class OrganizeUiState(
     val pendingPurge: TrashItemUi? = null,
     val clearTrashConfirmOpen: Boolean = false,
     val trashStatusCode: String? = null,
+    /**
+     * 正在等待用户授权的系统对话框（§8.4 第 9 步：**必须由前台发起**）。
+     * 非空时页面负责把它交给系统并回报结果，见 `OrganizeScreen` 里的 launcher。
+     */
+    val pendingTrashAuthorization: RecycleAuthorizationRequest? = null,
 )
 
 /**
@@ -87,11 +98,13 @@ class OrganizeViewModel(
     private val duplicateScanner: DuplicateScanner? = null,
     private val duplicateDeletionExecutor: DuplicateDeletionExecutor? = null,
     private val clock: AppClock? = null,
-    private val libraryMutationRepository: LibraryMutationRepository? = null,
     private val trashRepository: TrashRepository? = null,
     private val homeRepository: HomeRepository? = null,
     private val duplicateScanQueue: DuplicateScanQueue? = null,
     private val processingRepository: ProcessingRepository? = null,
+    private val trashService: TrashService? = null,
+    private val recycleQueue: RecycleQueue? = null,
+    private val authorizationLauncher: RecycleAuthorizationLauncher? = null,
 ) : ViewModel() {
     private val editorKind = MutableStateFlow<OrganizeEditorKind?>(null)
     private val editorName = MutableStateFlow("")
@@ -106,6 +119,7 @@ class OrganizeViewModel(
     private val pendingPurge = MutableStateFlow<TrashEntry?>(null)
     private val clearTrashConfirmOpen = MutableStateFlow(false)
     private val trashStatusCode = MutableStateFlow<String?>(null)
+    private val pendingAuthorization = MutableStateFlow<RecycleAuthorizationRequest?>(null)
     private val groups = duplicateRepository?.groups ?: flowOf(emptyList())
     private val trashEntries = trashRepository?.observe() ?: flowOf(emptyList())
     private val libraryStats = homeRepository?.observeStats() ?: flowOf(0 to 0L)
@@ -134,17 +148,16 @@ class OrganizeViewModel(
     private val trashState = combine(
         trashEntries,
         trashSheetOpen,
-        pendingPurge,
-        clearTrashConfirmOpen,
-        trashStatusCode,
-    ) { entries, sheetOpen, purgeCandidate, clearConfirm, status ->
+        combine(pendingPurge, clearTrashConfirmOpen, trashStatusCode, pendingAuthorization, ::TrashOperationState),
+    ) { entries, sheetOpen, operation ->
         val now = nowEpochMillis()
         TrashState(
             items = entries.map { it.toItemUi(now) },
             sheetOpen = sheetOpen,
-            pendingPurge = purgeCandidate?.toItemUi(now),
-            clearConfirmOpen = clearConfirm,
-            statusCode = status,
+            pendingPurge = operation.pendingPurge?.toItemUi(now),
+            clearConfirmOpen = operation.clearConfirmOpen,
+            statusCode = operation.statusCode,
+            pendingAuthorization = operation.pendingAuthorization,
         )
     }
 
@@ -173,6 +186,7 @@ class OrganizeViewModel(
         pendingPurge = trash.pendingPurge,
         clearTrashConfirmOpen = trash.clearConfirmOpen,
         trashStatusCode = trash.statusCode,
+        pendingTrashAuthorization = trash.pendingAuthorization,
     ) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT), OrganizeUiState())
 
@@ -326,15 +340,12 @@ class OrganizeViewModel(
     }
 
     fun restore(entry: TrashEntry) {
-        val mutations = libraryMutationRepository ?: return
+        val service = trashService ?: return
         pendingPurge.value = null
+        pendingAuthorization.value = null
         trashStatusCode.value = null
         viewModelScope.launch {
-            trashStatusCode.value = when (val result = mutations.restore(entry)) {
-                is FileOperationResult.Success -> TRASH_RESTORED
-                is FileOperationResult.RecoverableFailure -> "${TRASH_FAILED_PREFIX}${result.reason.name}"
-                is FileOperationResult.PartialSuccess -> "${TRASH_FAILED_PREFIX}${FileOperationFailure.PARTIAL.name}"
-            }
+            trashStatusCode.value = service.restore(entry.locationId).toTrashStatusCode(TRASH_RESTORED)
         }
     }
 
@@ -347,16 +358,13 @@ class OrganizeViewModel(
     }
 
     fun confirmPurge() {
-        val mutations = libraryMutationRepository ?: return
+        val service = trashService ?: return
         val entry = pendingPurge.value ?: return
         pendingPurge.value = null
+        pendingAuthorization.value = null
         trashStatusCode.value = null
         viewModelScope.launch {
-            trashStatusCode.value = when (val result = mutations.purge(entry)) {
-                is FileOperationResult.Success -> TRASH_PURGED
-                is FileOperationResult.RecoverableFailure -> "${TRASH_FAILED_PREFIX}${result.reason.name}"
-                is FileOperationResult.PartialSuccess -> "${TRASH_FAILED_PREFIX}${FileOperationFailure.PARTIAL.name}"
-            }
+            trashStatusCode.value = service.purge(entry.locationId).toTrashStatusCode(TRASH_PURGED)
         }
     }
 
@@ -369,28 +377,101 @@ class OrganizeViewModel(
         clearTrashConfirmOpen.value = false
     }
 
+    /**
+     * 清空回收站。
+     *
+     * 归属规则（§11.3）：**清空是批量操作，进任务中心**——逐项 `File.delete()` 与系统授权弹窗
+     * 都可能拖很久，不能钉在前台的 `viewModelScope` 上。没有任务中心（单测）时才退回逐项直删。
+     */
     fun confirmClearTrash() {
-        val mutations = libraryMutationRepository ?: return
         val entries = state.value.trashItems.map { it.entry }
         clearTrashConfirmOpen.value = false
         if (entries.isEmpty()) return
+        pendingAuthorization.value = null
         trashStatusCode.value = null
-        viewModelScope.launch {
-            // 数据层只提供单项 purge，清空就是逐项调用；任一项失败即报告第一个失败原因，
-            // 已成功的那些不会回滚（它们确实已经被永久删除了，回滚反而是在撒谎）。
-            val failure = entries.firstNotNullOfOrNull { entry ->
-                (mutations.purge(entry) as? FileOperationResult.RecoverableFailure)?.reason
+        val queue = recycleQueue
+        if (queue == null) {
+            val service = trashService ?: return
+            viewModelScope.launch {
+                var failure: String? = null
+                for (entry in entries) {
+                    when (val outcome = service.purge(entry.locationId)) {
+                        is TrashOperationOutcome.Blocked -> { failure = outcome.code; break }
+                        is TrashOperationOutcome.Failed -> { failure = outcome.code; break }
+                        else -> Unit
+                    }
+                }
+                trashStatusCode.value = failure?.let { "$TRASH_FAILED_PREFIX$it" } ?: TRASH_CLEARED
             }
-            trashStatusCode.value = failure?.let { "${TRASH_FAILED_PREFIX}${it.name}" } ?: TRASH_CLEARED
+            return
+        }
+        viewModelScope.launch {
+            trashStatusCode.value = runCatching {
+                queue.enqueue(RecycleAction.PURGE, entries.map { RecycleTarget(it.locationId, it.mediaItemId) })
+            }.fold(onSuccess = { TRASH_CLEAR_ENQUEUED }, onFailure = { "${TRASH_FAILED_PREFIX}ENQUEUE_FAILED" })
         }
     }
 
+    /**
+     * 用户从系统对话框回来后推进状态机（§8.4 第 9 步）。
+     *
+     * 授权**只能由前台发起**，所以请求先摆到 [OrganizeUiState.pendingTrashAuthorization]，
+     * 页面把它交给系统再回报结果；拒绝是合法结局（源文件保持原样，副本退回 `recovery/`）。
+     */
+    fun resolveTrashAuthorization(granted: Boolean) {
+        val service = trashService ?: return
+        val request = pendingAuthorization.value ?: return
+        pendingAuthorization.value = null
+        viewModelScope.launch {
+            val outcome = service.resolveAuthorization(request.token, granted)
+            trashStatusCode.value = when (outcome) {
+                null -> if (granted) TRASH_RESTORED else "$TRASH_FAILED_PREFIX$AUTHORIZATION_DENIED"
+                else -> outcome.toTrashStatusCode(
+                    when (request.action) {
+                        RecycleAction.RESTORE -> TRASH_RESTORED
+                        RecycleAction.MOVE -> TRASH_MOVED
+                        RecycleAction.PURGE, RecycleAction.CLEANUP -> TRASH_PURGED
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * token → 系统授权对话框的 `IntentSender`（§8.4 第 9 步）。
+     *
+     * 授权**只能由前台拉起**，但「token 对应哪个 `PendingIntent`」是数据层的事实，
+     * 所以页面只向 ViewModel 要 sender，不自己去找宿主容器（那会让 feature 反向依赖 app）。
+     * 返回 `null` = token 已失效（进程重启过），调用方应当作「用户拒绝」处理。
+     */
+    fun authorizationIntent(token: String): IntentSender? =
+        authorizationLauncher?.authorizationIntent(token)?.intentSender
+
     private fun nowEpochMillis(): Long = clock?.now()?.toEpochMilli() ?: 0L
+
+    /**
+     * 把存储层的逐项结果翻成页面用的状态码。
+     *
+     * 需要授权时**顺手把请求摆进状态**（页面据此拉起系统对话框）；成功码由调用点给，
+     * 因为同一个 `Completed` 在恢复与删除两个入口下含义不同。
+     */
+    private fun TrashOperationOutcome.toTrashStatusCode(successCode: String): String = when (this) {
+        is TrashOperationOutcome.Completed -> successCode
+        is TrashOperationOutcome.Purged -> successCode
+        is TrashOperationOutcome.AuthorizationRequired -> {
+            pendingAuthorization.value = request
+            TRASH_AUTHORIZATION_REQUIRED
+        }
+        is TrashOperationOutcome.Blocked -> "$TRASH_FAILED_PREFIX$code"
+        is TrashOperationOutcome.Failed -> "$TRASH_FAILED_PREFIX$code"
+    }
 
     private fun TrashEntry.toItemUi(nowEpochMillis: Long): TrashItemUi = TrashItemUi(
         entry = this,
-        ageDays = (nowEpochMillis - deletedAtEpochMillis).coerceAtLeast(0L) / MILLIS_PER_DAY,
-        remainingDays = (purgeAtEpochMillis - nowEpochMillis).coerceAtLeast(0L) / MILLIS_PER_DAY,
+        // 只有进入 ACTIVE 才有移入时刻；仍在对账中的条目退回到「最后更新时间」，不显示假的天数。
+        ageDays = (nowEpochMillis - (trashedAtEpochMillis ?: updatedAtEpochMillis)).coerceAtLeast(0L) / MILLIS_PER_DAY,
+        // 保留期按后端各自的期限算（R1 读系统 `DATE_EXPIRES`，R2 按应用设置）；算不出来时显示 0。
+        remainingDays = remainingDays(nowEpochMillis) ?: 0L,
     )
 
     private data class EditorState(
@@ -416,6 +497,14 @@ class OrganizeViewModel(
         val pendingPurge: TrashItemUi?,
         val clearConfirmOpen: Boolean,
         val statusCode: String?,
+        val pendingAuthorization: RecycleAuthorizationRequest?,
+    )
+
+    private data class TrashOperationState(
+        val pendingPurge: TrashEntry?,
+        val clearConfirmOpen: Boolean,
+        val statusCode: String?,
+        val pendingAuthorization: RecycleAuthorizationRequest?,
     )
 
     companion object {
@@ -432,7 +521,19 @@ class OrganizeViewModel(
         /** 清空成功的反馈码。 */
         const val TRASH_CLEARED = "TRASH_CLEARED"
 
-        /** 失败反馈码前缀，完整形式为 `TRASH_FAILED_<FileOperationFailure>`。 */
+        /** 授权后移入成功的反馈码（R1/R2 都可能走到这里）。 */
+        const val TRASH_MOVED = "TRASH_MOVED"
+
+        /** 清空已排进任务中心（结果由回收站列表流自动送回来）。 */
+        const val TRASH_CLEAR_ENQUEUED = "TRASH_CLEAR_ENQUEUED"
+
+        /** 需要用户先通过系统对话框授权。 */
+        const val TRASH_AUTHORIZATION_REQUIRED = "TRASH_AUTHORIZATION_REQUIRED"
+
+        /** 用户在系统对话框里拒绝了授权。 */
+        const val AUTHORIZATION_DENIED = "AUTHORIZATION_DENIED"
+
+        /** 失败反馈码前缀，完整形式为 `TRASH_FAILED_<存储层错误码>`。 */
         const val TRASH_FAILED_PREFIX = "TRASH_FAILED_"
 
         /** 去重扫描已排进任务中心。结果由 `groups` 流自动送回来，页面不再自报完成。 */
@@ -458,11 +559,13 @@ class OrganizeViewModel(
             duplicateScanner: DuplicateScanner? = null,
             duplicateDeletionExecutor: DuplicateDeletionExecutor? = null,
             clock: AppClock? = null,
-            libraryMutationRepository: LibraryMutationRepository? = null,
             trashRepository: TrashRepository? = null,
             homeRepository: HomeRepository? = null,
             duplicateScanQueue: DuplicateScanQueue? = null,
             processingRepository: ProcessingRepository? = null,
+            trashService: TrashService? = null,
+            recycleQueue: RecycleQueue? = null,
+            authorizationLauncher: RecycleAuthorizationLauncher? = null,
         ) = viewModelFactory {
             initializer {
                 OrganizeViewModel(
@@ -471,11 +574,13 @@ class OrganizeViewModel(
                     duplicateScanner,
                     duplicateDeletionExecutor,
                     clock,
-                    libraryMutationRepository,
                     trashRepository,
                     homeRepository,
                     duplicateScanQueue,
                     processingRepository,
+                    trashService,
+                    recycleQueue,
+                    authorizationLauncher,
                 )
             }
         }

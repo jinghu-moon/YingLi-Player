@@ -33,7 +33,7 @@ import seeyuer.yingli.player.domain.library.SortSpec
 import seeyuer.yingli.player.domain.library.LibraryFolder
 import seeyuer.yingli.player.domain.library.LibraryMedia
 import seeyuer.yingli.player.core.model.media.MediaItemId
-import seeyuer.yingli.player.domain.library.TrashEntry
+import seeyuer.yingli.player.domain.recycle.TrashEntry
 import seeyuer.yingli.player.testing.MainDispatcherRule
 
 @OptIn(ExperimentalCoroutinesApi::class)

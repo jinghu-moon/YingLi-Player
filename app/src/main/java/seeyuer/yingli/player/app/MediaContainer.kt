@@ -26,6 +26,8 @@ import seeyuer.yingli.player.engine.thumbnail.system.ArtworkThumbnailSource
 import seeyuer.yingli.player.data.library.RoomLibraryRepository
 import seeyuer.yingli.player.data.library.DefaultLibraryMutationRepository
 import seeyuer.yingli.player.data.library.RoomTrashRepository
+import seeyuer.yingli.player.data.recycle.RecycleAuthorizationLauncher
+import seeyuer.yingli.player.data.recycle.RecycleBinMaintenance
 import seeyuer.yingli.player.data.filesystem.AndroidFileOperationGateway
 import seeyuer.yingli.player.data.filesystem.AndroidMediaContentHasher
 import seeyuer.yingli.player.data.home.AndroidDeviceStorageRepository
@@ -55,7 +57,9 @@ import seeyuer.yingli.player.domain.library.LibraryPreferenceRepository
 import seeyuer.yingli.player.domain.library.LibraryRepository
 import seeyuer.yingli.player.domain.library.LibraryPagingRepository
 import seeyuer.yingli.player.domain.library.SearchRepository
-import seeyuer.yingli.player.domain.library.TrashRepository
+import seeyuer.yingli.player.domain.recycle.TrashRepository
+import seeyuer.yingli.player.domain.recycle.RecycleQueue
+import seeyuer.yingli.player.domain.recycle.TrashService
 import seeyuer.yingli.player.domain.organize.HistoryRepository
 import seeyuer.yingli.player.domain.organize.OrganizeRepository
 import seeyuer.yingli.player.domain.playback.PlayerPreferenceRepository
@@ -145,6 +149,23 @@ data class MediaContainer(
     val seekPrecisionControl: SeekPrecisionControl,
     /** 帧号后台校准组件（MediaExtractor 统计视频 sample 数）；也同样要跨宿主共享。 */
     val frameCalibrationControl: FrameCalibrationControl,
+    /**
+     * 回收站业务入口（状态机 + 后端分派，§8.9）。**页面不得直接写 `trash_entries`**，
+     * 一切处置动作都要经它，由它的状态机决定「现在允许把状态推进到哪一格」。
+     */
+    val trashService: TrashService,
+    /** 批量回收站操作的入队入口（§11.3：批量与清空必须进任务中心）。 */
+    val recycleQueue: RecycleQueue,
+    /**
+     * R1 的授权对话框需要 `PendingIntent`（Android 类型，不能进 domain 层）。
+     * UI 拿到 [TrashService] 返回的 token，用它换出 `IntentSender` 再交给系统对话框。
+     */
+    val recycleAuthorizationLauncher: RecycleAuthorizationLauncher,
+    /**
+     * 启动/进前台时跑的回收站维护（先对账、再清理到期）。
+     * 由宿主在 `onStart` 调 [RecycleBinMaintenance.start]（幂等：上一轮没跑完就不会重入）。
+     */
+    val recycleMaintenance: RecycleBinMaintenance,
 ) {
     /**
      * 容器级回收：进程/应用结束（`YingLiApplication.onTerminate`）或测试收尾时调用。
@@ -155,6 +176,8 @@ data class MediaContainer(
     fun shutdown() {
         // 校准：取消在跑的扫描并回收它自己的作用域（在跑的 MediaExtractor 会被释放）。
         frameCalibrationControl.shutdown()
+        // 回收站维护：取消这一轮对账/清理（下一轮会在下次进前台时重跑）。
+        recycleMaintenance.close()
         // 处理队列调度器：停止观察任务并取消在跑的执行。
         processingLifecycle.close()
     }
@@ -205,12 +228,25 @@ object ProductionMediaContainerFactory {
         val libraryRepository = RoomLibraryRepository(database, foundation.dispatchers)
         val homeRepository = RoomHomeRepository(database.homeDao())
         val trashRepository = RoomTrashRepository(database)
-        val mutationRepository = DefaultLibraryMutationRepository(
-            AndroidFileOperationGateway(context, foundation.dispatchers),
-            trashRepository,
+        // 回收站：存储后端（R1/R2，R3 已删除）→ 互斥守卫 → 目录痕量 → 业务服务。
+        // `trashRepository` 保留为**服务之下的仓储**：页面不再直接用它做写操作。
+        val recycleStorage = seeyuer.yingli.player.data.recycle.AndroidRecycleBinStorage(
+            context,
+            foundation.dispatchers,
+            foundation.idGenerator,
             foundation.clock,
             retentionDays = { foundation.themeRepository.settings.first().trashRetentionDays },
         )
+        val mediaOperationGuard = seeyuer.yingli.player.data.recycle.RoomMediaOperationGuard(database.processingDao())
+        val recycleCatalogGateway = seeyuer.yingli.player.data.recycle.RoomRecycleCatalogGateway(database)
+        val trashService = seeyuer.yingli.player.data.recycle.DefaultTrashService(
+            trashRepository,
+            recycleStorage,
+            recycleCatalogGateway,
+            mediaOperationGuard,
+            foundation.clock,
+        )
+        val mutationRepository = DefaultLibraryMutationRepository(trashService)
         val organizeRepository = RoomOrganizeRepository(database, foundation.clock, foundation.idGenerator)
         val duplicateRepository = seeyuer.yingli.player.data.duplicates.RoomDuplicateRepository(database)
         val duplicateScanner = seeyuer.yingli.player.data.duplicates.DefaultDuplicateScanner(
@@ -312,6 +348,24 @@ object ProductionMediaContainerFactory {
             foundation.idGenerator,
             foundation.clock,
         )
+        val recycleExecutor = seeyuer.yingli.player.data.recycle.RecycleProcessingExecutor(
+            processingRepository,
+            trashService,
+            libraryRepository,
+            foundation.clock,
+        )
+        val recycleQueue = seeyuer.yingli.player.data.recycle.RecycleCoordinator(
+            processingRepository,
+            foundation.idGenerator,
+            foundation.clock,
+        )
+        val recycleMaintenance = seeyuer.yingli.player.data.recycle.RecycleBinMaintenance(
+            processingScope,
+            trashService,
+            foundation.clock,
+            foundation.logger,
+        )
+        recycleMaintenance.start()
         val scheduler = seeyuer.yingli.player.data.processing.InAppProcessingScheduler(
             processingScope,
             processingRepository,
@@ -320,6 +374,7 @@ object ProductionMediaContainerFactory {
                 clipExecutor,
                 transcodeExecutor,
                 deduplicateExecutor,
+                recycleExecutor,
             ),
             foundation.clock,
             foundation.logger,
@@ -403,6 +458,10 @@ object ProductionMediaContainerFactory {
             shortsPreferences,
             MutableSeekPrecisionControl(),
             frameCalibrationControl,
+            trashService,
+            recycleQueue,
+            recycleStorage,
+            recycleMaintenance,
         )
     }
 

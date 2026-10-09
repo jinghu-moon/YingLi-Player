@@ -32,7 +32,7 @@ import seeyuer.yingli.player.domain.library.LibraryPage
 import seeyuer.yingli.player.domain.library.LibraryQuery
 import seeyuer.yingli.player.domain.library.LibraryRepository
 import seeyuer.yingli.player.domain.library.LibraryResult
-import seeyuer.yingli.player.domain.library.TrashRepository
+import seeyuer.yingli.player.domain.recycle.TrashRepository
 
 data class HomeSearchState(
     val keyword: String = "",

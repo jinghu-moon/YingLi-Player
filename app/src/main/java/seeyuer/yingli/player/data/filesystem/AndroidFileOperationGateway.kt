@@ -15,7 +15,6 @@ import seeyuer.yingli.player.domain.library.FileOperationFailure
 import seeyuer.yingli.player.domain.library.FileOperationGateway
 import seeyuer.yingli.player.domain.library.FileOperationResult
 import seeyuer.yingli.player.domain.library.FileOperationTarget
-import seeyuer.yingli.player.domain.library.TrashEntry
 
 class AndroidFileOperationGateway(
     context: Context,
@@ -55,51 +54,6 @@ class AndroidFileOperationGateway(
                 copyContentThenDelete(source, destinationUri)
             else -> FileOperationResult.RecoverableFailure(FileOperationFailure.VOLUME_OFFLINE)
         }
-    }
-
-    override suspend fun trash(target: FileOperationTarget): FileOperationResult = onIo {
-        val source = Uri.parse(target.sourceUri.value)
-        if (source.scheme != ContentResolver.SCHEME_FILE) {
-            return@onIo FileOperationResult.RecoverableFailure(FileOperationFailure.PERMISSION_REQUIRED)
-        }
-        val file = source.path?.let(::File)
-            ?: return@onIo FileOperationResult.RecoverableFailure(FileOperationFailure.SOURCE_MISSING)
-        if (!file.exists()) return@onIo FileOperationResult.RecoverableFailure(FileOperationFailure.SOURCE_MISSING)
-        val trashDirectory = File(file.parentFile, ".Trash/YingLi")
-        if (!trashDirectory.exists() && !trashDirectory.mkdirs()) {
-            return@onIo FileOperationResult.RecoverableFailure(FileOperationFailure.READ_ONLY)
-        }
-        val targetFile = uniqueTarget(trashDirectory, file.name)
-        if (file.renameTo(targetFile)) success(targetFile) else FileOperationResult.RecoverableFailure(FileOperationFailure.READ_ONLY)
-    }
-
-    override suspend fun restore(entry: TrashEntry): FileOperationResult = onIo {
-        val trashed = entry.trashedUri?.value?.let(Uri::parse)
-            ?: return@onIo FileOperationResult.RecoverableFailure(FileOperationFailure.SOURCE_MISSING)
-        val original = Uri.parse(entry.originalUri.value)
-        if (trashed.scheme == ContentResolver.SCHEME_FILE && original.scheme == ContentResolver.SCHEME_FILE) {
-            val sourceFile = trashed.path?.let(::File)
-                ?: return@onIo FileOperationResult.RecoverableFailure(FileOperationFailure.SOURCE_MISSING)
-            val originalFile = original.path?.let(::File)
-                ?: return@onIo FileOperationResult.RecoverableFailure(FileOperationFailure.TARGET_MISSING)
-            if (originalFile.exists()) return@onIo FileOperationResult.RecoverableFailure(FileOperationFailure.NAME_CONFLICT)
-            if (sourceFile.renameTo(originalFile)) success(originalFile)
-            else FileOperationResult.RecoverableFailure(FileOperationFailure.READ_ONLY)
-        } else {
-            FileOperationResult.RecoverableFailure(FileOperationFailure.PERMISSION_REQUIRED)
-        }
-    }
-
-    override suspend fun purge(entry: TrashEntry): FileOperationResult = onIo {
-        val value = entry.trashedUri ?: entry.originalUri
-        val uri = Uri.parse(value.value)
-        val removed = when (uri.scheme) {
-            ContentResolver.SCHEME_FILE -> uri.path?.let(::File)?.delete() == true
-            ContentResolver.SCHEME_CONTENT -> resolver.delete(uri, null, null) > 0
-            else -> false
-        }
-        if (removed) FileOperationResult.Success(value)
-        else FileOperationResult.RecoverableFailure(FileOperationFailure.SOURCE_MISSING)
     }
 
     private fun renameFile(source: Uri, newName: String): FileOperationResult {
@@ -165,12 +119,4 @@ class AndroidFileOperationGateway(
 
     private fun success(file: File) = FileOperationResult.Success(MediaUri(Uri.fromFile(file).toString()))
     private fun String.isSafeFileName() = isNotBlank() && length <= 255 && none { it == '/' || it == '\\' || it == '\u0000' }
-    private fun uniqueTarget(directory: File, name: String): File {
-        val base = name.substringBeforeLast('.', name)
-        val extension = name.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }
-        var candidate = File(directory, name)
-        var suffix = 1
-        while (candidate.exists()) candidate = File(directory, "$base ($suffix++)$extension")
-        return candidate
-    }
 }

@@ -130,11 +130,13 @@ class MainActivity : ComponentActivity() {
             media.duplicateScanner,
             media.duplicateDeletionExecutor,
             app.container.clock,
-            media.libraryMutationRepository,
             media.trashRepository,
             media.homeRepository,
             media.duplicateScanQueue,
             media.processingRepository,
+            media.trashService,
+            media.recycleQueue,
+            media.recycleAuthorizationLauncher,
         )
     }
     private val homeViewModel: HomeViewModel by viewModels {
@@ -227,8 +229,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        (application as YingLiApplication).playbackController.setVideoOutputEnabled(true)
-        (application as YingLiApplication).mediaContainer.appLockManager.onForeground()
+        val app = application as YingLiApplication
+        app.playbackController.setVideoOutputEnabled(true)
+        app.mediaContainer.appLockManager.onForeground()
+        // 回收站维护（§8.7 + D3-C2）：启动与每次回到前台时对账并清理到期条目。
+        // 不引 WorkManager：物理清理确实发生在「下一次打开应用」，这一点在 UI 文案里写明。
+        // 幂等：上一轮还没跑完时 start() 直接返回。
+        app.mediaContainer.recycleMaintenance.start()
     }
 
     override fun onResume() {

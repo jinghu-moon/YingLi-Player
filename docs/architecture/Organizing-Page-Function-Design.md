@@ -1901,16 +1901,78 @@ L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher
 
 ### 14.5 阶段 4：回收站
 
-1. 实现 `TrashService` 状态机（§8.3）与移入/恢复/删除/清理流程（§8.4–§8.6）。
-2. 实现 R1 后端（`IS_TRASHED` / `createTrashRequest` / `createDeleteRequest` / `RecoverableSecurityException`）。
-3. 实现 R2 后端（`filesDir/recycle-bin/{staging,items,recovery}` + 流式复制 + SHA-256 校验）。
-4. **删除 R3**（`AndroidFileOperationGateway.trash/restore/purge` 的 `renameTo` 路径）。
-5. 实现启动对账（§10.2）。
-6. 实现到期判定（§8.7）；按 D3 决定执行载体。
-7. 实现 `MediaOperationGuard` 与互斥矩阵（§11.4）。
-8. 新增 `RECYCLE` 任务类型与执行器（按 D4）。
+| # | 内容 | 状态 |
+|---|---|---|
+| 1 | 实现 `TrashService` 状态机（§8.3）与移入/恢复/删除/清理流程（§8.4–§8.6） | ✅ 见 14.5.1 |
+| 2 | 实现 R1 后端（`IS_TRASHED` / `createTrashRequest` / `createDeleteRequest` / `RecoverableSecurityException`） | ✅ 见 14.5.1 |
+| 3 | 实现 R2 后端（`filesDir/recycle-bin/{staging,items,recovery}` + 流式复制 + SHA-256 校验） | ✅ 见 14.5.1 |
+| 4 | **删除 R3**（`AndroidFileOperationGateway.trash/restore/purge` 的 `renameTo` 路径） | ✅ 见 14.5.1 |
+| 5 | 实现启动对账（§10.2） | ✅ 见 14.5.1 |
+| 6 | 实现到期判定（§8.7）；按 D3 决定执行载体 | ✅ 见 14.5.1（D3-C2：启动/进前台 `cleanupExpired`） |
+| 7 | 实现 `MediaOperationGuard` 与互斥矩阵（§11.4） | ✅ 见 14.5.1 |
+| 8 | 新增 `RECYCLE` 任务类型与执行器（按 D4） | ✅ 见 14.5.1 |
 
 **退出条件**：`content://` 与 `file://` 两种来源都能移入/恢复/删除；任何失败路径都不丢唯一副本；重启后能对账；`trash_entries` 主键改造后媒体库列表与首页统计正确。
+
+#### 14.5.1 阶段 4 落地（2026-10-10）
+
+**域层（`domain/recycle/RecycleBinContracts.kt`，净新增）**
+
+`TrashBackend`（`R1_SYSTEM` / `R2_APP_COPY`）、`TrashState`（七态 + `isStable` / `isTransitional`）、`TrashEntry`（§8.2 全部 29 个字段，`canRestore(now)` / `remainingDays(now)` / `isExpired(now)` 都按后端分流：R2 用 `expiresAtEpochMillis`，R1 用 `systemExpiresAtEpochMillis`，**期限未知时不拒绝恢复**）、`TrashRetentionPolicy`、`TrashOperationOutcome`（`Completed` / `AuthorizationRequired` / `Blocked` / `Failed` / `Purged`）、`TrashOperationReport`、`ReconcileReport`、`TrashRepository`、`RecycleCatalogGateway`、`RecycleBinStorage`、`TrashService`、`MediaOperationGuard`、`RecycleQueue`。
+
+- `domain/library/FileOperationContracts.kt` 里的 `TrashState` / `TrashEntry` / `TrashRetentionPolicy` / `TrashRepository` **全部迁到 `domain.recycle`**，`FileOperationGateway` 只剩 `rename` / `move`。
+- 到期的两个独立指标（§8.7）落成两处代码：`TrashEntry.canRestore` 让**恢复资格**严格，`cleanupExpired` 让**物理删除**尽快；到期清理挂在启动/进前台的 `RecycleBinMaintenance`（D3-C2，不引入 WorkManager）。
+
+**数据层**
+
+`trash_entries` 重建为 §8.2 的 29 列、主键 `locationId`（`Index("mediaItemId")` / `Index("state")` / `Index("contentHash")`，**不加指向 `media_locations` 的外键**：位置行可能被清理而回收站记录必须存活）。`DATABASE_SCHEMA_VERSION` → `11`，新增 `MIGRATION_10_11`：旧 R3 行**不丢弃**（R3 是移动语义，那个文件就是唯一副本），一律映射为 `backend=R2_APP_COPY`、`state=RECONCILIATION_REQUIRED`、`copyRelativePath=旧 trashedUri`、`lastErrorCode=LEGACY_R3_ENTRY`，`trashedAt` / `expiresAt` 取自旧 `deletedAt` / `purgeAt`。`RECONCILIATION_REQUIRED` 的含义就是**禁止自动删除**，因此旧行只能由用户显式处理。
+
+- 媒体库可见性从「`trash_entries.mediaItemId IS NULL`」（**item 级**，一个 item 有两个位置时回收其中一个会把整条条目藏掉）改为「条目至少有一个未回收位置」（**位置级**）：唯一真源是 `LibrarySql.VISIBLE_ITEM`（`EXISTS (...)`）与 `LibrarySql.VISIBLE_LOCATION`（`NOT EXISTS (...)`），共 14 处调用（`RoomLibraryRepositories.kt` 4、`LibraryAndOrganizeDaos.kt` 4、`DuplicateDao.kt` 6），`data/` 下不再有任何旧形式的谓词（只有 `LibrarySql` 的 KDoc 里保留旧写法作对照）。
+- `RoomTrashRepository` 重写为新 `TrashRepository`；`RoomRecycleCatalogGateway` 负责恢复后的位置重绑定与「条目已无位置则删除条目」，删除走 `withTransaction`（否则首页统计与去重会看到「位置已删、条目还在」的中间态）。
+
+**R1 / R2 后端（`data/recycle/AndroidRecycleBinStorage.kt`）**
+
+- R1 移入**刻意不先查 `owner_package_name`**（阶段 0 实测该列不可靠），直接 `IS_TRASHED=1`；`RecoverableSecurityException` → `createTrashRequest` 授权；期限读 `DATE_EXPIRES`（**秒** → ×1000，读不到就如实回 `null`，不编 30 天）。
+- R2 移入：流式复制到 `staging/<uuid>.partial` 同时算 SHA-256 → 长度与已有哈希双向校验（不符 → `CONTENT_CHANGED` 且**源文件原样保留**）→ 同目录 `renameTo(items/<uuid>)`（原子）→ 回 `WAITING_SOURCE_DELETE_AUTH`；**`stage` 不删源**，删源是独立一步。
+- 授权 token 一次性：`HashMap<String, PendingAuthorization>` 只在内存，进程重启即失效（UI 必须重新发起，而不是假装授权可用）。
+- 空间检查用 `StorageManager.getAllocatableBytes`（`usableSpace` 会被 lint 判为 `UsableSpace` 且不考虑系统可清缓存，会把放得下的文件判成空间不足）。
+
+**`DefaultTrashService`（状态机编排）**
+
+移入顺序严格是「先持久化 `STAGING` → 文件动作 → 校验 → 源删除确认 → 才写 `trashedAt` / `expiresAt` 并置 `ACTIVE`」；任何一步失败都**不删源**，授权被拒时把副本隔离到 `recovery/`。恢复顺序是「状态 → 过期 → 有副本 → 互斥 → `RESTORING` → 写入校验 → 才删副本」。`purgeAll` 逐条走 `purgeEntry`，**不允许先清表再删文件**。对账 `reconcile()` 幂等：丢弃 `.partial`、把未确认删源的条目隔离、`RECONCILIATION_REQUIRED` **只报不处理**、`items/` 下的无主副本隔离到 `recovery/`（**不删除**），最后清掉没有任何位置的空条目。
+
+**互斥与任务中心**
+
+`RoomMediaOperationGuard` 的判据是**持久化的任务状态**（`processing_projects` × `processing_project_inputs` × `processing_tasks` 三表 JOIN），不是内存登记表——避免再造一个真源；粒度只到 `mediaItemId`（表里没有位置列），因此偏保守。互斥矩阵按 §11.4：同类只排队不算冲突，`DEDUPLICATE` 只与 `RECYCLE` 互斥。
+
+`ProcessingProjectType.RECYCLE` + `RecyclePolicy`（`RECYCLE|<ACTION>|loc:item,…`，解析失败一律拒绝、不猜）+ `RecycleCoordinator` + `RecycleProcessingExecutor`；`RoutingProcessingExecutor` 的 `when` 改为**穷尽匹配**（不再用 `else`：将来新增任务类型必须编译报错，而不是静默落到 `null`）。`RecycleProcessingExecutor.recover` 恒回 `Failure("NOT_RECOVERABLE")`——真正的恢复入口是启动对账，**绝不重复移入**。
+
+**两处对设计稿的偏离（都是刻意）**
+
+1. **单个 R2 移入没有进任务中心**（§11.3 原意是「大文件复制进任务中心」）。理由：R2 与 R1 的选择只在 `stage` 运行时才知道（取决于 `systemTrashSupported`），在入队前判断就必须再造一个「这个位置会不会走 R2」的分类真源，而那个判断会随后端实现变化而失真。当前行为是**同步做完**（有进度条、可取消的是任务中心的批量路径）；批量移入/批量删除/清空**全部**经 `RecycleQueue` 进任务中心。
+2. **`DefaultLibraryMutationRepository` 现在只做结果翻译**：它不再直接操作文件（删除 R3 之后 `FileOperationGateway` 已没有回收站动作），`trash` / `restore` / `purge` 一律经 `TrashService`，把 `TrashOperationOutcome` 翻成 `FileOperationFailure`。这样「谁能动文件」只有一处。
+
+**验证**
+
+| 层面 | 内容 |
+| --- | --- |
+| JVM 单测 | `DefaultTrashServiceTest` 16 例（移入顺序、空间不足在写任何东西之前被拒、幂等、授权拒绝回滚副本、未知 token、R2 过期恢复被拒、互斥占用、恢复失败退回 `ACTIVE`、恢复成功先 `markRestored` 再删记录、`RESTORING` 不可 purge、purge 失败进 `CLEANUP_PENDING`、对账丢弃 `.partial`、孤立副本隔离不删、`RECONCILIATION_REQUIRED` 不自动处理、到期清理两种失败落点）、`RecycleProcessingTest` 13 例（策略编解码 + 执行器）、`TrashRetentionPolicyTest` 5 例；全套 `114 suites / 743 tests / 0 failures` |
+| 仪表化 | `YingLiDatabaseMigrationTest` 14 例（新增 10→11 两例：结构；**旧 R3 行保留并进 `RECONCILIATION_REQUIRED`**；链式用例改为 1→11）、`RecycleBinStorageDeviceTest` 2 例（真 `file://` 与真 MediaStore `content://` 两条完整往返）、数据层 28 例、UI 4 例 |
+| 门禁 | `testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest`（lint 报过一条 `UsableSpace` 并已按根因改掉） |
+
+**真机执行结果（2026-10-10，Xiaomi 25102RKBEC / `f3ba305a`）**：`RecycleBinStorageDeviceTest` 2 例、`YingLiDatabaseMigrationTest` 14 例、数据层 28 例、UI 4 例全绿。`RecycleBinStorageDeviceTest` 直接驱动真 `AndroidRecycleBinStorage`（真 `filesDir/recycle-bin/`、真 MediaStore 授权），因此它就是**退出条件**的实测：`file://`（R2）与 MediaStore `content://`（R1）两条链路都走完 移入 → 恢复 → 再移入 → 永久删除，且每一步都断言了「源与副本不会同时消失」。
+
+**真机跑出来的一处真实缺陷（已按根因修掉）**
+
+`restoreFromAppCopy` 原本**只有 MediaStore 一条路**：`file://` 来源（应用私有文件、SAF 之外的本地路径）恢复时会被插进 `Movies/YingLi-Restore/` 并换掉 URI——那是「静默搬家」，不是恢复，而 §8.5 要求的是恢复到最后已知位置。修法是按 `originalUri` 的 scheme 分流：`file://` → `restoreToOriginalPath`（写回原目录、流式 + SHA-256、同名自动改名**不覆盖**、校验通过才删副本），其余 → `restoreViaMediaStore`（原逻辑）。这个缺陷**只有真机全链路能发现**：单测里存储层是替身，而真机测试第一次跑就在 `assertTrue(restored is Completed)` 上炸了。
+
+**未验证（不得当成已验证）**
+
+- **进程被杀后的对账只做了单测**，没有在真机上真的杀进程再重启走一遍（`ReconcileReport` 的六条分支都只由 `DefaultTrashServiceTest` 覆盖）。
+- `RECONCILIATION_REQUIRED` 的真实产生路径（用户拒绝授权、迁移遗留旧行）没有在真机上端到端走过——迁移用例覆盖了「旧行进这个状态」，但「进这个状态之后用户在 UI 上怎么处理」属于阶段 6。
+- 批量请求的 **2000 URI 上限**（U3）本次没有在真机上复现；`purgeAll` 目前是逐条调用，尚未构造批量 `createDeleteRequest`。
+- **非 MediaStore 的 `content://` 来源（SAF 文档 URI）恢复时仍走 MediaStore 分支**：`systemTrashSupported` 只认 `content://media/`，SAF 来源因此走 R2，但恢复落点是 `Movies/YingLi-Restore/` 而**不是写回 SAF 提供者**。所以对这类来源，当前行为必须描述成「恢复到应用视频目录」而不是「原地恢复」；写回 SAF 需要 `DocumentFile`，留待阶段 6 的「恢复位置选择」一并处理。
+- 到期**保留天数**改动的即时生效只做了「每次移入重新读设置」的代码级保证，没有真机验证。
 
 ### 14.6 阶段 5：AB 循环区间导出
 
@@ -2000,6 +2062,8 @@ L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher
 - **幂等**：同一位置重复移入不产生第二条记录；同一副本重复清理不删除无关文件。
 - **「清空」不先清数据库**：模拟文件删除失败 ⇒ 记录仍存在且状态为 `CLEANUP_PENDING`。
 
+**回收站侧落地状态（2026-10-10，阶段 4）**：上述十条里，`TrashRetentionPolicy` 边界、状态机的每条边与反向断言、**只有 `ACTIVE` 可恢复/可永久删除**、`RECONCILIATION_REQUIRED` 下拒绝任何自动删除、互斥矩阵（含 D5「扫描与编码不互斥」）、批量部分成功、幂等（重复移入不产生第二条记录）、「清空不先清库」，全部由 `DefaultTrashServiceTest`（16 例）+ `TrashRetentionPolicyTest`（5 例）+ `RecycleProcessingTest`（13 例）覆盖。**尚未覆盖**：「批量交给任务中心之后逐项结果可追踪」——执行器侧只断言了「部分成功算 `Success`」，任务中心里的逐项可见性属于阶段 6。
+
 ### 15.3 设备测试（instrumentation）
 
 当前 `docs/architecture/phase-11-14-tdd-report.md` 记录真机 Xiaomi M2012K11AC 被 MIUI 以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝，`connectedDebugAndroidTest` **不计为通过**（U7）。**该阻塞已于 2026-10-09 解除**：Xiaomi 25102RKBEC（Android 16 / API 36）上 `adb install -r -t` 与 instrumentation 均正常。以下矩阵现在**全部可执行**，但**除已标注"已完成"的项外，其余仍未验证，不得声称通过**：
@@ -2013,10 +2077,10 @@ L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher
 - 多音轨源：验证确认流程与丢弃行为（**注意：不是验证"保留"——Transformer 做不到，见 G5**）。
 - VFR 源、旋转元数据源、空间耗尽。
 - **超长任务**：验证 `Service.onTimeout` 的收尾路径（F24）。**阶段 1 步骤 4 已实现该路径的结构**（`onTimeout` 覆写 + 调度闸门 + `failRunning`，JVM 单测覆盖状态机与策略），但**系统真的会调用 `onTimeout` 这一步未验证**：若无法在真实设备上跑到 6 小时，则此条记为**未验证**，不得用缩短时限的方式假装通过（没有用 `FOREGROUND_SERVICE_TYPE_SHORT_SERVICE` 或改短时限伪造超时）。
-- `YingLiDatabaseMigrationTest` 扩展到 v10：**破坏性迁移后旧数据（`trash_entries` 的 `mediaItemId` → `locationId`）的转换正确性**。
-- `content://` 与 `file://` 两种来源的移入/恢复/删除端到端。
-- R1 的 `IS_TRASHED` 状态在 MediaStore 查询中确实不可见。
-- R2 的副本目录结构与 UUID 命名；`staging` → `items` 的原子 rename。
+- ✅（2026-10-10）**`YingLiDatabaseMigrationTest` 已扩展到 v11**：破坏性迁移后旧数据（`trash_entries` 的 `mediaItemId` → `locationId`、旧 R3 行 → `RECONCILIATION_REQUIRED`）的转换正确性由 14 例覆盖，含「迁移链从 1 连续到 `DATABASE_SCHEMA_VERSION`」一例。
+- ✅（2026-10-10）**`content://` 与 `file://` 两种来源的移入/恢复/删除端到端**：`RecycleBinStorageDeviceTest` 2 例，驱动真 `AndroidRecycleBinStorage`（真 `filesDir/recycle-bin/`、真 MediaStore 授权与更新），两种来源都走完 移入 → 恢复 → 再移入 → 永久删除。
+- R1 的 `IS_TRASHED` 状态在 MediaStore 查询中确实不可见：**未单独断言**。设备用例断言的是「移入后仍可读、永久删除后不可读」与 `systemTrashSupported` 为真，**没有**断言「`IS_TRASHED=1` 期间媒体库查询看不到它」。
+- R2 的副本目录结构与 UUID 命名：✅（2026-10-10，设备用例断言副本落在 `filesDir/recycle-bin/items/<uuid>` 且条目里的 `copyRelativePath` 就是它）。`staging` → `items` 的**原子 rename**：**没有故障注入**，只在单测里断言了顺序（`STAGING` → `WAITING_SOURCE_DELETE_AUTH` → `ACTIVE`）。
 - **从 AB 循环导出**：MP4/AVC 源走快速、WebM(VP9+Opus) 源走精确；验证输出的实际起止与 `ClipEngineResult.Success(actualStartMillis, actualEndMillis)` 一致，且**起点 ≤ A**（C2 的数学必然）。
 - 故障注入（资料文件 8 §13.7）：复制前/中/未写库时杀进程；DB 已提交但源删除未落库时杀进程；`IS_PENDING` 未清除时杀进程；物理删除成功但 DB 更新前杀进程；撤销授权；移除存储卷；空间不足；I/O 异常。
 - 到期清理与恢复同时触发 ⇒ 单一最终状态。

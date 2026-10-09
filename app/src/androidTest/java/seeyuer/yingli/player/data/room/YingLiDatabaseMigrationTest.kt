@@ -150,11 +150,60 @@ class YingLiDatabaseMigrationTest {
     }
 
     @Test
-    fun migrateFromOneToTenValidatesCompleteUpgradeChain() {
-        helper.createDatabase("migration-1-10", 1).close()
+    fun migrateFromTenToElevenReshapesTrashEntries() {
+        helper.createDatabase("migration-10-11", 10).close()
 
         helper.runMigrationsAndValidate(
-            "migration-1-10",
+            "migration-10-11",
+            11,
+            true,
+            YingLiDatabase.MIGRATION_10_11,
+        ).close()
+    }
+
+    /**
+     * 旧 R3 条目的副本路径指向 `.Trash/YingLi/...`——那个文件就是**唯一副本**，
+     * 所以迁移必须保住记录，并且一律落到 `RECONCILIATION_REQUIRED`（禁止自动删除）。
+     */
+    @Test
+    fun migrateFromTenToElevenKeepsLegacyEntriesForReview() {
+        val legacy = helper.createDatabase("migration-10-11-rows", 10)
+        legacy.execSQL(
+            "INSERT INTO trash_entries(mediaItemId, locationId, originalUri, trashedUri, deletedAtEpochMillis, purgeAtEpochMillis, state) " +
+                "VALUES('item-1', 'location-1', 'content://media/1', 'file:///storage/emulated/0/.Trash/YingLi/1.mp4', 10, 20, 'TRASHED')",
+        )
+        legacy.close()
+
+        val migrated = helper.runMigrationsAndValidate(
+            "migration-10-11-rows",
+            11,
+            true,
+            YingLiDatabase.MIGRATION_10_11,
+        )
+        migrated.query(
+            "SELECT locationId, mediaItemId, backend, state, copyRelativePath, trashedAtEpochMillis, " +
+                "expiresAtEpochMillis, lastErrorCode FROM trash_entries",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            cursor.moveToFirst()
+            assertEquals("location-1", cursor.getString(0))
+            assertEquals("item-1", cursor.getString(1))
+            assertEquals("R2_APP_COPY", cursor.getString(2))
+            assertEquals("RECONCILIATION_REQUIRED", cursor.getString(3))
+            assertEquals("file:///storage/emulated/0/.Trash/YingLi/1.mp4", cursor.getString(4))
+            assertEquals(10L, cursor.getLong(5))
+            assertEquals(20L, cursor.getLong(6))
+            assertEquals("LEGACY_R3_ENTRY", cursor.getString(7))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migrateFromOneToElevenValidatesCompleteUpgradeChain() {
+        helper.createDatabase("migration-1-11", 1).close()
+
+        helper.runMigrationsAndValidate(
+            "migration-1-11",
             DATABASE_SCHEMA_VERSION,
             true,
             *YingLiDatabase.ALL_MIGRATIONS,

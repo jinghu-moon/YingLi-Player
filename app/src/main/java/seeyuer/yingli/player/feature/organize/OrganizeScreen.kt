@@ -37,7 +37,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +62,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import android.app.Activity
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.component.BannerKind
 import seeyuer.yingli.player.core.designsystem.component.YingLiBanner
@@ -75,7 +83,7 @@ import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.domain.duplicates.DuplicateGroup
 import seeyuer.yingli.player.domain.duplicates.DuplicateGroupId
 import seeyuer.yingli.player.domain.duplicates.DuplicateMode
-import seeyuer.yingli.player.domain.library.TrashEntry
+import seeyuer.yingli.player.domain.recycle.TrashEntry
 import seeyuer.yingli.player.domain.organize.OrganizeMutationResult
 import seeyuer.yingli.player.domain.organize.OrganizedAction
 import seeyuer.yingli.player.domain.organize.TagColor
@@ -84,6 +92,28 @@ import java.util.Locale
 @Composable
 fun OrganizeRoute(viewModel: OrganizeViewModel, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // 系统授权对话框只能由前台拉起（§8.4 第 9 步）。sender 由存储层按 token 现算，
+    // 页面只负责把它交给系统、再把结果回报给状态机。
+    var pendingResult by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        val callback = pendingResult
+        pendingResult = null
+        callback?.invoke(result.resultCode == Activity.RESULT_OK)
+    }
+    LaunchedEffect(state.pendingTrashAuthorization?.token) {
+        val request = state.pendingTrashAuthorization ?: return@LaunchedEffect
+        val sender = viewModel.authorizationIntent(request.token)
+        if (sender == null) {
+            // 拿不到系统对话框（进程重启导致 token 失效）：按拒绝处理。
+            // 拒绝是合法结局——源文件保持原样，副本会被退回 recovery/，不会丢唯一副本。
+            viewModel.resolveTrashAuthorization(false)
+            return@LaunchedEffect
+        }
+        pendingResult = { granted -> viewModel.resolveTrashAuthorization(granted) }
+        launcher.launch(IntentSenderRequest.Builder(sender).build())
+    }
     OrganizeScreen(
         state,
         viewModel::openEditor,
@@ -758,7 +788,7 @@ private fun TrashSheet(
                     title = stringResource(R.string.organize_trash_purge_confirm_title),
                     message = stringResource(
                         R.string.organize_trash_purge_confirm_message,
-                        purgeTarget.entry.mediaId.value,
+                        purgeTarget.entry.displayName(),
                     ),
                 )
                 state.clearTrashConfirmOpen -> TrashConfirmBody(
@@ -876,7 +906,7 @@ private fun TrashListBody(
                     fontWeight = FontWeight.W600,
                 )
             }
-            itemsIndexed(entries, key = { _, entry -> entry.entry.mediaId.value }) { index, entry ->
+            itemsIndexed(entries, key = { _, entry -> entry.entry.locationId.value }) { index, entry ->
                 TrashItemRow(
                     item = entry,
                     showDivider = index != entries.lastIndex,
@@ -973,7 +1003,7 @@ private fun TrashItemRow(
             Spacer(Modifier.width(11.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.entry.mediaId.value,
+                    text = item.entry.displayName(),
                     color = YingLiTheme.colors.textPrimary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.W600,
@@ -1217,12 +1247,23 @@ private fun TrashItemUi.meta(): String = if (ageDays <= 0L) {
     stringResource(R.string.organize_trash_meta, ageDays, remainingDays)
 }
 
+/**
+ * 行标题。
+ *
+ * 原始文件名只用于显示（§8.2）：磁盘上的副本用应用生成的 UUID 命名，用户在这里看到的必须是
+ * 原来的名字。**旧 R3 条目迁上来时没有文件名**（当时的记录里没存），退回条目 id。
+ */
+private fun TrashEntry.displayName(): String = originalDisplayName.ifBlank { mediaItemId.value }
+
 /** 设计稿用 toast 反馈；壳层内没有页面级 Snackbar 宿主，改用项目既有的 banner。 */
 @Composable
 private fun trashStatusMessage(code: String): String = when {
     code == OrganizeViewModel.TRASH_RESTORED -> stringResource(R.string.organize_trash_restored)
     code == OrganizeViewModel.TRASH_PURGED -> stringResource(R.string.organize_trash_purged)
     code == OrganizeViewModel.TRASH_CLEARED -> stringResource(R.string.organize_trash_cleared)
+    // 清空是批量操作，进任务中心：这里只能说「已排队」，完成与否由回收站列表自己变空来回答。
+    code == OrganizeViewModel.TRASH_CLEAR_ENQUEUED -> stringResource(R.string.organize_trash_clear_enqueued)
+    code == OrganizeViewModel.TRASH_AUTHORIZATION_REQUIRED -> stringResource(R.string.organize_trash_authorization_required)
     code.startsWith(OrganizeViewModel.TRASH_FAILED_PREFIX) -> stringResource(
         R.string.organize_trash_failed,
         code.removePrefix(OrganizeViewModel.TRASH_FAILED_PREFIX),
@@ -1235,6 +1276,7 @@ private fun trashStatusKind(code: String): BannerKind = when (code) {
     OrganizeViewModel.TRASH_PURGED,
     OrganizeViewModel.TRASH_CLEARED,
     -> BannerKind.SUCCESS
+    // 「已排队」不是结果，按提示色而不是成功色显示。
     else -> BannerKind.WARNING
 }
 

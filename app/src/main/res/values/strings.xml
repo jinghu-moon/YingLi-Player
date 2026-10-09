@@ -131,6 +131,8 @@
     <string name="organize_trash_restored">已恢复到原位置</string>
     <string name="organize_trash_purged">项目已永久删除</string>
     <string name="organize_trash_cleared">回收站已清空</string>
+    <string name="organize_trash_clear_enqueued">清空已加入任务中心，完成后回收站会自动更新</string>
+    <string name="organize_trash_authorization_required">需要你确认系统对话框后才会删除源文件</string>
     <string name="organize_trash_failed">操作未完成：%1$s</string>
     <string name="processing_empty_title">没有进行中的任务</string>
     <string name="processing_empty_message">扫描、移动和批量整理任务会集中显示在这里。</string>

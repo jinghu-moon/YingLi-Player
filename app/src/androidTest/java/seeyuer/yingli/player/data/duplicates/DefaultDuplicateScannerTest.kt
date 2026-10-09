@@ -25,6 +25,8 @@ import seeyuer.yingli.player.domain.catalog.MediaContentHasher
 import seeyuer.yingli.player.domain.duplicates.DUPLICATE_HASH_ALGORITHM_VERSION
 import seeyuer.yingli.player.domain.duplicates.DuplicateMode
 import seeyuer.yingli.player.domain.duplicates.DuplicateScanResult
+import seeyuer.yingli.player.domain.recycle.TrashBackend
+import seeyuer.yingli.player.domain.recycle.TrashState
 
 /**
  * L0–L4 分层扫描的**真库**验证。
@@ -154,15 +156,17 @@ class DefaultDuplicateScannerTest {
     @Test
     fun trashedLocationsAreExcludedFromTheScan() = runTest {
         seedCatalog(locations = listOf(location(A, sizeBytes = 100), location(B, sizeBytes = 100), location(C, sizeBytes = 100)))
-        database.libraryDao().upsertTrash(
+        database.libraryDao().insertTrash(
             TrashEntryEntity(
-                mediaItemId = "item-b",
                 locationId = B,
+                mediaItemId = "item-b",
+                backend = TrashBackend.R1_SYSTEM.name,
+                state = TrashState.ACTIVE.name,
                 originalUri = uri(B),
-                trashedUri = null,
-                deletedAtEpochMillis = 1,
-                purgeAtEpochMillis = 2,
-                state = "TRASHED",
+                originalDisplayName = "b.mp4",
+                originalSizeBytes = 100,
+                trashedAtEpochMillis = 1,
+                updatedAtEpochMillis = 1,
             ),
         )
         val hasher = FakeHasher(

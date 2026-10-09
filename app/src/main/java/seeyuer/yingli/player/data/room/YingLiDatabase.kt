@@ -11,7 +11,7 @@ import androidx.sqlite.execSQL
  * 因此「版本加了、迁移忘了」或「迁移加了、没进 [YingLiDatabase.ALL_MIGRATIONS]」都会
  * 被 `YingLiDatabaseMigrationTest` 当场抓住。
  */
-internal const val DATABASE_SCHEMA_VERSION = 10
+internal const val DATABASE_SCHEMA_VERSION = 11
 
 @Database(
     entities = [
@@ -146,6 +146,55 @@ abstract class YingLiDatabase : RoomDatabase() {
         }
 
         /**
+         * 阶段 4：回收站模型按 §8.2 完整化。
+         *
+         * `trash_entries` 从「7 列、只有两个时间戳」扩展为「后端 + 7 态状态机 + 源文件快照 +
+         * 副本信息 + 期限 + 错误诊断」。SQLite 不能改列集，只能重建表。
+         *
+         * **旧行按 `RECONCILIATION_REQUIRED` 迁移，而不是丢弃**：
+         * - 旧行的 `trashedUri`（R3 的 `.Trash/YingLi/<name>`）**没有任何新字段能表达**，
+         *   因此它被原样搬进 `copyRelativePath` 并配上 `lastErrorCode = 'LEGACY_R3_ENTRY'`；
+         * - 「不丢唯一副本」是阶段 4 的退出条件：R3 是**移动**语义，那个文件就是唯一副本，
+         *   丢掉记录等于让用户无法通过应用找回它；
+         * - 该状态**禁止自动删除任何副本**（§8.3），副本路径又不属于应用管理的 `items/`，
+         *   所以物理删除会返回 `Blocked("UNMANAGED_COPY")`，只能由用户显式「放弃条目」。
+         * - 旧的 `deletedAtEpochMillis` / `purgeAtEpochMillis` 原样映射到
+         *   `trashedAtEpochMillis` / `expiresAtEpochMillis`，期限语义不变。
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(connection: SQLiteConnection) {
+                listOf(
+                    "ALTER TABLE `trash_entries` RENAME TO `trash_entries_legacy`",
+                    "CREATE TABLE IF NOT EXISTS `trash_entries` (" +
+                        "`locationId` TEXT NOT NULL, `mediaItemId` TEXT NOT NULL, `sourceId` TEXT, " +
+                        "`backend` TEXT NOT NULL, `state` TEXT NOT NULL, `originalUri` TEXT NOT NULL, " +
+                        "`originalVolumeId` TEXT, `originalDocumentId` TEXT, `originalDisplayName` TEXT NOT NULL, " +
+                        "`originalRelativePath` TEXT, `originalMimeType` TEXT, `originalSizeBytes` INTEGER NOT NULL, " +
+                        "`originalModifiedEpochMillis` INTEGER, `originalDurationMillis` INTEGER, `originalWidth` INTEGER, " +
+                        "`originalHeight` INTEGER, `contentHash` TEXT, `hashAlgorithmVersion` INTEGER, " +
+                        "`copyRelativePath` TEXT, `copySizeBytes` INTEGER, `copyVerifiedAtEpochMillis` INTEGER, " +
+                        "`trashedAtEpochMillis` INTEGER, `expiresAtEpochMillis` INTEGER, `systemExpiresAtEpochMillis` INTEGER, " +
+                        "`restoreUri` TEXT, `restoredAtEpochMillis` INTEGER, `lastErrorCode` TEXT, `lastErrorDetail` TEXT, " +
+                        "`retryCount` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`locationId`))",
+                    "INSERT OR IGNORE INTO `trash_entries` (" +
+                        "`locationId`, `mediaItemId`, `sourceId`, `backend`, `state`, `originalUri`, " +
+                        "`originalDisplayName`, `originalSizeBytes`, `copyRelativePath`, " +
+                        "`trashedAtEpochMillis`, `expiresAtEpochMillis`, `lastErrorCode`, `lastErrorDetail`, " +
+                        "`retryCount`, `updatedAtEpochMillis`) " +
+                        "SELECT `locationId`, `mediaItemId`, NULL, 'R2_APP_COPY', 'RECONCILIATION_REQUIRED', " +
+                        "`originalUri`, '', 0, `trashedUri`, `deletedAtEpochMillis`, `purgeAtEpochMillis`, " +
+                        "'LEGACY_R3_ENTRY', '阶段 4 已删除 R3（同名目录移动）；该文件仍在旧路径（见 copyRelativePath），" +
+                        "需要用户决定保留还是恢复', 0, `deletedAtEpochMillis` FROM `trash_entries_legacy`",
+                    "DROP TABLE `trash_entries_legacy`",
+                    "CREATE INDEX IF NOT EXISTS `index_trash_entries_mediaItemId` ON `trash_entries` (`mediaItemId`)",
+                    "CREATE INDEX IF NOT EXISTS `index_trash_entries_state` ON `trash_entries` (`state`)",
+                    "CREATE INDEX IF NOT EXISTS `index_trash_entries_contentHash` ON `trash_entries` (`contentHash`)",
+                ).forEach(connection::execSQL)
+            }
+        }
+
+        /**
          * 全部迁移，按版本顺序排列。
          *
          * 生产的 `Room.databaseBuilder` 与迁移测试都从这里取。**不要再手写第二份列表**：
@@ -164,6 +213,7 @@ abstract class YingLiDatabase : RoomDatabase() {
             MIGRATION_7_8,
             MIGRATION_8_9,
             MIGRATION_9_10,
+            MIGRATION_10_11,
         )
 
         private val statements = listOf(

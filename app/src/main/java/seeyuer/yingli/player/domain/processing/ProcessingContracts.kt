@@ -20,6 +20,14 @@ enum class ProcessingProjectType {
     COMPRESS,
     CONVERT,
     DEDUPLICATE,
+
+    /**
+     * 回收站操作（§14.5 任务 8，D4-b）：**动作装在 `outputPolicy` 里**，不新增四个类型。
+     *
+     * 单次 R1 移入/恢复是秒级的，直接返回结果（§11.3）；只有 R2 复制与批量/清空会走到这里。
+     * 到期清理（`CLEANUP`）按 D3-C2 也不进任务中心，它挂在启动/进前台时执行。
+     */
+    RECYCLE,
 }
 
 data class ProcessingProject(
@@ -28,6 +36,7 @@ data class ProcessingProject(
     /**
      * 输入条目。**允许为空**，含义是「整个媒体库」——去重扫描的作用域就是全库，
      * 它在拿到任务时才知道要扫哪些位置，逐条列出输入既不可能也无意义。
+     * `RECYCLE` 的批量/清空同样如此：真正的范围在 `outputPolicy` 的 locationId 集合里。
      * 压缩/转码/切片仍然必须给出非空输入。
      */
     val inputMediaIds: List<MediaItemId>,
@@ -35,7 +44,9 @@ data class ProcessingProject(
     val createdAtEpochMillis: Long,
 ) {
     init {
-        require(type == ProcessingProjectType.DEDUPLICATE || inputMediaIds.isNotEmpty()) {
+        require(type == ProcessingProjectType.DEDUPLICATE ||
+            type == ProcessingProjectType.RECYCLE ||
+            inputMediaIds.isNotEmpty()) {
             "$type requires at least one input"
         }
         require(inputMediaIds.distinct().size == inputMediaIds.size)

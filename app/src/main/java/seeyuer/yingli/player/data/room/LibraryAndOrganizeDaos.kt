@@ -26,24 +26,94 @@ interface LibraryDao {
     @RawQuery
     suspend fun folders(query: SupportSQLiteQuery): List<LibraryFolderRow>
 
-    @Query("SELECT * FROM trash_entries ORDER BY deletedAtEpochMillis DESC")
+    @Query("SELECT * FROM trash_entries WHERE state = 'ACTIVE' ORDER BY trashedAtEpochMillis DESC")
     fun observeTrash(): Flow<List<TrashEntryEntity>>
 
-    @Query("SELECT * FROM trash_entries WHERE purgeAtEpochMillis <= :nowEpochMillis ORDER BY purgeAtEpochMillis")
-    suspend fun expiredTrash(nowEpochMillis: Long): List<TrashEntryEntity>
+    @Query("SELECT * FROM trash_entries WHERE locationId = :locationId LIMIT 1")
+    suspend fun trashEntry(locationId: String): TrashEntryEntity?
 
-    @Upsert
-    suspend fun upsertTrash(entry: TrashEntryEntity)
+    @Query("SELECT * FROM trash_entries WHERE locationId IN (:locationIds)")
+    suspend fun trashEntries(locationIds: List<String>): List<TrashEntryEntity>
+
+    @Query("SELECT * FROM trash_entries WHERE state IN (:states)")
+    suspend fun trashEntriesInStates(states: List<String>): List<TrashEntryEntity>
 
     /**
-     * 回收站以 `locationId` 为键：一个 `media_items` 行可以有多个位置，
-     * 回收的是**位置上的那份字节**（设计稿 §14.4 第 6 项）。
+     * 到期判定的两个后端各有自己的期限列（§8.7）：R2 用应用期限，R1 用 `DATE_EXPIRES` 快照。
+     * 期限未知时**不**算到期（「只有数据来源能够可靠提供时才展示」）。
      */
+    @Query(
+        """
+        SELECT * FROM trash_entries
+        WHERE state = 'ACTIVE' AND (
+            (backend = 'R2_APP_COPY' AND expiresAtEpochMillis IS NOT NULL AND expiresAtEpochMillis <= :nowEpochMillis)
+            OR (backend = 'R1_SYSTEM' AND systemExpiresAtEpochMillis IS NOT NULL AND systemExpiresAtEpochMillis <= :nowEpochMillis)
+        )
+        ORDER BY updatedAtEpochMillis
+        """,
+    )
+    suspend fun expiredTrash(nowEpochMillis: Long): List<TrashEntryEntity>
+
+    /**
+     * **`IGNORE` 而不是 `Upsert`**：重复点击 / 重试不得覆盖已存在的条目
+     * （那会把一个 `ACTIVE` 条目打回 `STAGING`，等于丢掉已确认的移入结果）。
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertTrash(entry: TrashEntryEntity)
+
     @Query("UPDATE trash_entries SET state = :state WHERE locationId = :locationId")
     suspend fun updateTrashState(locationId: String, state: String)
 
+    /** 状态机需要整行更新（副本信息、期限、错误详情都在行上）。 */
+    @Upsert
+    suspend fun updateTrash(entry: TrashEntryEntity)
+
     @Query("DELETE FROM trash_entries WHERE locationId = :locationId")
     suspend fun deleteTrash(locationId: String)
+
+    /**
+     * 恢复成功后把位置行指到新 URI（§8.5 [调整]）。
+     *
+     * 三个字段一起重置不是顺手：`fastFingerprint` 是**便宜指纹缓存**，新文件的字节
+     * 虽然与副本相同，但它在 MediaStore 里是一个新条目，重新算一次的成本远低于
+     * 「信任一个可能对不上的缓存」；`missingScanCount`/`lastSeenEpochMillis`
+     * 归零则让下一轮扫描立刻把它当成在线文件，而不是等它熬过缺失阈值。
+     */
+    @Query(
+        """
+        UPDATE media_locations
+        SET uri = :uri, contentHash = :contentHash, hashAlgorithmVersion = :hashAlgorithmVersion,
+            fastFingerprint = NULL, missingScanCount = 0, lastSeenEpochMillis = :nowEpochMillis
+        WHERE id = :locationId
+        """,
+    )
+    suspend fun rebindLocation(
+        locationId: String,
+        uri: String,
+        contentHash: String?,
+        hashAlgorithmVersion: Int?,
+        nowEpochMillis: Long,
+    )
+
+    @Query("DELETE FROM media_locations WHERE id = :locationId")
+    suspend fun deleteLocation(locationId: String)
+
+    /** 条目还剩下别的位置时不动它（多位置媒体删掉一个位置不该整条消失）。 */
+    @Query(
+        """
+        DELETE FROM media_items WHERE id = :mediaItemId
+        AND NOT EXISTS (SELECT 1 FROM media_item_locations WHERE mediaItemId = :mediaItemId)
+        """,
+    )
+    suspend fun deleteOrphanItem(mediaItemId: String)
+
+    @Query(
+        """
+        DELETE FROM media_items
+        WHERE NOT EXISTS (SELECT 1 FROM media_item_locations WHERE media_item_locations.mediaItemId = media_items.id)
+        """,
+    )
+    suspend fun deleteItemsWithoutLocations(): Int
 }
 
 @Dao

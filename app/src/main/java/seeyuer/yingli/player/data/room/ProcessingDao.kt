@@ -44,4 +44,24 @@ interface ProcessingDao {
 
     @Query("DELETE FROM processing_tasks WHERE state IN ('SUCCEEDED', 'FAILED', 'CANCELED')")
     suspend fun clearTerminalTasks()
+
+    /**
+     * 某个媒体条目当前被哪些**非终态**操作占用（回收站的互斥判定，§11.4）。
+     *
+     * 粒度说明：`processing_project_inputs` 只到 `mediaItemId`，没有位置维度，
+     * 所以守卫的粒度比「同一位置的处置」更粗——多位置媒体只要**任一**位置在任务里，
+     * 整条都被视为占用。这是**偏保守**的方向（宁可多拦一次），而且与 D5-b 的意图一致：
+     * 压缩/转码/切片期间不允许动同一个媒体条目。
+     */
+    @Query(
+        """
+        SELECT DISTINCT projects.type
+        FROM processing_projects AS projects
+        INNER JOIN processing_project_inputs AS inputs ON inputs.projectId = projects.id
+        INNER JOIN processing_tasks AS tasks ON tasks.projectId = projects.id
+        WHERE inputs.mediaItemId = :mediaItemId
+          AND tasks.state IN ('QUEUED', 'PREPARING', 'RUNNING', 'CANCELING')
+        """,
+    )
+    suspend fun activeProjectTypes(mediaItemId: String): List<String>
 }

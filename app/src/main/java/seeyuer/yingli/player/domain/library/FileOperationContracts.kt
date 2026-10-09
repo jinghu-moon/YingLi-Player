@@ -1,9 +1,9 @@
 package seeyuer.yingli.player.domain.library
 
-import kotlinx.coroutines.flow.Flow
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.core.model.media.MediaUri
+import seeyuer.yingli.player.domain.recycle.TrashEntry
 
 enum class FileOperationFailure {
     NAME_CONFLICT,
@@ -28,62 +28,17 @@ data class FileOperationTarget(
     val sourceUri: MediaUri,
 )
 
+/**
+ * 通用文件操作网关。
+ *
+ * **`trash` / `restore` / `purge` 已于阶段 4 删除**（设计稿 §14.5 第 4 项：删除 R3）。
+ * 原因（F27）：应用对其他应用创建的共享媒体**没有路径访问权**，`renameTo` 根本不成立；
+ * 而它在 `file://` 上「成功」时也只是把文件搬进一个既不受系统保护、也不受应用期限管理的隐藏目录，
+ * 并让原 URI 失效。回收站的三个动作现在由 `RecycleBinStorage` 承担。
+ */
 interface FileOperationGateway {
     suspend fun rename(target: FileOperationTarget, newName: String): FileOperationResult
     suspend fun move(target: FileOperationTarget, destination: MediaUri): FileOperationResult
-    suspend fun trash(target: FileOperationTarget): FileOperationResult
-    suspend fun restore(entry: TrashEntry): FileOperationResult
-    suspend fun purge(entry: TrashEntry): FileOperationResult
-}
-
-enum class TrashState {
-    TRASHED,
-    RESTORING,
-    PURGING,
-    FAILED,
-}
-
-data class TrashEntry(
-    val mediaId: MediaItemId,
-    val locationId: MediaLocationId,
-    val originalUri: MediaUri,
-    val trashedUri: MediaUri?,
-    val deletedAtEpochMillis: Long,
-    val purgeAtEpochMillis: Long,
-    val state: TrashState = TrashState.TRASHED,
-) {
-    init {
-        require(deletedAtEpochMillis >= 0)
-        require(purgeAtEpochMillis >= deletedAtEpochMillis)
-    }
-}
-
-data class TrashRetentionPolicy(val retentionDays: Int = 30) {
-    init {
-        require(retentionDays in 1..365)
-    }
-
-    fun purgeAt(deletedAtEpochMillis: Long): Long =
-        deletedAtEpochMillis + retentionDays * MILLIS_PER_DAY
-
-    fun isExpired(entry: TrashEntry, nowEpochMillis: Long): Boolean = nowEpochMillis >= entry.purgeAtEpochMillis
-
-    private companion object {
-        const val MILLIS_PER_DAY = 86_400_000L
-    }
-}
-
-interface TrashRepository {
-    fun observe(): Flow<List<TrashEntry>>
-    suspend fun put(entry: TrashEntry)
-
-    /**
-     * 回收站条目的身份是**位置**而不是条目：一个 `MediaItem` 可以有多个位置，
-     * 回收的是位置上的那份字节（设计稿 §14.4 第 6 项）。
-     */
-    suspend fun updateState(locationId: MediaLocationId, state: TrashState)
-    suspend fun remove(locationId: MediaLocationId)
-    suspend fun expired(nowEpochMillis: Long): List<TrashEntry>
 }
 
 data class BatchOperationSummary(
@@ -96,6 +51,10 @@ data class BatchOperationSummary(
     val failed: Int get() = failures.size
 }
 
+/**
+ * 媒体库的破坏性动作入口。**实现必须经 `TrashService`**（状态机与后端分派都在那里），
+ * 不得直接写 `trash_entries`（设计稿 §13：不引入第二个回收站写入口）。
+ */
 interface LibraryMutationRepository {
     suspend fun trash(items: List<LibraryMedia>): BatchOperationSummary
     suspend fun trashByIds(ids: Set<MediaItemId>): BatchOperationSummary = BatchOperationSummary(0, emptyMap())

@@ -68,8 +68,9 @@ internal val AbRangeBarThickness: Dp = 3.dp
 /**
  * 区间条两端的圆角：半个厚度（`1.5dp`）—— demo 的 `rx="1.5"`，圆头读起来是"一段区间"而不是"一块砖"。
  *
- * 它**不等于** [AbRangeCornerRadius]（2dp，那是 exaggerated 虚线的圆角档）：两者的载体不同
- * （3dp 条 vs 24dp 虚线框），各自的圆角都取自己那一档的一半或同档，不互相牵制。
+ * 它是本层**唯一**由"半个自身厚度"给出的圆角：区间条取半厚，徽标的圆角
+ * （[AbMarkerCornerRadius]）由留白推出 —— 两者载体不同（3dp 条 vs 18dp 字母牌），不互相牵制。
+ * 夸大区间的上下沿是两条 `drawLine` 虚线、**没有**圆角矩形，所以不参与这套圆角档位。
  */
 internal val AbRangeBarCornerRadius: Dp
     get() = AbRangeBarThickness / 2
@@ -178,10 +179,12 @@ internal val AbMarkerGlyphSize: Dp
     get() = YingLiSliderThumbRadius * 2
 
 /**
- * 徽标四周的**留白**（字形框到徽标边缘）= 与 [AbRangeCornerRadius] 同一档的 `2dp`。
+ * 徽标四周的**留白**（字形框到徽标边缘）= `2dp`，也就是轨道描边圆头的半径
+ * （`YingLiSliderTrackHeight / 2`，轨道是 `StrokeCap.Round` 的 4dp 线）：同一条圆角档位，
+ * 不引入新数字。
  *
  * 它同时决定徽标的圆角（见 [AbMarkerCornerRadius]）：圆角取留白的 2 倍时，字形框自己也是一个
- * `2dp` 圆角 —— 与区间虚线、轨道描边同一套圆角档位，不引入新数字。
+ * `2dp` 圆角 —— 与轨道描边同一档。
  */
 internal val AbMarkerGlyphPadding: Dp = 2.dp
 
@@ -290,15 +293,6 @@ internal val AbMarkerMergeThreshold: Dp
 internal val MIN_AB_RANGE_WIDTH: Dp
     get() = AbMarkerMergeThreshold
 
-/**
- * 区间色块左右两端的圆角半径。
- *
- * 取 `2dp` 而不是半个高度（那会变成胶囊）：夸张后的区间可能只有 [MIN_AB_RANGE_WIDTH] 宽，
- * 全圆角会把它变成"一个大圆点"，与徽标混淆。`2dp` 保留"这是一段矩形区间"的读感，
- * 又与轨道本身的描边圆角同一档。
- */
-internal val AbRangeCornerRadius: Dp = 2.dp
-
 /** 夸大区间的虚线描边宽度：与徽标同档，不引入新的视觉重量。 */
 internal val AbRangeDashStrokeWidth: Dp = 1.dp
 
@@ -317,7 +311,8 @@ internal val AbRangeDashLength: Dp = 3.dp
  * 反过来"叠一层黑"在播放器 chrome 上不是等价做法：chrome 背景本身就是黑的，
  * 叠黑只会在轨道之外多压一层已经在暗处的画面，既看不见压暗、又脏了画面。
  *
- * 0.55（实测取证见 `.tmp-abloop-badges`）的三个落点：已播放的那一段（`controlPrimary`，白）
+ * 0.55 的三个落点（逐像素实测取值；口径由本常量与 [AbRangeOutsideAlphaFloor] 决定）：
+ * 已播放的那一段（`controlPrimary`，白）
  * 降到 `140/255`，未播放的轨道（白 24%）降到 `33/255`，区间内保持 `255/255` 与 `61/255` ——
  * "已播放 / 未播放"与"区间内 / 区间外"两个维度因此仍然读得出来（两档亮度 × 一个区间系数）。
  *

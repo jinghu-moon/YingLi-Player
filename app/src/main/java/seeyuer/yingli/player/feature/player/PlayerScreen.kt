@@ -805,7 +805,13 @@ object PlayerTestTags {
     const val AB_CAPSULE = "player.ab.capsule"
     /** 底栏辅助带（工具托盘行与工具胶囊共用的那一格）。 */
     const val AUXILIARY_BAND = "player.auxiliary_band"
-    /** 进度条上的 A–B 区间高亮（含两端标记）：画在进度条自己那一行上。 */
+    /**
+     * 进度条上的 **A–B 区间外压暗层**（`BlendMode.DstOut`：只把区间外那一段的 alpha 降下来）。
+     *
+     * 它**只做压暗、不承载任何标记**：区间条 / 竖线 / 徽标 / 夸大虚线都在 [AB_MARKER_LAYER] 里。
+     * 两层之所以是两个节点：压暗必须住在滑杆隔离出来的离屏层内（否则会把轨道下面的画面一起打薄），
+     * 而标记组要向上溢出滑杆那条 48dp 触控带、自带它自己的画布。
+     */
     const val AB_RANGE = "player.ab.range"
     /**
      * 进度条上的 **A–B 标记组**（区间条 / 竖线 + 徽标 / 夸大虚线）。

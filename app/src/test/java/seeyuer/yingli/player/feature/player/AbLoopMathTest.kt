@@ -75,8 +75,8 @@ class AbLoopMathTest {
         // 字形框 = 滑杆圆钮的直径（这一行上已有的最大圆形元素）。
         assertEquals(YingLiSliderThumbRadius * 2, AbMarkerGlyphSize)
         assertEquals(14f, AbMarkerGlyphSize.value, 0.001f)
-        // 留白与区间圆角同一档（2dp），徽标直径 = 字形框 + 两侧留白。
-        assertEquals(AbRangeCornerRadius, AbMarkerGlyphPadding)
+        // 留白取轨道描边圆头那一档（YingLiSliderTrackHeight / 2 = 2dp），徽标直径 = 字形框 + 两侧留白。
+        assertEquals(2f, AbMarkerGlyphPadding.value, 0.001f)
         assertEquals(AbMarkerGlyphSize + AbMarkerGlyphPadding * 2, AbMarkerDiameter)
         assertEquals(18f, AbMarkerDiameter.value, 0.001f)
         assertEquals(9f, AbMarkerRadius.value, 0.001f)

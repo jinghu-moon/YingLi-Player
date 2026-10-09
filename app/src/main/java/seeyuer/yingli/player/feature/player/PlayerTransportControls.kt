@@ -567,8 +567,6 @@ internal fun BottomPlaybackControls(
                             modifier = Modifier.fillMaxWidth().testTag(PlayerTestTags.PROGRESS),
                             enabled = duration != null && duration > 0,
                             valueRange = 0f..(duration ?: 1).coerceAtLeast(1).toFloat(),
-                            trackHeight = 4.dp,
-                            thumbRadius = 7.dp,
                             colors = YingLiSliderDefaults.colors(
                                 activeTrack = YingLiTheme.player.controlPrimary,
                                 inactiveTrack = YingLiTheme.player.track,
@@ -1110,8 +1108,8 @@ private fun AbMarkerLayer(
                 drawLine(
                     // 缝是两枚徽标之间的"空"。徽标本体是**实心强调色**，所以这里的"空"只能取**反色**
                     //（与字母同一支墨，[letterColor]）：旧实现用轨道色（半透明白）画在这块实心白上，
-                    // 半透明白叠白 = 白，**实测完全看不见**（`.tmp-abloop-badges/12-merged-5s.png`
-                    // 的逐像素取证）。画成反色之后，合并块才真的读成"两枚徽标被并到一起"。
+                    // 半透明白叠白 = 白，**逐像素实测完全看不见**。画成反色之后，
+                    // 合并块才真的读成"两枚徽标被并到一起"。
                     color = letterColor,
                     start = Offset(geometry.centerXPx, centerY - radius),
                     end = Offset(geometry.centerXPx, centerY + radius),

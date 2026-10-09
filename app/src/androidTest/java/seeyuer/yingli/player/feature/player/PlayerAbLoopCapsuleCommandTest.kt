@@ -179,7 +179,7 @@ class PlayerAbLoopCapsuleCommandTest {
         CapsuleHarness(FakeAbController(startingPositionMillis = A_POSITION_MILLIS))
 
         val capsule = composeRule.onNodeWithTag(PlayerTestTags.AB_CAPSULE).getUnclippedBoundsInRoot()
-        listOf(SET_A, SET_B, CLEAR, CLOSE).forEach { label ->
+        listOf(SET_A, SET_B, EXPORT, CLEAR, CLOSE).forEach { label ->
             val button = composeRule.onNodeWithContentDescription(label).getUnclippedBoundsInRoot()
             val topGap = button.top.value - capsule.top.value
             val bottomGap = capsule.bottom.value - button.bottom.value
@@ -194,6 +194,29 @@ class PlayerAbLoopCapsuleCommandTest {
                 abs(buttonCenter - capsuleCenter) <= 1f,
             )
         }
+    }
+
+    /**
+     * 「导出这段」只在区间完整时可用：**没有 B 就没有区间可导**，所以它跟着 B 一起被压住。
+     *
+     * 为什么这条要单独存在：导出是阶段 5 新增的第 5 枚按钮，它与"设点/清除"的启用条件
+     * 不是同一条规则（设点按钮改区间、导出按钮消费区间）。把这条规则钉在真机布局上，
+     * 才能保证以后调胶囊时不会出现"点了导出却弹出一个空区间"。
+     */
+    @Test
+    fun exportButtonStaysDisabledUntilBothPointsExist() {
+        val controller = FakeAbController(startingPositionMillis = A_POSITION_MILLIS)
+        val harness = CapsuleHarness(controller)
+
+        composeRule.onNodeWithContentDescription(EXPORT).assertIsNotEnabled()
+
+        composeRule.onNodeWithContentDescription(SET_A).performClick()
+        harness.awaitState { it.abLoop.pointA != null }
+        composeRule.onNodeWithContentDescription(EXPORT).assertIsNotEnabled()
+
+        composeRule.onNodeWithContentDescription(SET_B).performClick()
+        harness.awaitState { it.abLoop.pointB != null }
+        composeRule.onNodeWithContentDescription(EXPORT).assertIsEnabled()
     }
 
     /** 未设 A 时 B 与清除都不可用；A 永远可用（"没有 A 就没有区间"这条规则只压 B/清除）。 */
@@ -281,6 +304,9 @@ class PlayerAbLoopCapsuleCommandTest {
                         onSetAbPoint = { viewModel.setAbPoint(it) },
                         onClearAb = viewModel::clearAb,
                         onCloseAbTool = viewModel::closeAbTool,
+                        onOpenAbExport = viewModel::openAbExport,
+                        onDismissAbExport = viewModel::closeAbExport,
+                        onSelectAbExportMode = {},
                     )
                 }
             }
@@ -411,6 +437,7 @@ class PlayerAbLoopCapsuleCommandTest {
 
         const val SET_A = "设置 A 点"
         const val SET_B = "设置 B 点"
+        const val EXPORT = "导出这段"
         const val CLEAR = "清除"
         const val CLOSE = "关闭"
 

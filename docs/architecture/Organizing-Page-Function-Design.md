@@ -1976,13 +1976,33 @@ L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher
 
 ### 14.6 阶段 5：AB 循环区间导出
 
-| 步骤 | 内容 | 破坏性 |
-|---|---|---|
-| 9 | `ClipProject.forRange(...)` 纯工厂 + 单测 | 否 |
-| 10 | `ProcessingViewModel.createProject` / `addSegment` 改为调用 `forRange` | 否（行为等价，golden test 保证） |
-| 11 | `PlayerViewModel` 注入 `clipExportQueue` + `idGenerator`；新增"导出当前 AB 区间"动作与 generation 守卫 | 否 |
-| 12 | 播放页 sheet UI（二选一）+ 入队后跳处理中心 | 否 |
-| 13 | G11：播放页按 mime 白名单反查能力，不支持时默认切精确模式并给出理由 | 否（与步骤 8 合并） |
+| 步骤 | 内容 | 破坏性 | 状态 |
+|---|---|---|---|
+| 9 | `ClipProject.forRange(...)` 纯工厂 + 单测 | 否 | ✅ 见 14.6.1 |
+| 10 | `ProcessingViewModel.createProject` / `addSegment` 改为调用 `forRange` | 否（行为等价，golden test 保证） | ✅ 见 14.6.1 |
+| 11 | `PlayerViewModel` 注入 `clipExportQueue` + `idGenerator`；新增"导出当前 AB 区间"动作与 generation 守卫 | 否 | ✅ 见 14.6.1 |
+| 12 | 播放页 sheet UI（二选一）+ 入队后跳处理中心 | 否 | ✅ 见 14.6.1 |
+| 13 | G11：播放页按 mime 白名单反查能力，不支持时默认切精确模式并给出理由 | 否（与步骤 8 合并） | ✅ 见 14.6.1 |
+
+#### 14.6.1 阶段 5 落地（2026-10-10）
+
+**一句话**：AB 循环与会话临时区间第一次真正接到导出切片上——「区间 → 片段」只有一条构造路径，导出必须经 `ClipExportQueue`，播放页只负责冻结区间与一次性入队。
+
+1. **唯一构造路径（步骤 9/10）**。`domain/clips/ClipContracts.kt` 新增 `ClipSegment.forRange(id, startMillis, endMillis, name)` 与 `ClipProject.forRange(sourceMediaId, sourceLocationId, sourceDurationMillis, startMillis, endMillis, name, exportMode, preset, projectId, segmentId, nowEpochMillis)`（参数无默认值）。工厂**刻意不钳制、不加工**：区间不合法由 `ClipSegment.init` / `ClipProject.init` 抛 `IllegalArgumentException`，调用方不许悄悄互换 A/B 或截到片尾。`ProcessingViewModel.createProject` / `addSegment` 改为调它们（`FIRST_SEGMENT_NAME = "Clip 1"` 提为常量）。
+2. **播放页动作（步骤 11）**。`PlayerViewModel` 新增可空协作者 `clipExportQueue` / `clipFastExportProbe` / `idGenerator` / `clock`（架构规则禁止 `src/main` 里出现墙上时钟，所以时间必须注入），`companion factory(...)` 同步；`PlayerUiState` 新增 `abExportSheet: AbExportSheetState?`，`PlayerUiEvent` 新增 `data object ExportQueued`（**用事件而不是 UiState 布尔量**，因为"跳到处理中心"是一次性宿主动作）。
+   - `openAbExport()`：先按 §9.2 C1 把 `(A, B)` 从 `state.value.abLoop` **冻结**进 `AbExportSheetState(startMillis, endMillis)`；随后异步问一次 `ClipFastExportProbe`，回来时用 `abExportGeneration` 复核，过期即丢弃。
+   - `exportAbRange(mode)`：**第一件事就是把 sheet 置空**——这就是"入队恰好一次"的实现（连点第二次时 sheet 已不在，方法第一行就返回，连按钮都没有）。之后 `ClipProject.forRange(...)` → `queue.enqueue(project)` → 复核 generation → `events.trySend(ExportQueued)`。任何一环缺失都只发 `player_ab_export_unavailable` / `player_ab_export_failed`，**绝不伪造入队成功**。
+   - `clearAb()` 提升 `abExportGeneration` 并关掉 sheet：清除 AB 或切媒体之后到达的探测结果不会把旧区间写成新 sheet。
+3. **不预设默认（步骤 12）**。新建 `feature/player/AbExportSheet.kt`：一张 `ModalBottomSheet`，两枚并列选项卡「快速（无损复制）」/「精确（重新编码）」，区间读数 `mm:ss.SSS → mm:ss.SSS` 加时长胶囊，底部才是真正的提交按钮。`defaultMode` 只决定预选高亮。**唯一例外是 `fastUnavailable`**（步骤 13）：此时把不存在的选项移出候选集、预选切到精确，并把理由写在选项卡下方——**这是"不让用户选一个必然失败的选项"，不是替他做决定**。
+4. **G11 的能力来源只有一份**。新增 `domain/clips/ClipFastExportProbe`（`fun interface`）+ `data/processing/clips/MuxerClipFastExportProbe`：实现查的是既有的 `MuxerContainer.Mp4.supports(...)`，**文件里没有任何 mime 字面量**（步骤 8 已把白名单收敛成反查，这里复用它，不抄第二份表）。
+5. **`ClipExportCoordinator` 先落库再入队**。切片执行器只经 `clipRepository.project(id)` 取项目，所以项目必须先持久化，否则任务一到就 `CLIP_PROJECT_NOT_FOUND`。这条顺序此前散在调用方（`ProcessingViewModel.exportSelected` 先 `save` 再入队），现在收敛进 `ClipExportCoordinator.enqueue(project)`，新增的播放页路径与既有路径共用同一个归属地。
+6. **一处对步骤 10 的细化**：`ClipSegment.forRange` 才是"区间 → 片段"的唯一构造路径，`ClipProject.forRange` 与 `addSegment` 都调它；`ClipProject.forRange` 因此只做"单段项目 + 时间戳"的组装。这样"区间合法性"只有一条判据。
+7. **验证**（全部已执行）：
+   - JVM：`ClipContractsTest`（+5 例 `forRange` 边界）、`AbExportNamingTest`（6 例：段名与 `mm:ss.SSS` 读数）、`ProcessingViewModelTest`（新建 5 例，含"与改前字面量逐字段相同"的 golden）、`PlayerViewModelTest`（+6 例：区间未冻结时动作不可用、快速/精确预选、**入队恰好一次**、过期探测丢弃、缺协作者时报不可用而不是假成功）；全套 `testDebugUnitTest` 见下方数字。
+   - 真机：`PlayerAbLoopCapsuleCommandTest` 新增 `exportButtonStaysDisabledUntilBothPointsExist`，并把第 5 枚按钮（导出这段）纳入"胶囊内垂直居中"的逐按钮断言；`harness` 的接线与 `YingLiApp` 逐字相同。
+8. **本步骤没有做的事**：播放页不显示导出进度（入队后跳处理中心，进度在任务中心看）；不做跨视频 AB、片段合并、播放页内时间轴编辑（§9.5）；`ClipProject.preset` 在切片执行器里仍未被消费（既有缺口，不属阶段 5）。
+9. **未验证**：`MuxerClipFastExportProbe` 的真机误判率未测量（它只回答"容器收不收这个样本格式"，不回答"这个设备真的能 remux 成功"——G27 已证明"能力表说可以"与"写得进去"是两件事）；`fastUnavailable` 分支在真机上没有可复现的样例源（本机 MP4 容器对 H.264/HEVC/VP9/AV1 都收）。
+10. **顺带发现的既有失败（非本阶段引入，未修）**：批跑播放页 UI 测试组（`PlayerScreenStateTest` + `PlayerAbLoopScreenTest` + `PlayerAbLoopExclusionTest` + `DisplayPositionInstrumentedTest`）为 28 例 / 2 失败，两例都在 `DisplayPositionInstrumentedTest`，原因是 `Player is accessed on the wrong thread`（`Instr: androidx.test.runner.AndroidJUnitRunner` vs `main`，栈经 `PlaybackSessionRuntime.currentPositionMillis` → `ServicePlaybackEngine.currentPositionMillis`）。单独只跑该类仍 2/2 失败（确定性），且阶段 5 的 diff 未触及这三个文件（最后一次改动是 `c597599`，早于本阶段）⇒ 按"不顺手改无关代码"留原样，只如实记录。
 
 ### 14.7 阶段 6：UI 接入
 
@@ -2035,8 +2055,9 @@ L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher
 | G8 码率回读 | ✅ `Media3EncoderSettingsTest`、`Media3FallbackContractTest`（口径已改） | 断言 `OutputTarget.videoBitrate` / `audioBitrate` 出现在构造出的 `VideoEncoderSettings` / `AudioEncoderSettings` 中，且 `Compatible` 与 `Balanced` 的编码参数不再相等（**「请求已下发」**）；verifier 只报告 `averageBitrateBitsPerSecond`，**不断言它等于请求值**（官方说明编码器可以忽略请求码率；`KEY_BIT_RATE` 在本设备读不到，见 §14.2.1）。「预设码率是否真的生效」由真机输出字节数分离回答（§15.3） |
 | 步骤 7（容器适配） | ✅ 无既有用例被改动（三档预设的容器组合全部被新表接受） | ✅ `ContainerMuxerFactoryTest`（7 例）：MP4 不被接管、WebM/Ogg/ADTS 有适配器、未知容器无适配器、三档预设被自己的容器接受、MP4 能力表与 `Mp4Muxer` 静态表逐项相同、容器可达性随编码而异（HEVC 进 MP4、不进 WebM）、工厂经 `Muxer.Factory` 回报同一张表。**看不见「`setMuxerFactory` 是否真被调用」**（与 G1 同类盲区，见 14.3.3） |
 | 阶段 2 重构 | 上述全部 | 同一组输入在重构前后产出**字段级相同**的 plan（golden test） |
-| 步骤 9/10（`forRange`） | `ClipContractsTest.kt` / `ProcessingViewModelTest` 现有全部用例 | `forRange` 边界：`start=0`、`end=duration`、`end=duration+1`（拒绝）、`start=end`（拒绝）、A 与 B 互换后仍合法；golden：同一 `LibraryMedia` 经 `createProject` 产出的 `ClipProject` 与改前**字段级相同** |
-| 步骤 11（播放页入队） | `PlayerViewModelTest.kt` 现有全部用例 | AB 未激活时动作不可用；AB 激活时**入队恰好一次**；AB 被清除或切换媒体后到达的异步结果被丢弃（generation 守卫）；`pointA` / `pointB` 被原样固化进 `ClipSegment` |
+| 步骤 9/10（`forRange`） | ✅ `ClipContractsTest.kt` 既有用例全绿 | ✅ `ClipContractsTest` +5 例（`start=0`、`end=duration`、`end=duration+1` 拒绝、`start=end` 拒绝、**A/B 颠倒不互换而是抛**）；`ProcessingViewModelTest`（新建 5 例）的 golden 断言"同一 `LibraryMedia` 经 `createProject` 产出的 `ClipProject` 与改前**字面量逐字段相同**"。见 14.6.1 |
+| 步骤 11（播放页入队） | ✅ `PlayerViewModelTest.kt` 既有用例全绿 | ✅ `PlayerViewModelTest` +6 例：AB 未冻结时 `abExportSheet == null`；`ClipFastExportProbe` 为真/假时的默认模式与理由；**入队恰好一次**（连点两次仍只一个项目，区间原样固化进单段）；清除 AB 之后到达的探测结果被 generation 丢弃；缺协作者时事件是 `player_ab_export_unavailable` 而非假成功。另 `AbExportNamingTest`（6 例）钉住段名与 `mm:ss.SSS` 读数。见 14.6.1 |
+| 步骤 12/13（UI 与 G11） | ✅ 无既有用例被改动 | ✅ 真机 `PlayerAbLoopCapsuleCommandTest`：新增 `exportButtonStaysDisabledUntilBothPointsExist`，并把第 5 枚按钮纳入"胶囊内垂直居中"逐按钮断言；`MuxerClipFastExportProbe` 零 mime 字面量（能力表仍只有 `MuxerContainer` 一份）。**未验证**：`fastUnavailable` 分支无真机样例源 |
 
 **去重侧新增**：
 - 同 `sizeBytes` 但 `contentHash` 不同 ⇒ **不形成组**（负样本，`docs/09:928`）。

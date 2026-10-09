@@ -33,9 +33,19 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import seeyuer.yingli.player.core.common.AppClock
 import seeyuer.yingli.player.core.common.AppDispatchers
+import seeyuer.yingli.player.core.common.IdGenerator
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.R
+import seeyuer.yingli.player.domain.clips.ClipExportMode
+import seeyuer.yingli.player.domain.clips.ClipExportQueue
+import seeyuer.yingli.player.domain.clips.ClipFastExportProbe
+import seeyuer.yingli.player.domain.clips.ClipPreset
+import seeyuer.yingli.player.domain.clips.ClipProject
+import seeyuer.yingli.player.domain.clips.ClipProjectId
+import seeyuer.yingli.player.domain.clips.ClipSegment
+import seeyuer.yingli.player.domain.clips.ClipSegmentId
 import seeyuer.yingli.player.domain.playback.ScreenshotDeleteFailure
 import seeyuer.yingli.player.domain.playback.PlaybackCommandResult
 import seeyuer.yingli.player.domain.playback.PlaybackConnectionState
@@ -130,6 +140,11 @@ data class PlayerUiState(
      */
     val abLoop: AbLoopSession = AbLoopSession.EMPTY,
     val abToolOpen: Boolean = false,
+    /**
+     * 「导出当前 AB 区间」的 sheet；null = 没打开。它是**会话临时状态**的同侧产物：
+     * 清除 AB、切换媒体都会关掉它（见 `clearAb`），绝不落库（§9.2 C1）。
+     */
+    val abExportSheet: AbExportSheetState? = null,
     val queue: PlaybackQueue? = null,
     val preferences: PlayerPreferences = PlayerPreferences(),
     val screenshot: ScreenshotUiState = ScreenshotUiState.Idle,
@@ -196,7 +211,30 @@ sealed interface PlayerUiEvent {
         /** 资源文案 `%1$s` 的实参；为 null 时按无参文案渲染。 */
         val stringArgument: String? = null,
     ) : PlayerUiEvent
+
+    /**
+     * AB 区间已经**入队成功**（设计稿 §14.6 步骤 12）。
+     *
+     * 用事件而不是 UiState 布尔量：它描述的是"刚发生了什么"，要触发一次性的宿主动作
+     * （跳到处理中心）。做成状态就会出现"跳过一次之后还一直是 true"的第二条语义。
+     */
+    data object ExportQueued : PlayerUiEvent
 }
+
+/**
+ * 「导出当前 AB 区间」的 sheet 状态（设计稿 §14.6 步骤 12）。
+ *
+ * 两端点都是**冻结值**：它们是用户在那一刻看到的区间，即使播放继续、AB 被清掉，
+ * sheet 上写着的仍然是用户点开时的那一段（与提交时固化成 `ClipSegment` 的正是同两个数）。
+ */
+data class AbExportSheetState(
+    val startMillis: Long,
+    val endMillis: Long,
+    /** 打开时默认选中的模式。源不支持无损复制时会被改成 [ClipExportMode.ACCURATE]。 */
+    val defaultMode: ClipExportMode = ClipExportMode.FAST,
+    /** 快速模式不可用（容器收不下源样本格式）；UI 必须说明理由，而不是静默换默认。 */
+    val fastUnavailable: Boolean = false,
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerViewModel(
@@ -217,6 +255,19 @@ class PlayerViewModel(
      * 传 null（单测/预览）时行为与改造前一致：不改变跳转精度。
      */
     private val seekPrecisionControl: SeekPrecisionControl? = null,
+    /**
+     * AB 区间导出的四个协作者（设计稿 §14.6 步骤 11/13）。全部可空：单测与预览里没有它们时
+     * 「导出这段」**不可用**（回一条明确的失败反馈），而不是造一个假项目出来。
+     *
+     * 为什么需要 [clock]：`ClipProject` 是 Room 持久实体，必须带 `createdAtEpochMillis`；
+     * 而架构规则禁止在 `src/main` 里直接读系统时间（`System` 的墙上时钟与 `Instant` 的
+     * 无参取当下都上黑名单，测试按文本扫），所以时间只能注入。
+     * 为什么需要 [idGenerator]：项目 id 与段 id 必须由项目统一的生成器造，域层不提供随机路径。
+     */
+    private val clipExportQueue: ClipExportQueue? = null,
+    private val clipFastExportProbe: ClipFastExportProbe? = null,
+    private val idGenerator: IdGenerator? = null,
+    private val clock: AppClock? = null,
     private val ownsSessionClient: Boolean = true,
 ) : ViewModel() {
     private val events = Channel<PlayerUiEvent>(Channel.BUFFERED)
@@ -227,6 +278,9 @@ class PlayerViewModel(
     private val panel = MutableStateFlow(PlayerPanel.NONE)
     /** 工具浮层开关（AB 胶囊的"打开/关闭"）：关闭 ≠ 取消循环（D3），所以它和区间是两件事。 */
     private val abToolOpen = MutableStateFlow(false)
+
+    /** AB 导出 sheet：null = 没打开（见 [AbExportSheetState]）。 */
+    private val abExportSheet = MutableStateFlow<AbExportSheetState?>(null)
     private val screenshot = MutableStateFlow<ScreenshotUiState>(ScreenshotUiState.Idle)
 
     /**
@@ -250,6 +304,15 @@ class PlayerViewModel(
      * 这种"状态绕回同一格"的时序骗不过它。
      */
     private var screenshotCaptureGeneration = 0L
+
+    /**
+     * AB 区间导出的 generation：与截图同构的「晚到结果」契约（§9.4 明确要求照抄截图那条）。
+     *
+     * 任何让"在途的导出"失去意义的动作都让它 +1：清除 AB、切换媒体（都经 [clearAb]）。
+     * 导出协程带着出发时的值回来，值不再相等就不发布任何结果 —— 否则用户会收到一条
+     * 关于**另一段区间**（甚至另一个文件）的反馈，而那段区间早就没了。
+     */
+    private var abExportGeneration = 0L
 
     /** 作废在途的捕获回调（见 [screenshotCaptureGeneration]）。 */
     private fun invalidateScreenshotCapture() {
@@ -382,8 +445,8 @@ class PlayerViewModel(
     private val overlayPanelAbAndQueue = combine(overlayAndPanel, abLoop, abToolOpen, queue) { overlayPanel, currentAb, toolOpen, currentQueue ->
         Quadruple(overlayPanel.first, overlayPanel.second, currentAb, toolOpen, currentQueue)
     }
-    private val preferencesAndQueue = combine(preferences, queue) { currentPreferences, currentQueue ->
-        currentPreferences to currentQueue
+    private val preferencesAndQueue = combine(preferences, queue, abExportSheet) { currentPreferences, currentQueue, sheet ->
+        Triple(currentPreferences, currentQueue, sheet)
     }
     private val fullscreenPolicy = FullscreenPolicy()
 
@@ -428,7 +491,7 @@ class PlayerViewModel(
         surfaceAndGesture,
     ) { base, advanced, overlayPanelAbAndQueueState, preferencesAndQueueState, gestureSurface ->
         val (currentOverlay, currentPanel, currentAb, currentAbToolOpen, currentQueue) = overlayPanelAbAndQueueState
-        val (currentPreferences, _) = preferencesAndQueueState
+        val (currentPreferences, _, exportSheet) = preferencesAndQueueState
         val surfaceState = gestureSurface.surface
         val calibrationResult = surfaceState.frameCalibration
         val calibration = (calibrationResult as? FrameCalibrationResult.Calibrated)?.calibration
@@ -441,6 +504,7 @@ class PlayerViewModel(
             panel = currentPanel,
             abLoop = currentAb,
             abToolOpen = currentAbToolOpen,
+            abExportSheet = exportSheet,
             queue = currentQueue,
             preferences = currentPreferences,
             screenshot = surfaceState.screenshot,
@@ -628,7 +692,120 @@ class PlayerViewModel(
     }
 
     fun clearAb() {
+        // 清除 AB 是"让在途导出失去意义"的两个动作之一（另一个是切换媒体，它也经
+        // resetAbSession 走到这里）。作废在途导出并关掉 sheet：留着 sheet 就会停在一段
+        // 已经不存在的区间上，而它上面的"开始导出"仍然可点（§9.2 C1：AB 是会话临时状态）。
+        abExportGeneration++
+        abExportSheet.value = null
         sessionClient.dispatch(PlaybackSessionCommand.ClearAb)
+    }
+
+    /**
+     * 打开「导出当前 AB 区间」的 sheet（§14.6 步骤 11/12）。
+     *
+     * 只回答"用户现在想导出"，不预设用户要哪种模式：sheet 一出现就给出二选一。
+     * 源是否支持无损复制是**异步问**的（要先探一次文件），所以 sheet 先以 [ClipExportMode.FAST]
+     * 打开，探测回来说不支持时改成 [ClipExportMode.ACCURATE] 并带上理由 —— 用户看到的是
+     * "为什么默认不是快速"，而不是一个没有解释的默认值（§14.6 步骤 13）。
+     */
+    fun openAbExport() {
+        val session = state.value.abLoop
+        val start = session.pointA ?: return
+        val end = session.pointB ?: return
+        if (end <= start) return
+        abExportSheet.value = AbExportSheetState(startMillis = start, endMillis = end)
+        registerInteraction()
+        val probe = clipFastExportProbe ?: return
+        val library = libraryRepository ?: return
+        val mediaId = state.value.playback.request?.mediaId ?: return
+        val generation = abExportGeneration
+        viewModelScope.launch {
+            val supported = runCatching {
+                val media = withContext(dispatchers.io) { library.findByIds(setOf(mediaId)).firstOrNull() }
+                    ?: return@runCatching false
+                withContext(dispatchers.io) { probe.supportsFastExport(media) }
+            }.getOrDefault(false)
+            // 期间 AB 被清掉/换了媒体：这张 sheet 说的已经不是当前区间了，绝不再改它。
+            if (generation != abExportGeneration) return@launch
+            if (!supported) {
+                abExportSheet.value = abExportSheet.value?.copy(
+                    defaultMode = ClipExportMode.ACCURATE,
+                    fastUnavailable = true,
+                )
+            }
+        }
+    }
+
+    fun closeAbExport() {
+        abExportSheet.value = null
+    }
+
+    /**
+     * 用户当场二选一之后的提交（§9.4：**不预设默认模式**）。
+     *
+     * 三件事的顺序是有意的：
+     *  1. **先关 sheet**：这是"入队恰好一次"的实现 —— 按钮随 sheet 一起消失，连点不会入两次队；
+     *  2. 冻结 `(mediaId, A, B, generation)`：区间在提交那一刻固化成一个 `ClipSegment`，
+     *     此后播放继续、AB 被清除、甚至换媒体，都不影响这个已经落库的项目（§9.2 C1/C2）；
+     *  3. 经 [ClipExportQueue] 入队（§9.2 C3：成功状态只能由独立验证器产生，所以不能自己写文件）。
+     */
+    fun exportAbRange(mode: ClipExportMode) {
+        val sheet = abExportSheet.value ?: return
+        abExportSheet.value = null
+        val queue = clipExportQueue
+        val ids = idGenerator
+        val now = clock?.now()?.toEpochMilli()
+        val library = libraryRepository
+        val mediaId = state.value.playback.request?.mediaId
+        if (queue == null || ids == null || now == null || library == null || mediaId == null) {
+            // 协作方不齐（单测/预览）时如实说"这条路径此刻不可用"，不假装成功。
+            events.trySend(PlayerUiEvent.TransientMessage(R.string.player_ab_export_unavailable))
+            return
+        }
+        val generation = abExportGeneration
+        viewModelScope.launch {
+            val media = withContext(dispatchers.io) { library.findByIds(setOf(mediaId)).firstOrNull() }
+            val duration = media?.durationMillis?.takeIf { it > 0 }
+            if (media == null || duration == null) {
+                if (generation == abExportGeneration) {
+                    events.trySend(PlayerUiEvent.TransientMessage(R.string.player_ab_export_unavailable))
+                }
+                return@launch
+            }
+            // 区间不合法（越界/空）时 `forRange` 抛异常，这里翻成失败反馈 —— 绝不钳制成
+            // "看起来能导出"的另一段区间。
+            val project = runCatching {
+                ClipProject.forRange(
+                    sourceMediaId = media.id,
+                    sourceLocationId = media.locationId,
+                    sourceDurationMillis = duration,
+                    startMillis = sheet.startMillis,
+                    endMillis = sheet.endMillis,
+                    name = abExportSegmentName(media.fileName, sheet.startMillis, sheet.endMillis, mode),
+                    exportMode = mode,
+                    preset = if (mode == ClipExportMode.FAST) ClipPreset.SOURCE_QUALITY else ClipPreset.COMPATIBLE_MP4,
+                    projectId = ClipProjectId(ids.newId()),
+                    segmentId = ClipSegmentId(ids.newId()),
+                    nowEpochMillis = now,
+                )
+            }.getOrNull()
+            if (project == null) {
+                if (generation == abExportGeneration) {
+                    events.trySend(PlayerUiEvent.TransientMessage(R.string.player_ab_export_failed))
+                }
+                return@launch
+            }
+            if (generation != abExportGeneration) return@launch
+            val enqueued = runCatching { queue.enqueue(project) }.isSuccess
+            if (generation != abExportGeneration) return@launch
+            events.trySend(
+                if (enqueued) {
+                    PlayerUiEvent.ExportQueued
+                } else {
+                    PlayerUiEvent.TransientMessage(R.string.player_ab_export_failed)
+                },
+            )
+        }
     }
 
     fun setSpeed(value: PlaybackSpeed): PlaybackCommandResult {
@@ -1493,6 +1670,10 @@ class PlayerViewModel(
             windowPlaybackGateway: WindowPlaybackGateway? = null,
             deviceControlGateway: DeviceControlGateway? = null,
             seekPrecisionControl: SeekPrecisionControl? = null,
+            clipExportQueue: ClipExportQueue? = null,
+            clipFastExportProbe: ClipFastExportProbe? = null,
+            idGenerator: IdGenerator? = null,
+            clock: AppClock? = null,
             ownsSessionClient: Boolean = true,
         ) = viewModelFactory {
             initializer {
@@ -1509,6 +1690,10 @@ class PlayerViewModel(
                     windowPlaybackGateway,
                     deviceControlGateway,
                     seekPrecisionControl,
+                    clipExportQueue,
+                    clipFastExportProbe,
+                    idGenerator,
+                    clock,
                     ownsSessionClient,
                 )
             }
@@ -1531,6 +1716,36 @@ internal fun orderPlaylistItems(
 ): List<LibraryMedia> {
     val mediaById = items.associateBy { it.id }
     return queueIds.mapNotNull(mediaById::get)
+}
+
+/**
+ * AB 导出的段名（纯函数，可在 JVM 上逐条钉住）：`<原名>_clip_<起>s-<止>s[_exact]`。
+ *
+ * 三处刻意的选择：
+ *  - 秒数用整数（`6123ms → 6s`）：段名只用于**用户分辨这是哪一段**，毫秒级的精度在文件名里
+ *    既读不出来也不可信（AB 两端本就经过帧吸附，真实起点还与关键帧对齐有关）；
+ *  - 精确模式加 `_exact`：同一段区间导出两次（一次快速、一次精确）时，两个文件不会看起来一样；
+ *  - 原名截断到 `MAX_NAME_LENGTH` 减去后缀长度：后缀必须完整保留，否则"截断"会把区间信息吃掉，
+ *    而区间正是这个名字存在的理由。
+ */
+internal fun abExportSegmentName(
+    fileName: String,
+    startMillis: Long,
+    endMillis: Long,
+    mode: ClipExportMode,
+): String {
+    val base = fileName.substringBeforeLast('.').ifBlank { fileName }
+    val suffix = buildString {
+        append("_clip_")
+        append(startMillis / 1_000)
+        append('s')
+        append('-')
+        append(endMillis / 1_000)
+        append('s')
+        if (mode == ClipExportMode.ACCURATE) append("_exact")
+    }
+    val room = (ClipSegment.MAX_NAME_LENGTH - suffix.length).coerceAtLeast(1)
+    return base.take(room) + suffix
 }
 
 private fun PlaybackSessionSnapshot.toPlaybackState(): PlaybackState {
@@ -1599,3 +1814,4 @@ internal fun resolveFrameStepAnchor(
     val tolerance = (frameDurationMillis ?: DEFAULT_FRAME_STEP_MILLIS).coerceAtLeast(1L)
     return if (abs(positionMillis - anchor) <= tolerance) anchor else positionMillis
 }
+

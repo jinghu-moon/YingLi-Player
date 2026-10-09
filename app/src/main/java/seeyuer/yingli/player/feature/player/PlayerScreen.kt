@@ -52,6 +52,7 @@ import androidx.paging.compose.LazyPagingItems
 import kotlinx.coroutines.delay
 import seeyuer.yingli.player.R
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
+import seeyuer.yingli.player.domain.clips.ClipExportMode
 import seeyuer.yingli.player.domain.playback.PlaybackRecoveryAction
 import seeyuer.yingli.player.domain.playback.PlayerPanel
 import seeyuer.yingli.player.domain.playback.AbPoint
@@ -123,6 +124,12 @@ fun PlayerScreen(
     onSetAbPoint: (AbPoint) -> Unit = {},
     onClearAb: () -> Unit = {},
     onCloseAbTool: () -> Unit = {},
+    /** 「导出这段」：打开 AB 区间的导出二选一弹层（§14.6 步骤 12）。 */
+    onOpenAbExport: () -> Unit = {},
+    /** 关闭导出弹层（取消，什么都不做）。 */
+    onDismissAbExport: () -> Unit = {},
+    /** 用户在弹层里当场选定的模式：快速（无损复制）或精确（重新编码）。**没有默认值**。 */
+    onSelectAbExportMode: (ClipExportMode) -> Unit = {},
     allowPictureInPicture: Boolean = true,
     allowScreenshot: Boolean = true,
     transientMessage: PlayerUiEvent.TransientMessage? = null,
@@ -463,6 +470,20 @@ fun PlayerScreen(
             canNavigateNext = canNavigateNext,
             modifier = Modifier.align(Alignment.Center),
         )
+        // AB 区间导出弹层（§14.6 步骤 12）：**当场二选一，不预设默认**（参考实现
+        // `refer/REX-Player-master/.../ClipExportSheet.kt` 就是一张 sheet + 两张并列选项卡）。
+        // 它不进 UiState 的布尔量：`state.abExportSheet` 一旦非空就说明区间已冻结，
+        // 关闭与选择走两个不同的回调，"取消"不会留下任何任务。
+        state.abExportSheet?.let { sheet ->
+            AbExportSheet(
+                startMillis = sheet.startMillis,
+                endMillis = sheet.endMillis,
+                defaultMode = sheet.defaultMode,
+                fastUnavailable = sheet.fastUnavailable,
+                onDismiss = onDismissAbExport,
+                onSelectMode = onSelectAbExportMode,
+            )
+        }
         // 截图胶囊在组合期占用底栏的工具托盘行（BottomPlaybackControls 的 screenshotTool 插槽），
         // 所以只要它在场，底栏就必须留在组合里：截图工具本身是浮层，和帧数胶囊一样不吃控件自动隐藏，
         // 否则在截图模式里单击画面收起控件会把胶囊一起藏掉。
@@ -555,6 +576,7 @@ fun PlayerScreen(
                         session = state.abLoop,
                         onSetA = { onSetAbPoint(AbPoint.A) },
                         onSetB = { onSetAbPoint(AbPoint.B) },
+                        onExport = onOpenAbExport,
                         onClear = onClearAb,
                         onClose = onCloseAbTool,
                         modifier = Modifier.testTag(PlayerTestTags.AB_CAPSULE),

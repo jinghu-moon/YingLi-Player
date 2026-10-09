@@ -97,6 +97,12 @@ class MainActivity : ComponentActivity() {
             windowPlaybackGateway,
             ActivityDeviceControlGateway(this),
             app.mediaContainer.seekPrecisionControl,
+            // AB 区间导出（§14.6 步骤 11）：队列把「区间」固化成持久项目，探测回答「能否无损复制」，
+            // id 与时钟由核心提供（架构规则禁止在实现里读系统时钟）。
+            app.mediaContainer.clipExportQueue,
+            app.mediaContainer.clipFastExportProbe,
+            app.container.idGenerator,
+            app.container.clock,
             ownsSessionClient = false,
         )
     }

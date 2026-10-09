@@ -3,6 +3,7 @@ package seeyuer.yingli.player.domain.clips
 import kotlinx.coroutines.flow.Flow
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
+import seeyuer.yingli.player.domain.library.LibraryMedia
 import seeyuer.yingli.player.domain.processing.ProcessingProjectId
 
 private val STABLE_ID = Regex("[A-Za-z0-9_-]{1,128}")
@@ -34,6 +35,21 @@ data class ClipSegment(
 
     companion object {
         const val MAX_NAME_LENGTH = 80
+
+        /**
+         * 「区间 → 片段」的**唯一命名构造路径**。
+         *
+         * 从 AB 区间导出（设计稿 §14.6 步骤 9）与编辑器新增片段（步骤 10）都走这里。
+         * 它刻意不做任何加工：合法区间（`startMillis >= 0`、`endMillis > startMillis`）、
+         * 名字非空且不超长全部由本类型自己的 `init` 把关 —— 工厂里再抄一遍规则就是第二个真源，
+         * 而"把不合法的区间改成合法"（钳制、取整、截断）会让调用方拿到的区间与它请求的不是同一个。
+         */
+        fun forRange(
+            id: ClipSegmentId,
+            startMillis: Long,
+            endMillis: Long,
+            name: String,
+        ): ClipSegment = ClipSegment(id, startMillis, endMillis, name)
     }
 }
 
@@ -63,6 +79,49 @@ data class ClipProject(
         require(segments.map(ClipSegment::id).distinct().size == segments.size)
         require(segments.all { it.endMillis <= sourceDurationMillis })
         require(updatedAtEpochMillis >= createdAtEpochMillis)
+    }
+
+    companion object {
+        /**
+         * 「一个源 + 一个区间 → 单段项目」的纯工厂（设计稿 §9.3 / §14.6 步骤 9）。
+         *
+         * 存在的理由是 §9.2 的 C1：AB 区间是**会话临时状态**（`docs/18` 逐字「媒体切换清除 AB；
+         * AB 为当前会话临时状态，不写全局偏好」），而 `ClipProject` 是 Room 持久实体。
+         * 两者之间必须有一个**只在提交那一刻发生**的转换点：调用方（播放侧）在这一刻把
+         * `(A, B)` 固化成 `ClipSegment`，从这以后项目里再也看不到 `AbLoopState`，
+         * 播放会话把它清掉、把媒体换掉都不会影响已经落库的项目。
+         *
+         * 参数**不给默认值**、顺序与设计稿 §9.3 一致：导出既要求模式（`exportMode`/`preset`
+         * 是用户当场二选一的结果，没有"预设默认"），也要求两个 id 由调用方生成
+         *（本项目只允许 `IdGenerator` 造 id，域层不提供"随机"这条路）。
+         *
+         * 区间不符合 `ClipSegment` / `ClipProject` 的不变量时**抛出**，不做钳制：
+         * 起点越界、终点超出源时长、起点等于终点都必须在进入队列**之前**就被拒绝，
+         * 否则用户会在任务中心看到一个注定失败的任务。
+         */
+        fun forRange(
+            sourceMediaId: MediaItemId,
+            sourceLocationId: MediaLocationId,
+            sourceDurationMillis: Long,
+            startMillis: Long,
+            endMillis: Long,
+            name: String,
+            exportMode: ClipExportMode,
+            preset: ClipPreset,
+            projectId: ClipProjectId,
+            segmentId: ClipSegmentId,
+            nowEpochMillis: Long,
+        ): ClipProject = ClipProject(
+            id = projectId,
+            sourceMediaId = sourceMediaId,
+            sourceLocationId = sourceLocationId,
+            sourceDurationMillis = sourceDurationMillis,
+            segments = listOf(ClipSegment.forRange(segmentId, startMillis, endMillis, name)),
+            exportMode = exportMode,
+            preset = preset,
+            createdAtEpochMillis = nowEpochMillis,
+            updatedAtEpochMillis = nowEpochMillis,
+        )
     }
 }
 
@@ -258,6 +317,24 @@ interface ClipProjectRepository {
 
 interface ClipExportQueue {
     suspend fun enqueue(project: ClipProject): ProcessingProjectId
+}
+
+/**
+ * 「这个源能不能用**无损复制**（样本搬运）导出成目标容器」——设计稿 §14.6 步骤 13 / G11。
+ *
+ * 为什么需要它：快速切片（[ClipExportMode.FAST]）走的是 `SEEK_TO_PREVIOUS_SYNC` + 样本搬运，
+ * 它只换容器、不重编码，所以**目标容器必须收得下源轨道的样本格式**。源是 VP9 / Opus 之类的
+ * 组合（典型：WebM）时，MP4 收不下，快速路径必然失败 —— 而失败发生在任务中心里，
+ * 用户已经点过一次、也等过一次。播放页在**打开 sheet 之前**问一句，就能把默认选项
+ * 放在能成功的那个模式上（并被要求说明理由），而不是让用户先失败一次。
+ *
+ * 实现必须查**唯一那份**容器能力表（`MuxerContainer`，取自 `Mp4Muxer.SUPPORTED_*`），
+ * **不得**在这里再抄一份 mime 白名单：G3/G11 的成因正是"手写的表"与库的表不一致。
+ *
+ * 返回 false 只表示"快速模式不可行"，不表示"不能导出"：精确模式（重编码）是另一条路径。
+ */
+fun interface ClipFastExportProbe {
+    suspend fun supportsFastExport(media: LibraryMedia): Boolean
 }
 
 private fun String.toSafeName(): String = replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().ifBlank { "clip" }.take(60)

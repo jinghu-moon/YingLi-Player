@@ -36,10 +36,16 @@ import seeyuer.yingli.player.domain.processing.ProcessingTaskId
 
 class ClipExportCoordinator(
     private val repository: ProcessingRepository,
+    private val clipRepository: ClipProjectRepository,
     private val idGenerator: IdGenerator,
     private val clock: AppClock,
 ) : ClipExportQueue {
     override suspend fun enqueue(project: ClipProject): ProcessingProjectId {
+        // 先把项目落库，再建任务：执行器（`ClipProcessingExecutor`）只通过
+        // `clipRepository.project(id)` 取项目，任务先于项目存在就必然 `CLIP_PROJECT_NOT_FOUND`。
+        // 这条顺序只有一个归属地（本方法），播放页与编辑器都不需要自己记得先 save —— 两个调用点
+        // 各自保存一次的模式正是"漏一处就随机失败"的来源。`save` 是 upsert，重复保存无副作用。
+        clipRepository.save(project)
         val plan = ClipExportPlan.from(project)
         val now = clock.now().toEpochMilli()
         val processingProjectId = ProcessingProjectId(idGenerator.newId())

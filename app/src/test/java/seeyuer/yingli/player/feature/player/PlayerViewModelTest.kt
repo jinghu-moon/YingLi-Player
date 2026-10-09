@@ -26,6 +26,11 @@ import seeyuer.yingli.player.core.common.AppDispatchers
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.core.model.media.MediaUri
+import seeyuer.yingli.player.domain.clips.ClipExportMode
+import seeyuer.yingli.player.domain.clips.ClipExportQueue
+import seeyuer.yingli.player.domain.clips.ClipFastExportProbe
+import seeyuer.yingli.player.domain.clips.ClipPreset
+import seeyuer.yingli.player.domain.clips.ClipProject
 import seeyuer.yingli.player.domain.library.LibraryMedia
 import seeyuer.yingli.player.domain.library.LibraryBrowseMode
 import seeyuer.yingli.player.domain.library.LibraryPage
@@ -182,6 +187,7 @@ class PlayerViewModelTest {
             dispatchers,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
 
         viewModel.openVault("vault_item", "保险库视频")
         advanceUntilIdle()
@@ -216,6 +222,7 @@ class PlayerViewModelTest {
             playbackQueueRepository = queueRepository,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
 
         advanceUntilIdle()
         viewModel.setPlaybackOrder(seeyuer.yingli.player.domain.playback.PlaybackOrder.SINGLE_REPEAT)
@@ -245,6 +252,7 @@ class PlayerViewModelTest {
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers, trackPreferenceRepository = preferences)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.setSpeed(PlaybackSpeed.of(2f))
         advanceUntilIdle()
@@ -271,8 +279,10 @@ class PlayerViewModelTest {
             trackPreferenceRepository = preferences,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
 
         advanceUntilIdle()
         viewModel.rotateVideo()
@@ -311,8 +321,10 @@ class PlayerViewModelTest {
             trackPreferenceRepository = preferences,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
 
         advanceUntilIdle()
         val observed = mutableListOf<VideoScaleMode>()
@@ -384,6 +396,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.open("media_1", PlaybackSourceContext.HOME)
         advanceUntilIdle()
@@ -406,6 +419,7 @@ class PlayerViewModelTest {
             screenshotGateway = gateway,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         viewModel.setRotation(VideoRotation.DEGREES_90)
@@ -432,6 +446,7 @@ class PlayerViewModelTest {
             windowPlaybackGateway = gateway,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
         viewModel.open("media_1", PlaybackSourceContext.HOME)
         advanceUntilIdle()
@@ -470,6 +485,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
         viewModel.open("media_1", PlaybackSourceContext.HOME)
         advanceUntilIdle()
 
@@ -498,8 +514,10 @@ class PlayerViewModelTest {
             windowPlaybackGateway = gateway,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
         advanceUntilIdle()
         viewModel.open("media_1", PlaybackSourceContext.HOME)
         advanceUntilIdle()
@@ -524,6 +542,7 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         runCurrent()
 
         viewModel.toggleSpeedPanel()
@@ -551,6 +570,7 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         runCurrent()
 
         viewModel.toggleSpeedPanel()
@@ -580,6 +600,7 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         runCurrent()
 
         viewModel.registerInteraction()
@@ -610,6 +631,7 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         runCurrent()
 
         viewModel.toggleLock()
@@ -634,8 +656,10 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
         runCurrent()
 
         viewModel.toggleLock()
@@ -679,6 +703,7 @@ class PlayerViewModelTest {
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers, trackPreferenceRepository = preferences)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.selectSubtitleTrack(null)
         advanceUntilIdle()
@@ -695,6 +720,7 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
 
         viewModel.openPanel(PlayerPanel.SETTINGS)
         advanceUntilIdle()
@@ -732,6 +758,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.armScreenshot()
         viewModel.captureScreenshot()
@@ -759,6 +786,7 @@ class PlayerViewModelTest {
             screenshotGateway = ScreenshotGatewayFake(ScreenshotResult.Saved("frame.jpg", "content://media/1")),
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         // 用户先按下播放：进入截图模式之前确实在播。
@@ -789,8 +817,10 @@ class PlayerViewModelTest {
             screenshotGateway = gateway,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         viewModel.armScreenshot()
@@ -838,6 +868,7 @@ class PlayerViewModelTest {
         // 收集卡片还挂着时推出去的读条值：展开期间有没有继续走，看这个列表就够了。
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.armScreenshot()
         viewModel.captureScreenshot()
@@ -884,8 +915,10 @@ class PlayerViewModelTest {
             ),
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         viewModel.armScreenshot()
@@ -938,8 +971,10 @@ class PlayerViewModelTest {
             screenshotGateway = gateway,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         viewModel.armScreenshot()
@@ -974,8 +1009,10 @@ class PlayerViewModelTest {
             screenshotGateway = gateway,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
 
         advanceUntilIdle()
         viewModel.armScreenshot()
@@ -1011,8 +1048,10 @@ class PlayerViewModelTest {
             screenshotGateway = gateway,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
 
         advanceUntilIdle()
         viewModel.armScreenshot()
@@ -1044,8 +1083,10 @@ class PlayerViewModelTest {
             screenshotGateway = gateway,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
 
         advanceUntilIdle()
         viewModel.armScreenshot()
@@ -1070,8 +1111,10 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
 
         advanceUntilIdle()
         val result = viewModel.setPlaybackOrder(PlaybackOrder.SHUFFLE)
@@ -1102,8 +1145,10 @@ class PlayerViewModelTest {
         // 没有队列仓储，next() 必定被会话层拒绝（NO_CANDIDATE）。
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
 
         advanceUntilIdle()
         viewModel.next()
@@ -1137,8 +1182,10 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         val events = mutableListOf<PlayerUiEvent>()
         val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
 
         advanceUntilIdle()
         viewModel.setAbPoint(AbPoint.A)
@@ -1168,6 +1215,7 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         assertTrue(viewModel.setAbPoint(AbPoint.A))
@@ -1199,6 +1247,312 @@ class PlayerViewModelTest {
         stateCollector.cancel()
     }
 
+    // ---- 阶段 5：AB 区间导出（设计稿 §14.6 步骤 11–13、§9.2 C1/C2/C3）----
+    //
+    // 这组用例钉的是三件事：
+    //  1. **不预设模式**：sheet 一出现就是"快速 / 精确"二选一，唯一例外是源不支持无损复制时
+    //     默认切精确并带上理由（G11）；
+    //  2. **恰好一次**：提交那刻 sheet 就关闭，连点不会入两次队；
+    //  3. **提交即冻结**：区间在提交那一刻固化成 `ClipSegment`，此后清除 AB / 换媒体都不影响它，
+    //     而**晚到的探测结果必须被丢弃**（否则会出现"改了已经不属于当前区间的东西"）。
+
+    @Test
+    fun `ab export stays closed until both points exist`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val viewModel = exportViewModel(controller, dispatchers, request)
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        viewModel.open("media_1", PlaybackSourceContext.HOME)
+        advanceUntilIdle()
+
+        // 只有 A：区间还不存在，没有"这段"可以导出。
+        controller.publishAbLoop(
+            seeyuer.yingli.player.domain.playback.AbLoopSession(
+                state = seeyuer.yingli.player.domain.playback.AbLoopState(pointA = 2_000, pointB = null),
+                loopCount = 0,
+            ),
+        )
+        advanceUntilIdle()
+        viewModel.openAbExport()
+        advanceUntilIdle()
+        assertNull(viewModel.state.value.abExportSheet)
+
+        controller.publishAbLoop(
+            seeyuer.yingli.player.domain.playback.AbLoopSession(
+                state = seeyuer.yingli.player.domain.playback.AbLoopState(2_000, 6_000),
+                loopCount = 0,
+            ),
+        )
+        advanceUntilIdle()
+        viewModel.openAbExport()
+        advanceUntilIdle()
+
+        assertEquals(2_000L, viewModel.state.value.abExportSheet?.startMillis)
+        assertEquals(6_000L, viewModel.state.value.abExportSheet?.endMillis)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `ab export opens on the frozen interval and keeps fast as the default when the source allows it`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val viewModel = exportViewModel(controller, dispatchers, request, probe = ClipFastExportProbe { true })
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        viewModel.open("media_1", PlaybackSourceContext.HOME)
+        controller.publishAbLoop(
+            seeyuer.yingli.player.domain.playback.AbLoopSession(
+                state = seeyuer.yingli.player.domain.playback.AbLoopState(2_000, 6_000),
+                loopCount = 0,
+            ),
+        )
+        advanceUntilIdle()
+
+        viewModel.openAbExport()
+        advanceUntilIdle()
+
+        val sheet = requireNotNull(viewModel.state.value.abExportSheet)
+        assertEquals(2_000L, sheet.startMillis)
+        assertEquals(6_000L, sheet.endMillis)
+        assertEquals(ClipExportMode.FAST, sheet.defaultMode)
+        assertFalse(sheet.fastUnavailable)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `ab export preselects accurate and carries the reason when fast copy is impossible`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        // 源是 VP9/Opus 之类进不了 MP4 的样本格式：无损复制不可行（G11）。
+        val viewModel = exportViewModel(controller, dispatchers, request, probe = ClipFastExportProbe { false })
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        viewModel.open("media_1", PlaybackSourceContext.HOME)
+        controller.publishAbLoop(
+            seeyuer.yingli.player.domain.playback.AbLoopSession(
+                state = seeyuer.yingli.player.domain.playback.AbLoopState(2_000, 6_000),
+                loopCount = 0,
+            ),
+        )
+        advanceUntilIdle()
+
+        viewModel.openAbExport()
+        advanceUntilIdle()
+
+        val sheet = requireNotNull(viewModel.state.value.abExportSheet)
+        // 「快速」不存在时**把它移出候选集**并预选精确，还要能说出为什么 —— 不是给一个没有解释的默认值。
+        assertEquals(ClipExportMode.ACCURATE, sheet.defaultMode)
+        assertTrue(sheet.fastUnavailable)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `exporting enqueues exactly once and freezes the interval into a single segment`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val queue = RecordingClipExportQueue()
+        val viewModel = exportViewModel(controller, dispatchers, request, queue = queue)
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        val events = mutableListOf<PlayerUiEvent>()
+        val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        // Channel(receiveAsFlow) 的订阅要两轮调度才真正挂到 receive 上（既有用例同款写法）。
+        advanceUntilIdle()
+        advanceUntilIdle()
+        viewModel.open("media_1", PlaybackSourceContext.HOME)
+        controller.publishAbLoop(
+            seeyuer.yingli.player.domain.playback.AbLoopSession(
+                state = seeyuer.yingli.player.domain.playback.AbLoopState(2_000, 6_000),
+                loopCount = 0,
+            ),
+        )
+        advanceUntilIdle()
+        viewModel.openAbExport()
+        advanceUntilIdle()
+
+        viewModel.exportAbRange(ClipExportMode.ACCURATE)
+        // 连点第二次：sheet 已经关了，什么也不该发生。
+        viewModel.exportAbRange(ClipExportMode.ACCURATE)
+        advanceUntilIdle()
+        runCurrent()
+
+        val project = queue.enqueued.single()
+        val segment = project.segments.single()
+        assertEquals(2_000L, segment.startMillis)
+        assertEquals(6_000L, segment.endMillis)
+        assertEquals(ClipExportMode.ACCURATE, project.exportMode)
+        assertEquals(ClipPreset.COMPATIBLE_MP4, project.preset)
+        assertEquals("影片_clip_2s-6s_exact", segment.name)
+        assertNull(viewModel.state.value.abExportSheet)
+        assertTrue(events.any { it == PlayerUiEvent.ExportQueued })
+        stateCollector.cancel()
+        eventCollector.cancel()
+    }
+
+    @Test
+    fun `a late fast support answer is discarded once the interval is gone`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val probe = GatedClipFastExportProbe()
+        val viewModel = exportViewModel(controller, dispatchers, request, probe = probe)
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        viewModel.open("media_1", PlaybackSourceContext.HOME)
+        controller.publishAbLoop(
+            seeyuer.yingli.player.domain.playback.AbLoopSession(
+                state = seeyuer.yingli.player.domain.playback.AbLoopState(2_000, 6_000),
+                loopCount = 0,
+            ),
+        )
+        advanceUntilIdle()
+        viewModel.openAbExport()
+        advanceUntilIdle()
+        probe.awaitAsked()
+
+        // 探测还没回来，用户先清掉了 AB（或换了媒体）：那张 sheet 说的已经不是当前区间了。
+        viewModel.clearAb()
+        advanceUntilIdle()
+        probe.answer(supported = false)
+        advanceUntilIdle()
+
+        assertNull(viewModel.state.value.abExportSheet)
+        stateCollector.cancel()
+    }
+
+    @Test
+    fun `exporting without collaborators reports that the path is unavailable instead of faking success`() = runTest {
+        val controller = FakePlaybackController()
+        val request = PlaybackRequest(MediaItemId("media_1"), MediaLocationId("location_1"), 0, PlaybackSourceContext.HOME)
+        controller.setState(PlaybackState.Paused(request, PlaybackTimeline(0, 10_000)))
+        val dispatchers = TestDispatchers(UnconfinedTestDispatcher())
+        val viewModel = exportViewModel(controller, dispatchers, request, queue = null)
+        val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
+        val events = mutableListOf<PlayerUiEvent>()
+        val eventCollector = backgroundScope.launch { viewModel.event.collect { events += it } }
+        advanceUntilIdle()
+        viewModel.open("media_1", PlaybackSourceContext.HOME)
+        controller.publishAbLoop(
+            seeyuer.yingli.player.domain.playback.AbLoopSession(
+                state = seeyuer.yingli.player.domain.playback.AbLoopState(2_000, 6_000),
+                loopCount = 0,
+            ),
+        )
+        advanceUntilIdle()
+        viewModel.openAbExport()
+        advanceUntilIdle()
+        assertTrue("sheet 必须打开：${viewModel.state.value.abExportSheet}", viewModel.state.value.abExportSheet != null)
+
+        viewModel.exportAbRange(ClipExportMode.FAST)
+        advanceUntilIdle()
+        runCurrent()
+
+        assertEquals(
+            listOf(PlayerUiEvent.TransientMessage(R.string.player_ab_export_unavailable)),
+            events.filterIsInstance<PlayerUiEvent.TransientMessage>(),
+        )
+        stateCollector.cancel()
+        eventCollector.cancel()
+    }
+
+    private fun exportMedia(id: String = "media_1", durationMillis: Long = 10_000L) = LibraryMedia(
+        id = MediaItemId(id),
+        locationId = MediaLocationId("location_$id"),
+        uri = MediaUri("content://media/$id"),
+        title = "影片",
+        fileName = "影片.mp4",
+        folderAlias = "Movies",
+        extension = "mp4",
+        durationMillis = durationMillis,
+        width = 1_920,
+        height = 1_080,
+        modifiedEpochMillis = 1L,
+        playbackPositionMillis = 0L,
+        completed = false,
+        sizeBytes = 100L,
+    )
+
+    /** 导出链路的协作者可整体替换：不传 `queue` 就是"这条路径此刻不可用"。 */
+    private fun exportViewModel(
+        controller: FakePlaybackController,
+        dispatchers: AppDispatchers,
+        request: PlaybackRequest,
+        queue: ClipExportQueue? = RecordingClipExportQueue(),
+        probe: ClipFastExportProbe = ClipFastExportProbe { true },
+    ): PlayerViewModel = PlayerViewModel(
+        PlaybackSessionClientBridge(
+            controller,
+            FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片")),
+            dispatchers,
+        ),
+        dispatchers,
+        libraryRepository = ExportLibraryRepository(exportMedia()),
+        clipExportQueue = queue,
+        clipFastExportProbe = probe,
+        idGenerator = CountingIdGenerator(),
+        clock = { java.time.Instant.ofEpochMilli(1_700_000_000_000L) },
+    )
+
+    private class ExportLibraryRepository(private val media: LibraryMedia) : LibraryPagingRepository {
+        override fun observe(query: LibraryQuery) = emptyFlow<LibraryResult<LibraryPage>>()
+
+        override suspend fun query(query: LibraryQuery) = LibraryResult.Success(LibraryPage(emptyList(), null, 0))
+
+        override suspend fun page(query: LibraryQuery, direction: LibraryPageDirection) =
+            LibraryPage(emptyList(), null, 0)
+
+        override fun observeCount(query: LibraryQuery) = flowOf(0)
+
+        override fun observeFolderTreeVideoCount(path: String) = flowOf(0)
+
+        override fun observeInvalidations() = emptyFlow<Unit>()
+
+        override suspend fun findByIds(ids: Set<MediaItemId>): List<LibraryMedia> =
+            if (media.id in ids) listOf(media) else emptyList()
+    }
+
+    private class RecordingClipExportQueue : ClipExportQueue {
+        val enqueued = mutableListOf<ClipProject>()
+
+        override suspend fun enqueue(project: ClipProject): seeyuer.yingli.player.domain.processing.ProcessingProjectId {
+            enqueued += project
+            return seeyuer.yingli.player.domain.processing.ProcessingProjectId("project")
+        }
+    }
+
+    private class CountingIdGenerator : seeyuer.yingli.player.core.common.IdGenerator {
+        private var count = 0
+        override fun newId(): String = "id-${++count}"
+    }
+
+    /** 探测被门挡住：用来构造"答案比区间活得久"的现场。 */
+    private class GatedClipFastExportProbe : ClipFastExportProbe {
+        private val asked = CompletableDeferred<Unit>()
+        private val answer = CompletableDeferred<Boolean>()
+
+        override suspend fun supportsFastExport(media: LibraryMedia): Boolean {
+            asked.complete(Unit)
+            return answer.await()
+        }
+
+        suspend fun awaitAsked() = asked.await()
+
+        fun answer(supported: Boolean) {
+            answer.complete(supported)
+        }
+    }
+
     /**
      * 阶段 3 / 互斥三分支之一（`Armed` / `Capturing`）：打开 AB 工具结束截图会话，
      * 并且**晚到的捕获结果必须被丢弃**（T3.6）—— 否则预览卡会与 AB 胶囊同时出现。
@@ -1219,6 +1573,7 @@ class PlayerViewModelTest {
             screenshotGateway = gateway,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         viewModel.armScreenshot()
@@ -1261,6 +1616,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.armScreenshot()
         runCurrent()
@@ -1297,6 +1653,7 @@ class PlayerViewModelTest {
             ),
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         viewModel.armScreenshot()
@@ -1338,6 +1695,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.openAbTool()
         runCurrent()
@@ -1359,6 +1717,7 @@ class PlayerViewModelTest {
         val sourceRepository = FakePlaybackSourceRepository(ResolvedPlaybackSource(request, "content://media/1", "影片"))
         val viewModel = PlayerViewModel(PlaybackSessionClientBridge(controller, sourceRepository, dispatchers), dispatchers)
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         controller.publishAbLoop(
@@ -1403,6 +1762,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.armScreenshot()
         runCurrent()
@@ -1430,6 +1790,7 @@ class PlayerViewModelTest {
             playbackQueueRepository = queueRepository,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         viewModel.previous()
@@ -1466,6 +1827,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.previous()
 
@@ -1492,6 +1854,7 @@ class PlayerViewModelTest {
             seekPrecisionControl = control,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
         assertEquals(SeekPrecision.CLOSEST_SYNC, control.precision.value)
 
@@ -1523,6 +1886,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.armScreenshot()
         runCurrent()
@@ -1549,6 +1913,7 @@ class PlayerViewModelTest {
             seekPrecisionControl = control,
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         viewModel.armScreenshot()
@@ -1589,6 +1954,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.armScreenshot()
         runCurrent()
@@ -1617,6 +1983,7 @@ class PlayerViewModelTest {
             seekPrecisionControl = MutableSeekPrecisionControl(),
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
 
         viewModel.armScreenshot()
@@ -1649,6 +2016,7 @@ class PlayerViewModelTest {
             seekPrecisionControl = MutableSeekPrecisionControl(),
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
         viewModel.armScreenshot()
         runCurrent()
@@ -1702,6 +2070,7 @@ class PlayerViewModelTest {
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
         advanceUntilIdle()
+        advanceUntilIdle()
         viewModel.armScreenshot()
         runCurrent()
 
@@ -1736,6 +2105,7 @@ class PlayerViewModelTest {
             seekPrecisionControl = MutableSeekPrecisionControl(),
         )
         val stateCollector = backgroundScope.launch { viewModel.state.collect() }
+        advanceUntilIdle()
         advanceUntilIdle()
         viewModel.armScreenshot()
         runCurrent()
@@ -2048,3 +2418,7 @@ class PlayerViewModelTest {
         }
     }
 }
+
+
+
+

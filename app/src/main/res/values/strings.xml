@@ -262,6 +262,21 @@
     <string name="player_ab_readout_pending_b">B 待落点</string>
     <!-- 区间时长前缀：`Δ 03:36`。Δ 是数学符号，不进时间格式（那两个数字由 formatAbDelta 给）。 -->
     <string name="player_ab_delta">Δ</string>
+    <!-- AB 工具胶囊里的"导出这段"（§14.6 步骤 12）：只在 A、B 都设好时可用。 -->
+    <string name="player_ab_export">导出这段</string>
+    <string name="player_ab_export_title">导出 AB 区间</string>
+    <!-- 区间行：`00:06.123 → 00:09.480`。 -->
+    <string name="player_ab_export_range">%1$s → %2$s</string>
+    <!-- 参考实现（REX ClipExportSheet）的两张并列选项卡：不预设默认，用户当场二选一。 -->
+    <string name="player_ab_export_fast">快速（无损复制）</string>
+    <string name="player_ab_export_fast_description">不重新编码，起点对齐到最近的关键帧，最快。</string>
+    <string name="player_ab_export_accurate">精确（重新编码）</string>
+    <string name="player_ab_export_accurate_description">起点与终点精确到帧，需要重新编码，较慢。</string>
+    <!-- 快速模式不可用时的理由（§14.6 步骤 13）：源样本格式进不了 MP4 容器。 -->
+    <string name="player_ab_export_fast_unavailable">这个文件的编码格式无法直接放进 MP4，快速模式不可用，已默认选择精确模式。</string>
+    <string name="player_ab_export_unavailable">此刻无法导出：源文件不在媒体库里或导出服务未就绪。</string>
+    <string name="player_ab_export_failed">无法创建导出任务，请稍后重试。</string>
+    <string name="player_ab_export_cancel">取消</string>
     <string name="player_playlist">播放列表</string>
     <string name="player_pip">画中画</string>
     <string name="player_speed_state">播放速度：%1$s</string>

@@ -135,13 +135,20 @@ class ProcessingViewModel(
         val duration = media.durationMillis?.takeIf { it > 0 } ?: return
         val now = clock.now().toEpochMilli()
         val initialEnd = minOf(duration, DEFAULT_SEGMENT_MILLIS)
-        val project = ClipProject(
-            ClipProjectId(idGenerator.newId()),
-            media.id,
-            media.locationId,
-            duration,
-            listOf(ClipSegment(ClipSegmentId(idGenerator.newId()), 0, initialEnd, "Clip 1")),
-            createdAtEpochMillis = now,
+        // 与 AB 区间导出走**同一个工厂**（设计稿 §14.6 步骤 9/10）：两者都是"源 + 区间 → 单段项目"，
+        // 差别只在区间从哪来。字段级行为与工厂出现之前逐项相同（golden test 钉住）。
+        val project = ClipProject.forRange(
+            sourceMediaId = media.id,
+            sourceLocationId = media.locationId,
+            sourceDurationMillis = duration,
+            startMillis = 0,
+            endMillis = initialEnd,
+            name = FIRST_SEGMENT_NAME,
+            exportMode = ClipExportMode.FAST,
+            preset = ClipPreset.SOURCE_QUALITY,
+            projectId = ClipProjectId(idGenerator.newId()),
+            segmentId = ClipSegmentId(idGenerator.newId()),
+            nowEpochMillis = now,
         )
         editor.value = ClipEditState(project)
         loadTimeline(project, media.uri.value)
@@ -167,11 +174,11 @@ class ProcessingViewModel(
         if (start >= project.sourceDurationMillis - 1) return
         val end = minOf(project.sourceDurationMillis, start + DEFAULT_SEGMENT_MILLIS)
         apply(ClipEditCommand.Add(
-            ClipSegment(
-                ClipSegmentId(idGenerator.newId()),
-                start,
-                end,
-                "Clip ${project.segments.size + 1}",
+            ClipSegment.forRange(
+                id = ClipSegmentId(idGenerator.newId()),
+                startMillis = start,
+                endMillis = end,
+                name = "Clip ${project.segments.size + 1}",
             ),
             now(),
         ))
@@ -309,6 +316,9 @@ class ProcessingViewModel(
         private const val AUTO_SAVE_MILLIS = 500L
         private const val DEFAULT_SEGMENT_MILLIS = 10_000L
         private const val TIMELINE_FRAME_COUNT = 12
+
+        /** 首段的名字。它是产品文案（编辑器里第一段的标题），与「从 AB 导出」的段名无关。 */
+        private const val FIRST_SEGMENT_NAME = "Clip 1"
 
         fun factory(
             processingRepository: ProcessingRepository,

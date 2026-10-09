@@ -216,7 +216,13 @@ fun YingLiApp(
         var playerTransientMessage by remember { mutableStateOf<PlayerUiEvent.TransientMessage?>(null) }
         LaunchedEffect(playerViewModel) {
             playerViewModel.event.collect { event ->
-                if (event is PlayerUiEvent.TransientMessage) playerTransientMessage = event
+                when (event) {
+                    is PlayerUiEvent.TransientMessage -> playerTransientMessage = event
+                    // 导出已入队 ⇒ 跳到处理中心（§14.6 步骤 12：播放页内**不做进度 UI**，
+                    // 进度只属于任务中心）。这里复用既有的全局动作，不新开一条导航路径；
+                    // 用事件而不是 UiState 布尔量，正因为这是"一次性动作"——布尔量会被重组重复触发。
+                    PlayerUiEvent.ExportQueued -> viewModel.openGlobalAction(GlobalAppAction.OPEN_PROCESSING)
+                }
             }
         }
         val settingsToolsState by settingsViewModel.state.collectAsStateWithLifecycle()
@@ -407,6 +413,9 @@ fun YingLiApp(
                     onSetAbPoint = { playerViewModel.setAbPoint(it) },
                     onClearAb = playerViewModel::clearAb,
                     onCloseAbTool = playerViewModel::closeAbTool,
+                    onOpenAbExport = playerViewModel::openAbExport,
+                    onDismissAbExport = playerViewModel::closeAbExport,
+                    onSelectAbExportMode = { playerViewModel.exportAbRange(it) },
                     onToggleFullscreen = playerViewModel::toggleFullscreen,
                     onExitFullscreen = playerViewModel::exitFullscreen,
                     onOpenPanel = playerViewModel::openPanel,

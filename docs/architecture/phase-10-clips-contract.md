@@ -33,3 +33,11 @@
 
 只导出勾选片段，名称按稳定顺序生成且清理路径字符。同一项目的每个片段生成独立持久任务；部分失败不删除已成功输出，可从处理中心单独重试。
 
+## 区间构造的唯一路径（阶段 5，2026-10-10）
+
+`ClipSegment.forRange(id, startMillis, endMillis, name)` 与 `ClipProject.forRange(sourceMediaId, sourceLocationId, sourceDurationMillis, startMillis, endMillis, name, exportMode, preset, projectId, segmentId, nowEpochMillis)` 是「一个区间 → 一个片段/项目」的**唯一构造路径**（`ProcessingViewModel.createProject` / `addSegment` 与播放页的「导出 AB 区间」都调它）。工厂**不钳制、不加工**：区间非法由 `ClipSegment.init` / `ClipProject.init` 抛 `IllegalArgumentException`，不许悄悄互换端点或截到片尾。**AB 区间是会话临时状态，不得进入 `ClipProject`**：提交那一刻把 `(A, B)` 固化成 `ClipSegment`（§9.2 C1）。
+
+`ClipExportCoordinator.enqueue(project)` **先 `save(project)` 再入队**：切片执行器只经 `clipRepository.project(id)` 取项目，先入队必然 `CLIP_PROJECT_NOT_FOUND`。
+
+`ClipFastExportProbe` / `MuxerClipFastExportProbe` 回答「这个源能不能走快速模式」，判据是上面那张唯一的容器能力表（`MuxerContainer.Mp4.supports(...)`），**不新建 mime 白名单**；它回答的是「容器收不收这个样本格式」，**不回答**「这个设备真的能写得进去」（G27：VP9 缺 CodecPrivate 时能力表说可以、写样本时才抛）。
+

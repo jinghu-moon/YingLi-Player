@@ -29,18 +29,18 @@ import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.domain.playback.AbLoopSession
 
 /**
- * AB 工具胶囊的**内容**（A / B / 清除 / 关闭）。
+ * AB 工具胶囊的**内容**（A / B / 导出这段 / 清除 / 关闭）。
  *
  * 它是一个"插槽内容"，不是浮层：位置、几何、材质、出入场全部由底栏的
  * [AuxiliaryToolCapsuleSlot] 负责（与截图胶囊**同源、同一格**），所以这里
  * **不许**再挂 `align` / `offset` / 自己的高度等位置修饰符 —— 那会立刻打破
  * "与截图胶囊同源"这条要求（两枚胶囊的竖直带必须逐像素一致）。
  *
- * ## 四个按钮一律是**定尺寸圆钮**（`PlayerChromeIconButton`，48dp）
+ * ## 五个按钮一律是**定尺寸圆钮**（`PlayerChromeIconButton`，48dp）
  *
  * 真机实测的缺陷正是这条的反面：A / B / 清除三枚曾是**弹性宽度文字按钮**
  *（`PlayerChromeTextButton`，标签 `A 00:12` / `B 00:37` / `清除`），文字一长就把圆钮撑成**椭圆**，
- * 同屏四枚按钮圆径不一。现在四个位置**只有一种按钮**：宽度恒为 [PlayerChromeButtonSize]，
+ * 同屏四枚按钮圆径不一。现在五个位置**只有一种按钮**：宽度恒为 [PlayerChromeButtonSize]，
  * 内容只能是图标 —— **内容永远不会改写尺寸**。
  *
  * A / B 的字形用图标库里的 `letter-a` / `letter-b`（见 [YingLiIcon.LETTER_A] /
@@ -54,8 +54,11 @@ import seeyuer.yingli.player.domain.playback.AbLoopSession
  * 未设置 = 半透明底 + 描边。数值（`06:12`）一律不进按钮，全部交给读数条
  *（见 [abReadoutSegments]）—— 按钮只回答"这一端设没设"，读数条只回答"设在哪、区间多长、循环了几次"。
  *
+ * 「导出这段」是**动作**而不是开关（§14.6 步骤 12）：它不写 `filled`，只在 A、B 都设好时可用。
+ * 它必须与 A / B 同一排、同一格 —— 用户刚划定区间，导出就在旁边，不需要再找入口。
+ *
  * 两处与截图胶囊的**唯一**差别按设计稿保留：
- *  1. 内容是 A/B/清除/关闭这四枚**语义按钮**而不是上一帧/捕获/下一帧/取消；
+ *  1. 内容是 A/B/导出/清除/关闭这五枚**语义按钮**而不是上一帧/捕获/下一帧/取消；
  *  2. 关闭按钮用 [YingLiIcon.CLOSE] 图标（读屏文案"关闭"），语义上**关闭 ≠ 取消**（D3）：
  *     它只收起胶囊，循环继续生效，只有"清除"才取消循环，所以文案绝不能写成"取消"。
  */
@@ -64,6 +67,7 @@ internal fun AbLoopToolCapsule(
     session: AbLoopSession,
     onSetA: () -> Unit,
     onSetB: () -> Unit,
+    onExport: () -> Unit,
     onClear: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -106,6 +110,15 @@ internal fun AbLoopToolCapsule(
                     selectedState = hasPointB,
                 )
                 PlayerChromeIconButton(
+                    icon = YingLiIcon.BACKUP_EXPORT,
+                    contentDescription = stringResource(R.string.player_ab_export),
+                    onClick = onExport,
+                    // 没有完整区间就没有"这段"可导出（与 B、清除同一条启用规则）。
+                    // 刻意**不用** `filled`：导出是动作，不是开关（见本函数 KDoc）。
+                    enabled = hasPointA && hasPointB,
+                    size = PlayerScreenshotCapsuleButtonSize,
+                )
+                PlayerChromeIconButton(
                     icon = YingLiIcon.ERASER,
                     contentDescription = stringResource(R.string.player_ab_clear),
                     onClick = onClear,
@@ -124,12 +137,12 @@ internal fun AbLoopToolCapsule(
 }
 
 /**
- * 胶囊里的按钮数量（A / B / 清除 / 关闭）。
+ * 胶囊里的按钮数量（A / B / 导出 / 清除 / 关闭）。
  *
  * 它是 [capsuleInnerPadding] 的输入之一：横向内边距要按"这一排能放下几枚按钮"倒推，
- * 所以按钮数量必须是一个**说出名字**的值，而不是在公式里写 `4`。
+ * 所以按钮数量必须是一个**说出名字**的值，而不是在公式里写 `5`。
  */
-private const val AbCapsuleButtonCount = 4
+private const val AbCapsuleButtonCount = 5
 
 /**
  * 读数条的**文字分段**（纯数据，可在 JVM 上逐条钉住）。

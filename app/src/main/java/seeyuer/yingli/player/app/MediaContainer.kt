@@ -76,6 +76,7 @@ import seeyuer.yingli.player.domain.processing.ProcessingController
 import seeyuer.yingli.player.domain.processing.SchedulerConditions
 import seeyuer.yingli.player.domain.clips.ClipProjectRepository
 import seeyuer.yingli.player.domain.clips.ClipExportQueue
+import seeyuer.yingli.player.domain.clips.ClipFastExportProbe
 import seeyuer.yingli.player.domain.clips.TimelineFrameProvider
 import seeyuer.yingli.player.domain.processing.MediaCapabilityProbe
 import seeyuer.yingli.player.domain.processing.PROCESSING_FREE_SPACE_RESERVE_BYTES
@@ -129,6 +130,13 @@ data class MediaContainer(
     val processingController: ProcessingController,
     val processingLifecycle: AutoCloseable,
     val clipExportQueue: ClipExportQueue,
+    /**
+     * 「这个源能不能用无损复制导出成 MP4」的判定（§14.6 步骤 13 / G11）。
+     *
+     * 放容器里而不是让播放页自己查：能力表只有一份（[seeyuer.yingli.player.data.processing.muxer.MuxerContainer]），
+     * 谁能导出必须由**同一个真源**回答，否则播放页与切片引擎会对同一个文件给出不同答案。
+     */
+    val clipFastExportProbe: ClipFastExportProbe,
     val timelineFrameProvider: TimelineFrameProvider,
     val mediaCapabilityProbe: MediaCapabilityProbe,
     val processingQueue: ProcessingQueue,
@@ -385,8 +393,14 @@ object ProductionMediaContainerFactory {
         ).also { it.start() }
         val clipExportQueue = seeyuer.yingli.player.data.processing.clips.ClipExportCoordinator(
             processingRepository,
+            clipRepository,
             foundation.idGenerator,
             foundation.clock,
+        )
+        // 「这个源能不能用无损复制导出成 MP4」（§14.6 步骤 13 / G11）：问的是**同一份**
+        // 容器能力表（`MuxerContainer`），播放页只拿到一个是/否的答案，不抄任何 mime 白名单。
+        val clipFastExportProbe = seeyuer.yingli.player.data.processing.clips.MuxerClipFastExportProbe(
+            mediaCapabilityProbe,
         )
         val thumbnailExtractor = FallbackThumbnailExtractor(
             ArtworkThumbnailSource(context),
@@ -445,6 +459,7 @@ object ProductionMediaContainerFactory {
             scheduler,
             scheduler,
             clipExportQueue,
+            clipFastExportProbe,
             seeyuer.yingli.player.data.processing.clips.AndroidTimelineFrameProvider(context, foundation.dispatchers),
             mediaCapabilityProbe,
             processingQueue,

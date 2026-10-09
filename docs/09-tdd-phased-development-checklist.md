@@ -908,8 +908,12 @@
 
 - `DuplicateMode`：Exact/Similar；两种模式的证据、阈值和文案严格分离。
 - `MediaFingerprint`：size/quickHash/fullHash/媒体属性/感知特征及算法版本；哈希在后台且可取消。
-- `DuplicateGroup`、`SimilarityScore`、`DuplicateEvidence`：保存候选、相似度分项和生成时间。
-- `DuplicateScanner`：增量扫描；`DuplicateDecisionRepository`：保留/删除/忽略决定；`DuplicateDeletionPlan` 必须经过人工确认。
+- **判定结果不新建「重复」实体**：落在 `media_locations` 的 `fastFingerprint` / `contentHash` / 新增 `hashAlgorithmVersion` 三列上；指纹缓存的失效键是**三元组** `(sizeBytes, modifiedEpochMillis, hashAlgorithmVersion)`。
+- **删除** `duplicate_fingerprints` / `duplicate_groups` / `duplicate_group_members` 三张表及其 DAO（与「`MediaItem` = 内容实体 / `MediaLocation` = 物理位置」的既定模型重叠且互相矛盾）。
+- **唯一新增的表** `duplicate_ignores(contentHash, sizeBytes, memberCount, ignoredAtEpochMillis)`：组成员数等于 `memberCount` 时隐藏该组，成员数变化时重新出现。**禁止再用 `ignore(groupId) = deleteGroup(groupId)`**——它会被下次扫描重建，用户反复看到已忽略的组。
+- `DuplicateScanner`：分层扫描（L0 大小分桶 → L1 快速指纹 → L2 完整 SHA-256 → L3 `GROUP BY` → L4 提交前复核），**每层用 SQL 收敛，不把整库载入内存**；`DuplicateDecisionRepository`：保留/删除/忽略决定；`DuplicateDeletionPlan` 必须经过人工确认。
+- **禁止 `autoDelete`；模式不可隐式切换。**
+- 依据：`docs/architecture/phase-12-duplicate-algorithm-card.md` 与 `docs/architecture/Organizing-Page-Function-Design.md` §7、§14.4。
 
 **【任务节点树】**
 
@@ -922,11 +926,11 @@
   * **DoD**: 决策表和序列化测试全绿；契约禁止 `autoDelete`；模式不可隐式切换。
 * **任务 12.2: 实现完全重复分层哈希扫描** `[并行]`
   * **依赖**: 12.1、3.7
-  * **TDD 循环**: Red：覆盖同尺寸非重复、quick hash 碰撞、大文件取消和文件变化；Green：size -> quick -> full hash 分层；Refactor：流式读取和缓冲复用。
+  * **TDD 循环**: Red：覆盖同尺寸非重复、quick hash 碰撞、**同哈希不同算法版本**、**同哈希不同文件大小**、大文件取消和文件变化；Green：L0 大小分桶 -> L1 快速指纹 -> L2 完整 SHA-256 -> L3 `GROUP BY`；Refactor：流式读取和缓冲复用。
   * **测试预期**:
-    * 正常路径: 字节完全一致文件归为一组，已缓存且版本匹配的 fingerprint 不重算。
-    * 异常路径: 扫描中被修改、权限撤销、IO 错误不产生 Exact 结论；不把整文件载入内存。
-  * **DoD**: 碰撞样本、GB 级流式测试和取消测试通过；CPU/IO 并发受限。
+    * 正常路径: 字节完全一致文件归为一组；**缓存三元组 `(sizeBytes, modifiedEpochMillis, hashAlgorithmVersion)` 全部匹配时才复用指纹**，任一不同即重算。
+    * 异常路径: 扫描中被修改、权限撤销、IO 错误不产生 Exact 结论；**扫描过程不得把整库载入内存**（分层收敛必须由 SQL 完成）；算法版本升级后旧指纹必须失效而不是被沿用。
+  * **DoD**: 碰撞样本、GB 级流式测试、取消测试和**缓存三元组失效测试**通过；CPU/IO 并发受限。
 * **任务 12.3: 建立相似视频特征 Spike 与阈值基线** `[并行]`
   * **依赖**: 12.1
   * **TDD 循环**: Red：先用标注数据证明只比较时长/名称误报；Green：实现最小多帧感知特征实验；Refactor：冻结版本化 feature extractor 接口。
@@ -950,11 +954,11 @@
   * **DoD**: Compose/无障碍/防误删测试通过；颜色不是唯一模式线索；无自动批量删除入口。
 * **任务 12.6: 实现删除计划验证与回收站联动** `[并行]`
   * **依赖**: 12.5、5.6
-  * **TDD 循环**: Red：覆盖计划过期、全部删除、权限撤销和部分失败；Green：执行前重验文件证据并调用 TrashRepository；Refactor：复用批量操作结果模型。
+  * **TDD 循环**: Red：覆盖计划过期、全部删除、**keep 为空 / trash 为空**、**trash 不属于 group\keep**、权限撤销和部分失败；Green：执行前重验文件证据、**在一个 Room 事务内完成引用归并与回收站调用**；Refactor：复用批量操作结果模型。
   * **测试预期**:
-    * 正常路径: 每组至少保留一项，确认后删除项进入回收站并可恢复。
-    * 异常路径: 文件内容变化、恢复冲突、某项失败时不继续误删，结果逐项可追踪。
-  * **DoD**: 故障注入、计划重验和回收站端到端通过；永不直接永久删除。
+    * 正常路径: 计划满足**子集关系**（`keep` 非空、`trash` 非空、`trash ⊆ group \ keep`）即可执行——**不再要求覆盖整组**；确认后删除项进入回收站并可恢复；**被删位置的标签、收藏、播放进度、播放列表成员、集合成员、切片项目与处理任务输入全部重指向到保留项**。
+    * 异常路径: 文件内容变化、恢复冲突、某项失败时不继续误删，结果逐项可追踪；**归并事务失败时必须整体回滚，不得留下「引用已改指向但位置未回收」的中间态**。
+  * **DoD**: 故障注入、计划重验、**引用归并回滚**和回收站端到端通过；永不直接永久删除。
 * **任务 12.7: Phase 12 交付与清理**
   * **依赖**: 12.1-12.6
   * **TDD 循环**: Red：碰撞、相似误报、10k 库、取消、权限和恢复端到端；Green：修复；Refactor：删除实验阈值硬编码和未用 fingerprint。

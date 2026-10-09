@@ -197,6 +197,7 @@
 
 - 建立 `MediaSource`、`MediaItem`、`MediaLocation` 三类领域实体；
 - `MediaItem` 表示内容实体，`MediaLocation` 表示物理文件位置；标签、收藏和播放状态挂在内容实体，去重和文件删除针对位置实体；
+  - **⚠ 该模型尚未实现。** 当前实现是「一个文件一个 `MediaItem`」（`MediaIdentityResolver.kt` 第 3 步无条件返回 `NewIdentity`），`DefaultMediaScanner` 里的 contentHash 归并分支是死代码。**去重与回收站的设计必须先把这一条落地**，否则「去重针对位置实体」无从谈起。见 `docs/architecture/Organizing-Page-Function-Design.md` §5（G12）与 §14.4。
 - 使用 MediaStore 和直接共享存储访问建立轻量索引，文件 I/O 在 `Dispatchers.IO`；
 - 首先保存 URI、名称、大小、修改时间、扩展名、容器和可播放初判，再后台解析时长、分辨率、画幅、编码和轨道；
 - 以稳定媒体标识、卷/文档 ID 和文件属性做增量重定位，候选冲突时才异步计算内容指纹；
@@ -262,6 +263,7 @@
 - 批量标签、收藏、播放列表、移动、重命名、隐藏、回收站和取消选择都返回逐项结果；
 - 通过 MediaStore 写入/删除请求或全部文件访问权限执行文件操作；
 - 默认先进入统一的影里回收站页面；底层优先使用 MediaStore 系统回收站，能力不足时使用受控降级实现；永久删除为明确的二次确认；
+  - **⚠ 本条与「严格 30 天」不可同时成立。** 系统媒体回收站的 `MediaStore.DATE_EXPIRES` 是**只读**字段，期限由系统控制，且过期条目通常要等到设备下次空闲才被删除——应用无法用它承诺一个精确的 30 天。**裁决（D2）**：采用**双后端**——**R1 系统回收站为主**（源文件经 `MediaStore.createTrashRequest()` 交给系统），**R2 应用自主副本降级**（复制到应用专属持久目录并验证副本完整后才请求删除源文件）；**R3（同卷 `.Trash` 隐藏目录 rename）删除**，**R4（阻止并解释）兜底**。**30 天拆成两个指标**：*恢复资格严格*（`now >= expiresAt` 立即禁止恢复）+ *物理删除尽快*（到期入清理队列，后台重试，应用每次启动/进前台再检查），**不承诺物理删除精确到秒**。见 `docs/architecture/Organizing-Page-Function-Design.md` §8.1、§8.7、D2、D7。
 - 批量操作不能因为单个 URI 失败而静默丢失其他结果。
 
 **退出条件**：在 1 万条轻量索引上滚动和筛选保持可用；筛选条件可解释、可清除；文件操作不会误删源文件；实验瀑布流可回退到网格。
@@ -432,16 +434,29 @@ M7 才激活 01 原型中的处理中心全局入口和首页处理状态模块�
 
 **退出条件**：至少完成 MP4 稳定输出、预设覆盖、硬件回退提示、空间检查、取消/失败恢复和结果入库；每个输出都能回到源视频和任务详情。
 
+**⚠ 当前实现与上述要求的三处偏差**（详见 `docs/architecture/Organizing-Page-Function-Design.md` §5）：
+
+1. **预设码率没有接进编码器**（G1）：`Media3TranscodeEngine.kt:79-84` 构造 `Transformer` 时既没 `setEncoderFactory` 也没传码率，实际码率由 `DefaultEncoderFactory.getSuggestedBitrate()` 按设备能力推导。后果是 `compatible_mp4`（8 Mbps）与 `balanced_mp4`（5 Mbps）**除输出文件名与空间预检外完全等价**。`targetVideoBitrate` 目前只参与体积估算。「预设覆盖」这条退出条件**因此尚未真正满足**。
+2. **HDR 被无条件拒绝**（G2）：`AndroidMediaCapabilityProbe.kt:114` 把 `supportsHdr` 硬编码为 `false`，使每个 HDR 源都生成 `HDR_TO_SDR`，而 `Media3TranscodeEngine.kt:51-53` 见到该 change 即返回 `Failed("HDR_TONE_MAPPING_UNAVAILABLE")`。这与「提交前分析 HDR」的要求矛盾，且 **tone mapping 自 API 29 起可用（本项目 minSdk 31），属代码缺陷而非平台限制**。
+3. **编码器静默回退未处理**（G6）：未覆写 `Transformer.Listener.onFallbackApplied`，请求的编码格式不被支持时 Media3 会静默换一种，**用户拿到与请求不同的格式且无任何提示**。这与「硬件回退提示」的退出条件直接冲突。
+
+**「封装转换」与「重新编码」不是两个功能**：两者的差别只是同一个「目标（容器 × codec × 分辨率 × 码率）」在**编码层**与**封装层**两种可达性上的投影。因此 `TranscodePreset` 折叠为 `OutputTarget` 的命名常量，压缩与格式转换共用同一个 planner 与引擎（见设计文档 §4.1、§4.6）。
+
 ### M10 - 视频去重
 
 **目标**：提供安全的重复组复核和回收站清理，不做无确认的自动删除。
 
-**阶段顺序**：
+**前置依赖（必须先完成）**：`MediaItem` = 内容实体、`MediaLocation` = 物理文件位置的模型（见 M3「索引任务」的 ⚠ 标注）。当前实现是「一个文件一个 `MediaItem`」，**去重针对位置实体无从谈起**。
 
-1. L0：大小、时长、分辨率、画幅、编码等事实预筛选。
-2. L1：完全重复，按大小分组后计算部分哈希和完整哈希。
-3. L2：重编码、缩放或轻微编辑后的相似视频，抽取多时间点帧并使用感知哈希；与完全重复一起属于 M10 的正式范围，但入口、阈值和结果证据必须分开。
-4. L3：部分片段/长短视频关系，涉及滑动窗口或音频指纹，后置到 M12，不属于 M10 完成条件。
+**阶段顺序**（分层编号以 `docs/architecture/phase-12-duplicate-algorithm-card.md` 为准，全部用 SQL 收敛，不把整库载入内存）：
+
+1. **L0**：按文件大小分桶，丢掉唯一大小的文件。
+2. **L1**：对幸存者算头尾 64 KiB 快速指纹，写入 `media_locations.fastFingerprint`。
+3. **L2**：对快速指纹相同的组算完整 SHA-256，写入 `media_locations.contentHash`。
+4. **L3**：`GROUP BY contentHash, sizeBytes HAVING COUNT(*) >= 2`，每行即一个 Exact 组。
+5. **L4**：提交删除前重算复核。
+6. **相似视频**：入口、阈值和结果证据与完全重复分开；**当前固定返回 `SIMILAR_EXPERIMENT_DISABLED`**（见下）。
+7. **部分片段 / 长短视频关系**：涉及滑动窗口或音频指纹，后置到 M12，不属于 M10 完成条件。
 
 **用户流程**：
 
@@ -449,16 +464,24 @@ M7 才激活 01 原型中的处理中心全局入口和首页处理状态模块�
 选择来源 -> 选择检测类型 -> 扫描 -> 重复组列表 -> 组内播放/对比 -> 修改建议保留 -> 移入回收站
 ```
 
-- `DuplicateScan` 保存范围、模式、阈值、算法版本和状态；
-- `DuplicateGroup` 保存组成员、数量、总大小和预计释放空间；
-- `DuplicateCandidate` 保存证据、建议保留、保护来源和用户选择；
-- `HashCache` 以媒体身份、大小、修改时间和算法版本为缓存键；
-- 完全重复与相似视频使用两个显式模式；相似模式首版提供严格/均衡/宽松预设，不暴露任意阈值，结果解释抽帧相似证据但不把算法术语强加给普通用户；
-- 保护目录只参与比较，不被自动勾选删除；
-- “建议保留”必须给出依据并允许用户修改；
-- 删除通过媒体服务/回收站执行，成功后刷新媒体索引。
+**数据模型（已收敛，与旧版不同）**：
 
-**退出条件**：完全重复和相似视频两种模式都能形成可播放、可并排/同步对比的重复组；用户能覆盖所有自动建议；删除前显示范围、数量和预计空间；取消扫描不会破坏已有索引；第二次扫描使用缓存且明显快于第一次。
+- 判定结果**不新建「重复」实体**，直接落在 `media_locations` 的 `fastFingerprint` / `contentHash` / 新增 `hashAlgorithmVersion` 三列上；
+- 指纹缓存的失效键是**三元组** `(sizeBytes, modifiedEpochMillis, hashAlgorithmVersion)`，三者任一变化即重算；
+- **删除** `duplicate_fingerprints` / `duplicate_groups` / `duplicate_group_members` 三张表（与内容实体模型重叠且互相矛盾）；
+- **唯一新增的表** `duplicate_ignores(contentHash, sizeBytes, memberCount, ignoredAtEpochMillis)`：组成员数等于 `memberCount` 时隐藏该组，成员数变化时重新出现。**旧的 `ignore(groupId) = deleteGroup(groupId)` 会被下次扫描重建，用户会反复看到已忽略的组，必须替换**；
+- 完全重复与相似视频使用两个显式模式；**不暴露任意阈值**；
+- 保护目录只参与比较，不被自动勾选删除；
+- 「建议保留」必须给出依据并允许用户修改。**对 Exact 组，「更高分辨率」「更大体积」「更长时长」没有区分力**（字节相同蕴含这些属性全同），可用维度只有 `missingScanCount` / `lastSeenEpochMillis` → `modifiedEpochMillis` → 来源优先级 → 非隐藏目录 → 文件名不含副本标记；
+- 删除计划的约束从「覆盖整组」**放宽为子集关系**（`keep` 非空、`trash` 非空、`trash ⊆ group \ keep`），仍禁止空计划与全删计划；
+- **归并与删除一步完成，且整个归并在一个 Room 事务内**。被删位置的标签、收藏、播放进度、播放列表成员、集合成员、切片项目与处理任务输入必须**重指向到保留项**，不能随位置一起消失；
+- 删除通过媒体服务/回收站执行，成功后刷新媒体索引；**永不直接永久删除**。
+
+**相似视频（SIMILAR）的重开前置条件**：需要有隐私审核的代表性标注集、precision/recall 曲线、版本化特征接口、严格/均衡/宽松三档预设、10k 库复杂度基线，以及相似与完全重复**分入口、分证据、分删除路径**。在这些条件满足前，生产扫描固定返回 `SIMILAR_EXPERIMENT_DISABLED`，UI 不提供相似视频删除入口。
+
+**退出条件**：完全重复模式能形成可播放、可并排/同步对比的重复组；用户能覆盖所有自动建议；删除前显示范围、数量和预计空间；取消扫描不会破坏已有索引；第二次扫描使用缓存且明显快于第一次。
+
+**⚠ 「明显快于第一次」必须有实测数据支撑**：当前仓库内**没有任何去重性能基线**，GB 级文件、10k 媒体库和厂商 ContentProvider 的真实耗时矩阵仍缺（`docs/architecture/phase-11-14-tdd-report.md` 亦记录该缺口）。实测数据须落在本阶段报告内，不得以 AOSP 模拟器结果代替真机结论。
 
 ### M11 - 应用锁与真实加密保险库
 

@@ -35,11 +35,15 @@ interface LibraryDao {
     @Upsert
     suspend fun upsertTrash(entry: TrashEntryEntity)
 
-    @Query("UPDATE trash_entries SET state = :state WHERE mediaItemId = :mediaItemId")
-    suspend fun updateTrashState(mediaItemId: String, state: String)
+    /**
+     * 回收站以 `locationId` 为键：一个 `media_items` 行可以有多个位置，
+     * 回收的是**位置上的那份字节**（设计稿 §14.4 第 6 项）。
+     */
+    @Query("UPDATE trash_entries SET state = :state WHERE locationId = :locationId")
+    suspend fun updateTrashState(locationId: String, state: String)
 
-    @Query("DELETE FROM trash_entries WHERE mediaItemId = :mediaItemId")
-    suspend fun deleteTrash(mediaItemId: String)
+    @Query("DELETE FROM trash_entries WHERE locationId = :locationId")
+    suspend fun deleteTrash(locationId: String)
 }
 
 @Dao
@@ -60,8 +64,7 @@ interface HomeDao {
         FROM media_items
         INNER JOIN latest_location ON latest_location.mediaItemId = media_items.id AND latest_location.rowNumber = 1
         INNER JOIN media_locations ON media_locations.id = latest_location.locationId
-        LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
-        WHERE trash_entries.mediaItemId IS NULL
+        WHERE """ + LibrarySql.VISIBLE_ITEM + """
         """,
     )
     fun observeStats(): Flow<HomeStatsRow>
@@ -87,8 +90,7 @@ interface HomeDao {
         INNER JOIN media_locations ON media_locations.id = latest_location.locationId
         INNER JOIN media_sources ON media_sources.id = media_locations.sourceId
         INNER JOIN playback_history ON playback_history.mediaItemId = media_items.id
-        LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
-        WHERE trash_entries.mediaItemId IS NULL
+        WHERE """ + LibrarySql.VISIBLE_ITEM + """
             AND media_items.completed = 0
             AND media_items.playbackPositionMillis >= :minimumPlaybackMillis
             AND (
@@ -125,8 +127,7 @@ interface HomeDao {
         INNER JOIN latest_location ON latest_location.mediaItemId = media_items.id AND latest_location.rowNumber = 1
         INNER JOIN media_locations ON media_locations.id = latest_location.locationId
         INNER JOIN media_sources ON media_sources.id = media_locations.sourceId
-        LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
-        WHERE trash_entries.mediaItemId IS NULL
+        WHERE """ + LibrarySql.VISIBLE_ITEM + """
         ORDER BY media_locations.modifiedEpochMillis DESC, media_items.id DESC
         LIMIT :limit
         """,
@@ -164,8 +165,7 @@ interface HomeDao {
         INNER JOIN latest_location ON latest_location.mediaItemId = media_items.id AND latest_location.rowNumber = 1
         INNER JOIN media_locations ON media_locations.id = latest_location.locationId
         INNER JOIN media_sources ON media_sources.id = media_locations.sourceId
-        LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
-        WHERE trash_entries.mediaItemId IS NULL
+        WHERE """ + LibrarySql.VISIBLE_ITEM + """
         GROUP BY media_sources.id
         ORDER BY itemCount DESC, sizeBytes DESC, media_sources.id
         LIMIT :limit

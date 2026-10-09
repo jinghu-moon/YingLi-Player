@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import seeyuer.yingli.player.domain.duplicates.DuplicateKeepRanking
 import seeyuer.yingli.player.domain.duplicates.DuplicateRepository
 import seeyuer.yingli.player.domain.home.DeviceStorageRepository
 import seeyuer.yingli.player.domain.home.HomeCardId
@@ -100,10 +101,10 @@ class HomeViewModel(
     private val maintenance = combine(duplicateRepository.groups, trashRepository.observe()) { groups, trash ->
         buildList {
             if (groups.isNotEmpty()) {
+                // 「能释放多少」= 每组只留一份（保留项由排序器选出），其余全部可回收。
                 val reclaimable = groups.sumOf { group ->
-                    group.candidates.sortedByDescending { it.fingerprint.sizeBytes }
-                        .drop(1)
-                        .sumOf { it.fingerprint.sizeBytes }
+                    val keeper = DuplicateKeepRanking.best(group.candidates)
+                    group.reclaimableBytes(keeper?.let { setOf(it.locationId) }.orEmpty())
                 }
                 add(MaintenanceItem(MaintenanceKind.DUPLICATES, groups.size, reclaimable))
             }

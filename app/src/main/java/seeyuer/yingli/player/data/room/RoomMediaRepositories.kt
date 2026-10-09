@@ -119,11 +119,11 @@ private fun MediaItemEntity.toModel(tags: Set<String>) = MediaItem(MediaItemId(i
 private fun MediaLocation.toEntity() = MediaLocationEntity(
     id.value, sourceId.value, uri.value, volumeId?.value, documentId, fileName, mimeType,
     sizeBytes, modifiedEpochMillis, durationMillis, width, height, missingScanCount, lastSeenEpochMillis,
-    fastFingerprint, contentHash, relativePath,
+    fastFingerprint, contentHash, relativePath, hashAlgorithmVersion,
 )
 
 private fun MediaLocationEntity.toModel() = MediaLocation(
     MediaLocationId(id), MediaSourceId(sourceId), MediaUri(uri), volumeId?.let(::VolumeId),
     documentId, fileName, mimeType, sizeBytes, modifiedEpochMillis, durationMillis, width, height,
-    missingScanCount, lastSeenEpochMillis, fastFingerprint, contentHash, relativePath,
+    missingScanCount, lastSeenEpochMillis, fastFingerprint, contentHash, relativePath, hashAlgorithmVersion,
 )

@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import seeyuer.yingli.player.data.room.LibraryMediaRow
+import seeyuer.yingli.player.data.room.LibrarySql
 import seeyuer.yingli.player.data.room.MediaItemEntity
 import seeyuer.yingli.player.data.room.MediaItemLocationEntity
 import seeyuer.yingli.player.data.room.MediaLocationEntity
@@ -123,8 +124,7 @@ class RoomLibraryRepository(
                 INNER JOIN latest_location ON latest_location.mediaItemId = media_items.id AND latest_location.rn = 1
                 INNER JOIN media_locations ON media_locations.id = latest_location.locationId
                 LEFT JOIN playback_history ON playback_history.mediaItemId = media_items.id
-                LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
-                WHERE trash_entries.mediaItemId IS NULL
+                WHERE ${LibrarySql.VISIBLE_ITEM}
                   AND COALESCE(media_locations.relativePath, '') <> ''
                   AND (
                       ? = '' OR
@@ -191,8 +191,7 @@ class RoomLibraryRepository(
             INNER JOIN media_locations ON media_locations.id = media_item_locations.locationId
             INNER JOIN media_sources ON media_sources.id = media_locations.sourceId
             LEFT JOIN playback_history ON playback_history.mediaItemId = media_items.id
-            LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
-            WHERE media_items.id IN ($placeholders) AND trash_entries.mediaItemId IS NULL
+            WHERE media_items.id IN ($placeholders) AND ${LibrarySql.VISIBLE_ITEM}
                 AND media_locations.missingScanCount = 0
         """.trimIndent()
         val rows = libraryDao.page(SimpleSQLiteQuery(sql, ids.map { it.value }.toTypedArray()))
@@ -260,8 +259,7 @@ class RoomLibraryRepository(
             FROM media_items
             INNER JOIN latest_location ON latest_location.mediaItemId = media_items.id AND latest_location.rn = 1
             INNER JOIN media_locations ON media_locations.id = latest_location.locationId
-            LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id
-            WHERE trash_entries.mediaItemId IS NULL
+            WHERE ${LibrarySql.VISIBLE_ITEM}
               AND (
                   TRIM(media_locations.relativePath, '/') = ?
                   OR substr(TRIM(media_locations.relativePath, '/'), 1, length(?) + 1) = ? || '/'
@@ -288,7 +286,7 @@ class RoomLibraryRepository(
         args += folderPath.orEmpty()
         args += folderPath.orEmpty()
         val where = mutableListOf(
-            "trash_entries.mediaItemId IS NULL",
+            LibrarySql.VISIBLE_ITEM,
             "latest_location.rn = 1",
         )
         val keyword = query.normalizedKeyword.trim().lowercase()
@@ -383,7 +381,6 @@ class RoomLibraryRepository(
             append(" INNER JOIN media_locations ON media_locations.id = latest_location.locationId")
             append(" INNER JOIN media_sources ON media_sources.id = media_locations.sourceId")
             append(" LEFT JOIN playback_history ON playback_history.mediaItemId = media_items.id")
-            append(" LEFT JOIN trash_entries ON trash_entries.mediaItemId = media_items.id")
             append(" WHERE ").append(where.joinToString(" AND "))
             if (!countOnly) {
                 val orderDirection = if (direction == LibraryPageDirection.PREPEND) {

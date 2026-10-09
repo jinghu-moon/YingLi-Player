@@ -136,7 +136,7 @@ class RoomProcessingRepository(
             progress.processedUnits,
             progress.totalUnits.orEmpty(),
         ).joinToString("|")
-        is ProcessingTaskEvent.Succeed -> output.displayName
+        is ProcessingTaskEvent.Succeed -> output?.displayName
         is ProcessingTaskEvent.Fail -> errorCode
         is ProcessingTaskEvent.Retry -> null
         else -> null

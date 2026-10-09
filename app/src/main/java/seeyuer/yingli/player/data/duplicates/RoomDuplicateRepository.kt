@@ -1,122 +1,94 @@
 package seeyuer.yingli.player.data.duplicates
 
-import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-import seeyuer.yingli.player.data.room.DuplicateFingerprintEntity
-import seeyuer.yingli.player.data.room.DuplicateGroupEntity
-import seeyuer.yingli.player.data.room.DuplicateGroupMemberEntity
-import seeyuer.yingli.player.data.room.YingLiDatabase
+import kotlinx.coroutines.flow.combine
 import seeyuer.yingli.player.core.model.media.MediaItemId
+import seeyuer.yingli.player.core.model.media.MediaLocationId
+import seeyuer.yingli.player.core.model.media.MediaSourceMode
+import seeyuer.yingli.player.core.model.media.MediaUri
+import seeyuer.yingli.player.data.room.DuplicateCandidateRow
+import seeyuer.yingli.player.data.room.DuplicateIgnoreEntity
+import seeyuer.yingli.player.data.room.YingLiDatabase
+import seeyuer.yingli.player.domain.duplicates.DUPLICATE_HASH_ALGORITHM_VERSION
 import seeyuer.yingli.player.domain.duplicates.DuplicateCandidate
-import seeyuer.yingli.player.domain.duplicates.DuplicateEvidence
 import seeyuer.yingli.player.domain.duplicates.DuplicateGroup
-import seeyuer.yingli.player.domain.duplicates.DuplicateGroupId
-import seeyuer.yingli.player.domain.duplicates.DuplicateMode
 import seeyuer.yingli.player.domain.duplicates.DuplicateRepository
-import seeyuer.yingli.player.domain.duplicates.MediaFingerprint
 
+/**
+ * 等价类读模型。
+ *
+ * **重复组不是表**（设计稿 §4.7）：它就是 `media_locations` 上
+ * `GROUP BY contentHash, sizeBytes` 的结果，因此这里没有任何写入路径会造组，
+ * 唯一的写入是「忽略某个组」。
+ *
+ * 只报告**尚未归并**的等价类：同一 `contentHash` 下出现 ≥ 2 个不同的 `media_items`
+ * 行才说明这次重复还没处理。同一 `media_items` 行持有两份相同内容的多个位置不算重复
+ * ——它们已经是一个条目了。
+ */
 class RoomDuplicateRepository(
-    private val database: YingLiDatabase,
+    database: YingLiDatabase,
+    private val algorithmVersion: Int = DUPLICATE_HASH_ALGORITHM_VERSION,
 ) : DuplicateRepository {
     private val dao = database.duplicateDao()
 
-    override val groups: Flow<List<DuplicateGroup>> = dao.observeGroups().map { rows ->
-        rows.mapNotNull { row ->
-            val memberRows = dao.members(row.id)
-            val fingerprints = dao.fingerprints(memberRows.map(DuplicateGroupMemberEntity::mediaItemId))
-                .associateBy(DuplicateFingerprintEntity::mediaItemId)
-            val candidates = memberRows.mapNotNull { member ->
-                fingerprints[member.mediaItemId]?.toDomain()?.let { DuplicateCandidate(MediaItemId(member.mediaItemId), it) }
+    override val groups: Flow<List<DuplicateGroup>> = combine(
+        dao.observeHashedLocations(algorithmVersion),
+        dao.observeIgnores(),
+    ) { rows, ignores -> buildGroups(rows, ignores) }
+
+    override suspend fun ignore(group: DuplicateGroup, ignoredAtEpochMillis: Long) {
+        dao.upsertIgnore(
+            DuplicateIgnoreEntity(
+                contentHash = group.contentHash,
+                sizeBytes = group.sizeBytes,
+                // 记下被忽略时的成员数：成员数一变，这个组会重新出现（修 G26）。
+                memberCount = group.candidates.size,
+                ignoredAtEpochMillis = ignoredAtEpochMillis,
+            ),
+        )
+    }
+
+    private fun buildGroups(
+        rows: List<DuplicateCandidateRow>,
+        ignores: List<DuplicateIgnoreEntity>,
+    ): List<DuplicateGroup> {
+        val ignoredByKey = ignores.associateBy { it.contentHash to it.sizeBytes }
+        return rows.asSequence()
+            .groupBy { it.contentHash to it.sizeBytes }
+            .mapNotNull { (key, groupRows) ->
+                val contentHash = key.first ?: return@mapNotNull null
+                // 等价类要「待处理」必须跨越两个条目。
+                if (groupRows.map(DuplicateCandidateRow::mediaItemId).distinct().size < 2) {
+                    return@mapNotNull null
+                }
+                if (ignoredByKey[key]?.memberCount == groupRows.size) return@mapNotNull null
+                DuplicateGroup(
+                    contentHash = contentHash,
+                    sizeBytes = key.second,
+                    candidates = groupRows.map { it.toDomain() },
+                )
             }
-            if (candidates.size < 2) return@mapNotNull null
-            DuplicateGroup(
-                DuplicateGroupId(row.id),
-                DuplicateMode.valueOf(row.mode),
-                candidates,
-                row.toEvidence() ?: return@mapNotNull null,
+            .sortedWith(
+                compareByDescending<DuplicateGroup> { it.reclaimableBytes(emptySet()) }
+                    .thenBy { it.contentHash },
             )
-        }
+            .toList()
     }
 
-    override suspend fun fingerprint(mediaId: MediaItemId): MediaFingerprint? =
-        dao.fingerprint(mediaId.value)?.toDomain()
-
-    override suspend fun saveFingerprints(fingerprints: List<MediaFingerprint>) {
-        if (fingerprints.isNotEmpty()) dao.upsertFingerprints(fingerprints.map { it.toEntity() })
-    }
-
-    override suspend fun replaceGroups(mode: DuplicateMode, groups: List<DuplicateGroup>) {
-        require(groups.all { it.mode == mode })
-        database.withTransaction {
-            dao.deleteGroups(mode.name)
-            if (groups.isNotEmpty()) {
-                dao.insertGroups(groups.map { it.toEntity() })
-                dao.insertMembers(groups.flatMap { group ->
-                    group.candidates.mapIndexed { index, candidate ->
-                        DuplicateGroupMemberEntity(group.id.value, candidate.mediaId.value, index)
-                    }
-                })
-            }
-        }
-    }
-
-    override suspend fun ignore(groupId: DuplicateGroupId) = dao.deleteGroup(groupId.value)
-
-    private fun DuplicateFingerprintEntity.toDomain() = MediaFingerprint(
-        MediaItemId(mediaItemId),
-        sizeBytes,
-        quickHash,
-        fullHash,
-        durationMillis,
-        width,
-        height,
-        perceptualHashes.split(',').mapNotNull(String::toLongOrNull),
-        algorithmVersion,
-        sourceModifiedEpochMillis,
-        generatedAtEpochMillis,
+    private fun DuplicateCandidateRow.toDomain() = DuplicateCandidate(
+        locationId = MediaLocationId(locationId),
+        mediaItemId = MediaItemId(mediaItemId),
+        uri = MediaUri(uri),
+        fileName = fileName,
+        relativePath = relativePath,
+        sourceMode = runCatching { MediaSourceMode.valueOf(sourceMode) }
+            .getOrDefault(MediaSourceMode.MEDIA_STORE),
+        sizeBytes = sizeBytes,
+        modifiedEpochMillis = modifiedEpochMillis,
+        durationMillis = durationMillis,
+        width = width,
+        height = height,
+        missingScanCount = missingScanCount,
+        lastSeenEpochMillis = lastSeenEpochMillis,
     )
-
-    private fun MediaFingerprint.toEntity() = DuplicateFingerprintEntity(
-        mediaId.value,
-        sizeBytes,
-        quickHash,
-        fullHash,
-        durationMillis,
-        width,
-        height,
-        perceptualHashes.joinToString(","),
-        algorithmVersion,
-        sourceModifiedEpochMillis,
-        generatedAtEpochMillis,
-    )
-
-    private fun DuplicateGroupEntity.toEvidence(): DuplicateEvidence? = when (DuplicateMode.valueOf(mode)) {
-        DuplicateMode.EXACT -> DuplicateEvidence.Exact(
-            sizeBytes ?: return null,
-            fullHash ?: return null,
-            algorithmVersion,
-            generatedAtEpochMillis,
-        )
-        DuplicateMode.SIMILAR -> DuplicateEvidence.Similar(
-            visualScore ?: return null,
-            durationScore ?: return null,
-            dimensionScore ?: return null,
-            overallScore ?: return null,
-            algorithmVersion,
-            generatedAtEpochMillis,
-        )
-    }
-
-    private fun DuplicateGroup.toEntity(): DuplicateGroupEntity = when (val value = evidence) {
-        is DuplicateEvidence.Exact -> DuplicateGroupEntity(
-            id.value, mode.name, value.sizeBytes, value.fullHash,
-            null, null, null, null, value.algorithmVersion, value.generatedAtEpochMillis,
-        )
-        is DuplicateEvidence.Similar -> DuplicateGroupEntity(
-            id.value, mode.name, null, null,
-            value.visualScore, value.durationScore, value.dimensionScore, value.overallScore,
-            value.algorithmVersion, value.generatedAtEpochMillis,
-        )
-    }
 }

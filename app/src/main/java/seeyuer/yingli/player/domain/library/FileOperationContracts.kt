@@ -76,14 +76,22 @@ data class TrashRetentionPolicy(val retentionDays: Int = 30) {
 interface TrashRepository {
     fun observe(): Flow<List<TrashEntry>>
     suspend fun put(entry: TrashEntry)
-    suspend fun updateState(mediaId: MediaItemId, state: TrashState)
-    suspend fun remove(mediaId: MediaItemId)
+
+    /**
+     * 回收站条目的身份是**位置**而不是条目：一个 `MediaItem` 可以有多个位置，
+     * 回收的是位置上的那份字节（设计稿 §14.4 第 6 项）。
+     */
+    suspend fun updateState(locationId: MediaLocationId, state: TrashState)
+    suspend fun remove(locationId: MediaLocationId)
     suspend fun expired(nowEpochMillis: Long): List<TrashEntry>
 }
 
 data class BatchOperationSummary(
     val succeeded: Int,
-    val failures: Map<MediaItemId, FileOperationFailure>,
+    /**
+     * 键是**位置**：同一条目可被多次操作（多个位置），键成条目会让失败互相覆盖。
+     */
+    val failures: Map<MediaLocationId, FileOperationFailure>,
 ) {
     val failed: Int get() = failures.size
 }

@@ -12,6 +12,7 @@ class RoutingProcessingExecutor(
     private val repository: ProcessingRepository,
     private val clipExecutor: ProcessingExecutor,
     private val transcodeExecutor: ProcessingExecutor,
+    private val deduplicateExecutor: ProcessingExecutor,
 ) : ProcessingExecutor {
     override suspend fun execute(
         task: ProcessingTask,
@@ -22,6 +23,7 @@ class RoutingProcessingExecutor(
     override suspend fun cancel(taskId: ProcessingTaskId) {
         clipExecutor.cancel(taskId)
         transcodeExecutor.cancel(taskId)
+        deduplicateExecutor.cancel(taskId)
     }
 
     override suspend fun recover(task: ProcessingTask): ProcessingExecutionResult = executor(task)?.recover(task)
@@ -31,6 +33,7 @@ class RoutingProcessingExecutor(
         when (repository.projects().firstOrNull { it.id == task.projectId }?.type) {
             ProcessingProjectType.CLIP -> clipExecutor
             ProcessingProjectType.COMPRESS, ProcessingProjectType.CONVERT -> transcodeExecutor
+            ProcessingProjectType.DEDUPLICATE -> deduplicateExecutor
             else -> null
         }
 }

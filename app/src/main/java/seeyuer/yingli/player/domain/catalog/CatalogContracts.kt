@@ -71,10 +71,29 @@ interface MediaSourceRepository {
     suspend fun markAccessState(sourceId: MediaSourceId, state: MediaSourceAccessState)
 }
 
-fun interface MediaContentHasher {
+/**
+ * 内容哈希能力。
+ *
+ * 三个方法对应去重漏斗的不同层（设计稿 §7.1）：
+ * - [size]：当前字节数。L4 最终复核要拿它和「扫描时记下的大小」比，才能发现文件已被替换；
+ * - [quickFingerprint]（L1）：只看**头尾各 64 KiB 加文件大小**，用来把「大小相同但内容不同」
+ *   的候选快速剪掉，代价与文件大小无关；
+ * - [sha256]（L2）：整文件流式 SHA-256，是 EXACT 判定的唯一依据。
+ *
+ * 三者都遵守同一条契约：**读不出来就返回 null，绝不返回猜测值**。
+ */
+interface MediaContentHasher {
+    suspend fun size(uri: MediaUri): Long?
+
+    suspend fun quickFingerprint(uri: MediaUri, sizeBytes: Long): String?
+
     suspend fun sha256(uri: MediaUri): String?
 
     companion object {
-        val None = MediaContentHasher { null }
+        val None = object : MediaContentHasher {
+            override suspend fun size(uri: MediaUri): Long? = null
+            override suspend fun quickFingerprint(uri: MediaUri, sizeBytes: Long): String? = null
+            override suspend fun sha256(uri: MediaUri): String? = null
+        }
     }
 }

@@ -79,6 +79,7 @@ import seeyuer.yingli.player.domain.processing.ProcessingQueue
 import seeyuer.yingli.player.domain.duplicates.DuplicateDeletionExecutor
 import seeyuer.yingli.player.domain.duplicates.DuplicateRepository
 import seeyuer.yingli.player.domain.duplicates.DuplicateScanner
+import seeyuer.yingli.player.domain.duplicates.DuplicateScanQueue
 import seeyuer.yingli.player.data.security.AppLockManager
 import seeyuer.yingli.player.domain.security.SecurePlaybackSource
 import seeyuer.yingli.player.domain.security.VaultRepository
@@ -130,6 +131,8 @@ data class MediaContainer(
     val duplicateRepository: DuplicateRepository,
     val duplicateScanner: DuplicateScanner,
     val duplicateDeletionExecutor: DuplicateDeletionExecutor,
+    /** 去重扫描的入队入口（设计稿 §11.1：扫描必须经任务中心）。 */
+    val duplicateScanQueue: DuplicateScanQueue,
     val appLockManager: AppLockManager,
     val vaultRepository: VaultRepository,
     val securePlaybackSource: SecurePlaybackSource,
@@ -162,16 +165,7 @@ object ProductionMediaContainerFactory {
     @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
     fun create(context: Context, foundation: AppContainer): MediaContainer {
         val database = Room.databaseBuilder(context, YingLiDatabase::class.java, "yingli-media.db")
-            .addMigrations(
-                YingLiDatabase.MIGRATION_1_2,
-                YingLiDatabase.MIGRATION_2_3,
-                YingLiDatabase.MIGRATION_3_4,
-                YingLiDatabase.MIGRATION_4_5,
-                YingLiDatabase.MIGRATION_5_6,
-                YingLiDatabase.MIGRATION_6_7,
-                YingLiDatabase.MIGRATION_7_8,
-                YingLiDatabase.MIGRATION_8_9,
-            )
+            .addMigrations(*YingLiDatabase.ALL_MIGRATIONS)
             .build()
         val sourceRepository = RoomMediaSourceRepository(database.mediaSourceDao())
         val catalogRepository = RoomMediaCatalogRepository(database)
@@ -180,12 +174,13 @@ object ProductionMediaContainerFactory {
             MediaStoreDiscoveryDataSource(context, foundation.dispatchers),
             SafTreeDiscoveryDataSource(context, foundation.dispatchers),
         )
+        val mediaContentHasher = AndroidMediaContentHasher(context, foundation.dispatchers)
         val scannerDelegate = DefaultMediaScanner(
             dataSources,
             sourceRepository,
             catalogRepository,
             DefaultMediaIdentityResolver,
-            AndroidMediaContentHasher(context, foundation.dispatchers),
+            mediaContentHasher,
             foundation.idGenerator,
             foundation.clock,
         )
@@ -218,21 +213,19 @@ object ProductionMediaContainerFactory {
         )
         val organizeRepository = RoomOrganizeRepository(database, foundation.clock, foundation.idGenerator)
         val duplicateRepository = seeyuer.yingli.player.data.duplicates.RoomDuplicateRepository(database)
-        val fingerprintGenerator = seeyuer.yingli.player.data.duplicates.AndroidDuplicateFingerprintGenerator(
-            context,
-            foundation.dispatchers,
-        )
         val duplicateScanner = seeyuer.yingli.player.data.duplicates.DefaultDuplicateScanner(
-            libraryRepository,
-            duplicateRepository,
-            fingerprintGenerator,
-            foundation.clock,
+            database,
+            mediaContentHasher,
+            foundation.logger,
         )
+        val duplicateMergeRepository =
+            seeyuer.yingli.player.data.duplicates.RoomDuplicateMergeRepository(database, foundation.logger)
         val duplicateDeletionExecutor = seeyuer.yingli.player.data.duplicates.DefaultDuplicateDeletionExecutor(
             duplicateRepository,
+            duplicateMergeRepository,
             libraryRepository,
             mutationRepository,
-            fingerprintGenerator,
+            mediaContentHasher,
         )
         val securityScope = CoroutineScope(SupervisorJob() + foundation.dispatchers.main)
         val appLockManager = seeyuer.yingli.player.data.security.AppLockManager(
@@ -310,6 +303,15 @@ object ProductionMediaContainerFactory {
             availableBytes = availableBytes,
         )
         val processingScope = CoroutineScope(SupervisorJob() + foundation.dispatchers.main)
+        val deduplicateExecutor = seeyuer.yingli.player.data.duplicates.DeduplicateProcessingExecutor(
+            processingRepository,
+            duplicateScanner,
+        )
+        val deduplicateCoordinator = seeyuer.yingli.player.data.duplicates.DeduplicateCoordinator(
+            processingRepository,
+            foundation.idGenerator,
+            foundation.clock,
+        )
         val scheduler = seeyuer.yingli.player.data.processing.InAppProcessingScheduler(
             processingScope,
             processingRepository,
@@ -317,6 +319,7 @@ object ProductionMediaContainerFactory {
                 processingRepository,
                 clipExecutor,
                 transcodeExecutor,
+                deduplicateExecutor,
             ),
             foundation.clock,
             foundation.logger,
@@ -393,6 +396,7 @@ object ProductionMediaContainerFactory {
             duplicateRepository,
             duplicateScanner,
             duplicateDeletionExecutor,
+            deduplicateCoordinator,
             appLockManager,
             vaultRepository,
             vaultRepository,

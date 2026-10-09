@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import seeyuer.yingli.player.core.common.AppClock
 import seeyuer.yingli.player.core.common.IdGenerator
 import seeyuer.yingli.player.core.model.media.*
+import seeyuer.yingli.player.domain.duplicates.DUPLICATE_HASH_ALGORITHM_VERSION
 
 fun interface MediaScanner {
     suspend fun scan(request: ScanRequest): ScanResult
@@ -44,6 +45,7 @@ class DefaultMediaScanner(
             val items = snapshot.items.associateBy(MediaItem::id).toMutableMap()
             val existingItemIds = snapshot.items.mapTo(mutableSetOf(), MediaItem::id)
             val locations = snapshot.locations.toMutableList()
+            val locationsById = snapshot.locations.associateBy(MediaLocation::id)
             val locationsByUri = snapshot.locations.associateBy(MediaLocation::uri).toMutableMap()
             val locationsBySize = snapshot.locations.groupBy(MediaLocation::sizeBytes)
                 .mapValuesTo(mutableMapOf()) { (_, values) -> values.toMutableList() }
@@ -107,7 +109,12 @@ class DefaultMediaScanner(
                         val itemId = matched?.itemId ?: MediaItemId(idGenerator.newId().stableId())
                         val locationId = matched?.locationId ?: MediaLocationId(idGenerator.newId().stableId())
                         val item = items[itemId] ?: MediaItem(itemId, resolvedEvidence.fileName.substringBeforeLast('.').ifBlank { resolvedEvidence.fileName })
-                        val location = candidate.toLocation(locationId, resolvedEvidence, clock.now().toEpochMilli())
+                        val location = candidate.toLocation(
+                            id = locationId,
+                            resolvedEvidence = resolvedEvidence,
+                            seenAt = clock.now().toEpochMilli(),
+                            previous = locationsById[locationId],
+                        )
                         items[itemId] = item
                         batchLocations += location
                         batchLinks[locationId] = itemId
@@ -207,21 +214,59 @@ class DefaultMediaScanner(
         return identityResolver.resolve(resolvedEvidence, locations, links) to resolvedEvidence
     }
 
+    /**
+     * 发现阶段的数据 → 库里的位置行。
+     *
+     * **哈希列的归属规则**（设计稿 §7.4 的「失效」一行的落地）：
+     * 缓存有效性的三元组是 `(sizeBytes, modifiedEpochMillis, hashAlgorithmVersion)`。
+     * - `sizeBytes` / `modifiedEpochMillis` 与上次扫描一致 ⇒ 保留上次算出的哈希；
+     *   发现阶段若顺手算出了新哈希，用新的（它更新）。
+     * - 任一不一致 ⇒ **旧哈希一律作废**。否则「文件被替换成同样大小的另一段视频」之后，
+     *   库里还留着旧内容的哈希，去重会把两份不同的视频判成同一内容。
+     *
+     * 调用点原先无条件写入发现阶段的（通常为 `null` 的）值，等于每次重扫都把去重的
+     * 扫描结果抹掉——那是 G20 之外的另一处「假的连接」。
+     */
     private fun MediaCandidate.toLocation(
         id: MediaLocationId,
         resolvedEvidence: MediaIdentityEvidence,
         seenAt: Long,
-    ) = MediaLocation(
-        id, sourceId, resolvedEvidence.uri, resolvedEvidence.volumeId, resolvedEvidence.documentId,
-        resolvedEvidence.fileName, mimeType,
-        resolvedEvidence.sizeBytes, resolvedEvidence.modifiedEpochMillis, resolvedEvidence.durationMillis,
-        resolvedEvidence.width, resolvedEvidence.height,
-        missingScanCount = 0,
-        lastSeenEpochMillis = seenAt,
-        fastFingerprint = resolvedEvidence.fastFingerprint,
-        contentHash = resolvedEvidence.contentHash,
-        relativePath = resolvedEvidence.relativePath,
-    )
+        previous: MediaLocation?,
+    ): MediaLocation {
+        val reusable = previous != null &&
+            previous.sizeBytes == resolvedEvidence.sizeBytes &&
+            previous.modifiedEpochMillis == resolvedEvidence.modifiedEpochMillis
+        val hasFreshHash = resolvedEvidence.contentHash != null || resolvedEvidence.fastFingerprint != null
+        val fastFingerprint: String?
+        val contentHash: String?
+        val hashAlgorithmVersion: Int?
+        if (reusable) {
+            fastFingerprint = resolvedEvidence.fastFingerprint ?: previous.fastFingerprint
+            contentHash = resolvedEvidence.contentHash ?: previous.contentHash
+            hashAlgorithmVersion = if (hasFreshHash) {
+                DUPLICATE_HASH_ALGORITHM_VERSION
+            } else {
+                // 保留原版本，可能是 `null`：迁移前留下的哈希没有版本，去重侧会忽略它并重算。
+                previous.hashAlgorithmVersion
+            }
+        } else {
+            fastFingerprint = resolvedEvidence.fastFingerprint
+            contentHash = resolvedEvidence.contentHash
+            hashAlgorithmVersion = if (hasFreshHash) DUPLICATE_HASH_ALGORITHM_VERSION else null
+        }
+        return MediaLocation(
+            id, sourceId, resolvedEvidence.uri, resolvedEvidence.volumeId, resolvedEvidence.documentId,
+            resolvedEvidence.fileName, mimeType,
+            resolvedEvidence.sizeBytes, resolvedEvidence.modifiedEpochMillis, resolvedEvidence.durationMillis,
+            resolvedEvidence.width, resolvedEvidence.height,
+            missingScanCount = 0,
+            lastSeenEpochMillis = seenAt,
+            fastFingerprint = fastFingerprint,
+            contentHash = contentHash,
+            relativePath = resolvedEvidence.relativePath,
+            hashAlgorithmVersion = hashAlgorithmVersion,
+        )
+    }
 
     private fun String.stableId(): String = replace(Regex("[^A-Za-z0-9_-]"), "_").take(128).ifBlank { "generated" }
 

@@ -133,6 +133,8 @@ class MainActivity : ComponentActivity() {
             media.libraryMutationRepository,
             media.trashRepository,
             media.homeRepository,
+            media.duplicateScanQueue,
+            media.processingRepository,
         )
     }
     private val homeViewModel: HomeViewModel by viewModels {

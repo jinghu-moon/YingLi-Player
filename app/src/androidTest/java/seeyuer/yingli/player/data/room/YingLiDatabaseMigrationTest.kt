@@ -3,6 +3,7 @@ package seeyuer.yingli.player.data.room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -112,22 +113,71 @@ class YingLiDatabaseMigrationTest {
     }
 
     @Test
-    fun migrateFromOneToNineValidatesCompleteUpgradeChain() {
-        helper.createDatabase("migration-1-9", 1).close()
+    fun migrateFromNineToTenReshapesDuplicateAndTrashTables() {
+        helper.createDatabase("migration-9-10", 9).close()
 
         helper.runMigrationsAndValidate(
-            "migration-1-9",
-            9,
+            "migration-9-10",
+            10,
             true,
-            YingLiDatabase.MIGRATION_1_2,
-            YingLiDatabase.MIGRATION_2_3,
-            YingLiDatabase.MIGRATION_3_4,
-            YingLiDatabase.MIGRATION_4_5,
-            YingLiDatabase.MIGRATION_5_6,
-            YingLiDatabase.MIGRATION_6_7,
-            YingLiDatabase.MIGRATION_7_8,
-            YingLiDatabase.MIGRATION_8_9,
+            YingLiDatabase.MIGRATION_9_10,
         ).close()
+    }
+
+    @Test
+    fun migrateFromNineToTenKeepsExistingTrashEntries() {
+        val legacy = helper.createDatabase("migration-9-10-rows", 9)
+        legacy.execSQL(
+            "INSERT INTO trash_entries(mediaItemId, locationId, originalUri, trashedUri, deletedAtEpochMillis, purgeAtEpochMillis, state) " +
+                "VALUES('item-1', 'location-1', 'content://media/1', 'file:///storage/.Trash/1', 10, 20, 'TRASHED')",
+        )
+        legacy.close()
+
+        val migrated = helper.runMigrationsAndValidate(
+            "migration-9-10-rows",
+            10,
+            true,
+            YingLiDatabase.MIGRATION_9_10,
+        )
+        migrated.query("SELECT locationId, mediaItemId, purgeAtEpochMillis FROM trash_entries").use { cursor ->
+            assertEquals(1, cursor.count)
+            cursor.moveToFirst()
+            assertEquals("location-1", cursor.getString(0))
+            assertEquals("item-1", cursor.getString(1))
+            assertEquals(20L, cursor.getLong(2))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migrateFromOneToTenValidatesCompleteUpgradeChain() {
+        helper.createDatabase("migration-1-10", 1).close()
+
+        helper.runMigrationsAndValidate(
+            "migration-1-10",
+            DATABASE_SCHEMA_VERSION,
+            true,
+            *YingLiDatabase.ALL_MIGRATIONS,
+        ).close()
+    }
+
+    /**
+     * 这条用例防的是「迁移写了但没接上」——2026-10-09 阶段 3 的真实事故：`MIGRATION_9_10`
+     * 写好了、逐版本用例也过了，但 `MediaContainer` 的生产 builder 忘了注册它，已装 v9 的
+     * 设备升级后直接抛 `A migration from 9 to 10 was required but not found`。
+     *
+     * 生产 builder 现在只消费 [YingLiDatabase.ALL_MIGRATIONS]，所以这里断言「数组本身
+     * 从 1 连续覆盖到 [DATABASE_SCHEMA_VERSION]」就等价于断言生产路径完整。
+     */
+    @Test
+    fun allMigrationsFormAContiguousChainUpToTheDeclaredSchemaVersion() {
+        val steps = YingLiDatabase.ALL_MIGRATIONS.map { it.startVersion to it.endVersion }
+
+        assertEquals(1, steps.first().first)
+        steps.zipWithNext().forEach { (previous, next) ->
+            assertEquals("迁移链在 $previous 与 $next 之间断开", previous.second, next.first)
+        }
+        assertEquals(DATABASE_SCHEMA_VERSION, steps.last().second)
     }
 
     private companion object {

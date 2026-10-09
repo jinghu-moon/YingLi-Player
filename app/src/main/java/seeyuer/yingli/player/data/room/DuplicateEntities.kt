@@ -1,51 +1,24 @@
 package seeyuer.yingli.player.data.room
 
 import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
 
-@Entity(tableName = "duplicate_fingerprints", primaryKeys = ["mediaItemId"], indices = [Index("sizeBytes"), Index("fullHash")])
-data class DuplicateFingerprintEntity(
-    val mediaItemId: String,
+/**
+ * 被用户「忽略」的重复等价类。
+ *
+ * 设计稿 §7.1：重复组**不是实体**，等价关系由
+ * `GROUP BY contentHash, sizeBytes` 直接给出，因此
+ * `duplicate_fingerprints` / `duplicate_groups` / `duplicate_group_members`
+ * 三张表已删除，这里只剩「用户不想再看这一组」这一条真正的持久化意图。
+ *
+ * 主键是 `(contentHash, sizeBytes)`——即等价类的身份本身。
+ * [memberCount] 记录忽略时的成员数：**成员数变化时该组重新出现**
+ * （修 G26：旧的 `ignore(groupId) = deleteGroup(groupId)` 会在下次扫描被重建，
+ * 用户的忽略动作丢失）。
+ */
+@Entity(tableName = "duplicate_ignores", primaryKeys = ["contentHash", "sizeBytes"])
+data class DuplicateIgnoreEntity(
+    val contentHash: String,
     val sizeBytes: Long,
-    val quickHash: String?,
-    val fullHash: String?,
-    val durationMillis: Long?,
-    val width: Int?,
-    val height: Int?,
-    val perceptualHashes: String,
-    val algorithmVersion: Int,
-    val sourceModifiedEpochMillis: Long,
-    val generatedAtEpochMillis: Long,
-)
-
-@Entity(tableName = "duplicate_groups", primaryKeys = ["id"], indices = [Index("mode"), Index("generatedAtEpochMillis")])
-data class DuplicateGroupEntity(
-    val id: String,
-    val mode: String,
-    val sizeBytes: Long?,
-    val fullHash: String?,
-    val visualScore: Double?,
-    val durationScore: Double?,
-    val dimensionScore: Double?,
-    val overallScore: Double?,
-    val algorithmVersion: Int,
-    val generatedAtEpochMillis: Long,
-)
-
-@Entity(
-    tableName = "duplicate_group_members",
-    primaryKeys = ["groupId", "mediaItemId"],
-    foreignKeys = [ForeignKey(
-        entity = DuplicateGroupEntity::class,
-        parentColumns = ["id"],
-        childColumns = ["groupId"],
-        onDelete = ForeignKey.CASCADE,
-    )],
-    indices = [Index("groupId"), Index("mediaItemId")],
-)
-data class DuplicateGroupMemberEntity(
-    val groupId: String,
-    val mediaItemId: String,
-    val position: Int,
+    val memberCount: Int,
+    val ignoredAtEpochMillis: Long,
 )

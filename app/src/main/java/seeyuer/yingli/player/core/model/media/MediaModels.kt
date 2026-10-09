@@ -98,6 +98,14 @@ data class MediaLocation(
     val fastFingerprint: String? = null,
     val contentHash: String? = null,
     val relativePath: String? = null,
+    /**
+     * 写入 [fastFingerprint] / [contentHash] 时使用的哈希算法版本。
+     *
+     * 缓存有效性的三元组是 `(sizeBytes, modifiedEpochMillis, hashAlgorithmVersion)`：
+     * 元数据任一项变化，或算法版本升级，哈希就必须作废（置空 + 版本置空）等待重算。
+     * `null` 意味着「这个哈希的来历不明」，去重查询会忽略它。
+     */
+    val hashAlgorithmVersion: Int? = null,
 ) {
     init {
         require(fileName.isNotBlank())

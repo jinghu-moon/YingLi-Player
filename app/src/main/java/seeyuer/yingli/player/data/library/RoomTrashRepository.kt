@@ -15,9 +15,9 @@ class RoomTrashRepository(database: YingLiDatabase) : TrashRepository {
     private val dao = database.libraryDao()
     override fun observe(): Flow<List<TrashEntry>> = dao.observeTrash().map { entries -> entries.map { it.toModel() } }
     override suspend fun put(entry: TrashEntry) = dao.upsertTrash(entry.toEntity())
-    override suspend fun updateState(mediaId: MediaItemId, state: TrashState) =
-        dao.updateTrashState(mediaId.value, state.name)
-    override suspend fun remove(mediaId: MediaItemId) = dao.deleteTrash(mediaId.value)
+    override suspend fun updateState(locationId: MediaLocationId, state: TrashState) =
+        dao.updateTrashState(locationId.value, state.name)
+    override suspend fun remove(locationId: MediaLocationId) = dao.deleteTrash(locationId.value)
     override suspend fun expired(nowEpochMillis: Long): List<TrashEntry> =
         dao.expiredTrash(nowEpochMillis).map { it.toModel() }
 

@@ -6,6 +6,13 @@ import androidx.room.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
 
+/**
+ * 数据库 schema 版本。`@Database(version = ...)` 与 `ALL_MIGRATIONS` 的终点都用它，
+ * 因此「版本加了、迁移忘了」或「迁移加了、没进 [YingLiDatabase.ALL_MIGRATIONS]」都会
+ * 被 `YingLiDatabaseMigrationTest` 当场抓住。
+ */
+internal const val DATABASE_SCHEMA_VERSION = 10
+
 @Database(
     entities = [
         MediaSourceEntity::class,
@@ -29,12 +36,10 @@ import androidx.sqlite.execSQL
         ProcessingTaskEventEntity::class,
         ClipProjectEntity::class,
         ClipSegmentEntity::class,
-        DuplicateFingerprintEntity::class,
-        DuplicateGroupEntity::class,
-        DuplicateGroupMemberEntity::class,
+        DuplicateIgnoreEntity::class,
         VaultItemEntity::class,
     ],
-    version = 9,
+    version = DATABASE_SCHEMA_VERSION,
     exportSchema = true,
 )
 abstract class YingLiDatabase : RoomDatabase() {
@@ -47,6 +52,7 @@ abstract class YingLiDatabase : RoomDatabase() {
     abstract fun processingDao(): ProcessingDao
     abstract fun clipDao(): ClipDao
     abstract fun duplicateDao(): DuplicateDao
+    abstract fun duplicateMergeDao(): DuplicateMergeDao
     abstract fun vaultDao(): VaultDao
 
     companion object {
@@ -105,6 +111,60 @@ abstract class YingLiDatabase : RoomDatabase() {
                 connection.execSQL("ALTER TABLE `media_sources` ADD COLUMN `includeNomedia` INTEGER NOT NULL DEFAULT 0")
             }
         }
+
+        /**
+         * 阶段 3：去重模型归并 + 回收站主键改为 `locationId`。
+         *
+         * 三件事：
+         * 1. `media_locations` 增加 `hashAlgorithmVersion` 与两条索引——哈希从此直接落在
+         *    位置行上，不再有独立的去重指纹表；
+         * 2. **删除** `duplicate_fingerprints` / `duplicate_groups` / `duplicate_group_members`，
+         *    新建唯一的 `duplicate_ignores`（重复组不是实体，等价关系由 `GROUP BY` 给出）；
+         * 3. `trash_entries` 主键 `mediaItemId` → `locationId`：SQLite 不能改主键，
+         *    只能重建表。**已存在的条目按 `INSERT OR IGNORE` 迁移**——迁移只改键，
+         *    不改语义，没有理由丢掉用户已回收的记录。
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(connection: SQLiteConnection) {
+                listOf(
+                    "ALTER TABLE `media_locations` ADD COLUMN `hashAlgorithmVersion` INTEGER",
+                    "CREATE INDEX IF NOT EXISTS `index_media_locations_sizeBytes` ON `media_locations` (`sizeBytes`)",
+                    "CREATE INDEX IF NOT EXISTS `index_media_locations_contentHash_hashAlgorithmVersion` ON `media_locations` (`contentHash`, `hashAlgorithmVersion`)",
+                    "DROP TABLE IF EXISTS `duplicate_group_members`",
+                    "DROP TABLE IF EXISTS `duplicate_groups`",
+                    "DROP TABLE IF EXISTS `duplicate_fingerprints`",
+                    "CREATE TABLE IF NOT EXISTS `duplicate_ignores` (`contentHash` TEXT NOT NULL, `sizeBytes` INTEGER NOT NULL, `memberCount` INTEGER NOT NULL, `ignoredAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`contentHash`, `sizeBytes`))",
+                    "ALTER TABLE `trash_entries` RENAME TO `trash_entries_legacy`",
+                    "CREATE TABLE IF NOT EXISTS `trash_entries` (`mediaItemId` TEXT NOT NULL, `locationId` TEXT NOT NULL, `originalUri` TEXT NOT NULL, `trashedUri` TEXT, `deletedAtEpochMillis` INTEGER NOT NULL, `purgeAtEpochMillis` INTEGER NOT NULL, `state` TEXT NOT NULL, PRIMARY KEY(`locationId`))",
+                    "INSERT OR IGNORE INTO `trash_entries` (`mediaItemId`, `locationId`, `originalUri`, `trashedUri`, `deletedAtEpochMillis`, `purgeAtEpochMillis`, `state`) " +
+                        "SELECT `mediaItemId`, `locationId`, `originalUri`, `trashedUri`, `deletedAtEpochMillis`, `purgeAtEpochMillis`, `state` FROM `trash_entries_legacy`",
+                    "DROP TABLE `trash_entries_legacy`",
+                    "CREATE INDEX IF NOT EXISTS `index_trash_entries_mediaItemId` ON `trash_entries` (`mediaItemId`)",
+                    "CREATE INDEX IF NOT EXISTS `index_trash_entries_purgeAtEpochMillis` ON `trash_entries` (`purgeAtEpochMillis`)",
+                ).forEach(connection::execSQL)
+            }
+        }
+
+        /**
+         * 全部迁移，按版本顺序排列。
+         *
+         * 生产的 `Room.databaseBuilder` 与迁移测试都从这里取。**不要再手写第二份列表**：
+         * 2026-10-09 阶段 3 就是这么错的——`MIGRATION_9_10` 写好了、迁移测试也过了，
+         * 但生产 builder 的 `addMigrations(...)` 忘了加它，于是已装 v9 的设备在下次
+         * 打开数据库时抛 `IllegalStateException: A migration from 9 to 10 was required
+         * but not found`，而所有单测与迁移测试都不会报错。
+         */
+        val ALL_MIGRATIONS: Array<Migration> = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8,
+            MIGRATION_8_9,
+            MIGRATION_9_10,
+        )
 
         private val statements = listOf(
             "CREATE TABLE IF NOT EXISTS `trash_entries` (`mediaItemId` TEXT NOT NULL, `locationId` TEXT NOT NULL, `originalUri` TEXT NOT NULL, `trashedUri` TEXT, `deletedAtEpochMillis` INTEGER NOT NULL, `purgeAtEpochMillis` INTEGER NOT NULL, `state` TEXT NOT NULL, PRIMARY KEY(`mediaItemId`))",

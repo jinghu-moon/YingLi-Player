@@ -46,6 +46,8 @@ data class MediaItemEntity(
         Index("durationMillis"),
         Index("width"),
         Index("missingScanCount"),
+        Index("sizeBytes"),
+        Index(value = ["contentHash", "hashAlgorithmVersion"]),
     ],
     primaryKeys = ["id"],
 )
@@ -67,6 +69,15 @@ data class MediaLocationEntity(
     val fastFingerprint: String?,
     val contentHash: String?,
     val relativePath: String? = null,
+    /**
+     * 写入 [fastFingerprint] / [contentHash] 时使用的哈希算法版本（设计稿 §7.1）。
+     *
+     * 缓存有效性的**三元组**之一是 `(sizeBytes, modifiedEpochMillis, hashAlgorithmVersion)`。
+     * 算法版本升级后旧哈希必须整体失效，因此版本号必须与哈希**同事务**写入：
+     * 只要哈希非空，本列就必须非空。若两者不一致（本列为空而哈希非空，
+     * 或本列等于旧版本），扫描必须重算而不是复用。
+     */
+    val hashAlgorithmVersion: Int? = null,
 )
 
 @Entity(

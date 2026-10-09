@@ -1812,14 +1812,92 @@ operation = if (target.hasQualityParameters || videoCodecChanged || audioCodecCh
 
 ### 14.4 阶段 3：去重模型归并
 
-1. `media_locations` 加 `hashAlgorithmVersion`；加 `(contentHash, hashAlgorithmVersion)` 索引；**删除** `duplicate_fingerprints` / `duplicate_groups` / `duplicate_group_members`；新增 `duplicate_ignores`。
-2. 收敛为一份流式哈希实现（保留 `MediaContentHasher`，删除 `AndroidDuplicateFingerprintGenerator` 的 size/quickHash/fullHash）。
-3. 实现 L0–L4 分层扫描（分页、流式、可取消）。
-4. 实现 §7.3 的**引用迁移事务**与 §4.7 的四个不变量断言。
-5. 实现 `DeduplicateProcessingExecutor` 并注册进 `RoutingProcessingExecutor`。
-6. **改 `trash_entries` 主键为 `locationId`**，并同步改 11 处 SQL（用可复用 SQL 片段/视图，不要各写一遍）。
+1. ✅ `media_locations` 加 `hashAlgorithmVersion`；加 `(contentHash, hashAlgorithmVersion)` 索引；**删除** `duplicate_fingerprints` / `duplicate_groups` / `duplicate_group_members`；新增 `duplicate_ignores`。
+2. ✅ 收敛为一份流式哈希实现（保留 `MediaContentHasher`，删除 `AndroidDuplicateFingerprintGenerator` 的 size/quickHash/fullHash）。
+3. ✅ 实现 L0–L4 分层扫描（分页、流式、可取消）。
+4. ✅ 实现 §7.3 的**引用迁移事务**与 §4.7 的四个不变量断言。
+5. ✅ 实现 `DeduplicateProcessingExecutor` 并注册进 `RoutingProcessingExecutor`。
+6. ✅ **改 `trash_entries` 主键为 `locationId`**，并同步改全部排除谓词 SQL（用可复用 SQL 片段，不要各写一遍）。
 
 **退出条件**：Exact 组能正确形成与复核；**归并后媒体库条目数正确减少且用户状态无丢失**（逐字段断言）；扫描分页且内存稳定；二次扫描因缓存明显快于首次（**实测数据写进文档**）；所有不变量测试通过。
+
+落地情况见 §14.4.1；退出条件中「二次扫描的实测数据」仍未取得（见该节「未验证」）。
+
+#### 14.4.1 阶段 3 落地（去重模型归并 + 回收站主键，2026-10-09）
+
+**数据层（`MIGRATION_9_10`，`YingLiDatabase` v9 → v10）**
+
+语句顺序（全部落进一个 `Migration`）：`ALTER TABLE media_locations ADD COLUMN hashAlgorithmVersion INTEGER`；`CREATE INDEX index_media_locations_sizeBytes`；`CREATE INDEX index_media_locations_contentHash_hashAlgorithmVersion`；`DROP TABLE duplicate_group_members / duplicate_groups / duplicate_fingerprints`；`CREATE TABLE duplicate_ignores(contentHash, sizeBytes, memberCount, ignoredAtEpochMillis, PRIMARY KEY(contentHash, sizeBytes))`；`trash_entries` 走**重建表**（SQLite 不能改主键）：`RENAME TO trash_entries_legacy` → 建新表（`PRIMARY KEY(locationId)`）→ `INSERT OR IGNORE ... SELECT`（**保留既有回收站记录**，迁移只改键不改语义）→ `DROP TABLE trash_entries_legacy` → 建 `mediaItemId` 与 `purgeAtEpochMillis` 两条索引。
+
+- `MIGRATION_1_2` 里的 `trash_entries` 历史 DDL（旧主键）**一字未改**：`app/schemas/.../2.json` 是冻结产物，改了它 1→2 的校验立刻失败。
+- 构建后已读 `app/schemas/seeyuer.yingli.player.data.room.YingLiDatabase/10.json` 逐字核对：`trash_entries`、`duplicate_ignores`、两条新索引与手写 DDL 完全一致；`media_locations` 的列顺序与实体声明不同（生成的 DDL 把 `hashAlgorithmVersion` 放在 `relativePath` 之前），Room 的校验按列名建映射比对，**顺序不影响校验**，因此不按生成顺序改写迁移。
+- 实体：`TrashEntryEntity` 主键 → `locationId`，`mediaItemId` 降为普通列（UI 展示归属 + 恢复时回查）；`MediaLocationEntity` 末尾新增 `hashAlgorithmVersion: Int?`；`DuplicateEntities.kt` 只剩 `DuplicateIgnoreEntity`。
+
+**可复用 SQL 片段（`data/room/LibrarySql.kt`）**
+
+`VISIBLE_ITEM`（条目级）与 `VISIBLE_LOCATION`（位置级）两条 `const val`，前者是 `EXISTS (SELECT 1 FROM media_item_locations mil LEFT JOIN trash_entries te ON te.locationId = mil.locationId WHERE mil.mediaItemId = media_items.id AND te.locationId IS NULL)`。`@Query` 注解里用常量拼接（编译期常量，KSP 能解析出最终 SQL），运行期字符串拼装处用 `"${LibrarySql.VISIBLE_ITEM}"`。
+
+- **纠正本文档早先的计数**：排除谓词是 **9 处 SQL**（`LibraryAndOrganizeDaos.kt` 的 4 条首页查询 + `RoomLibraryRepositories.kt` 的 5 处），不是 11 处；第 10 处是 `OBSERVED_TABLES` 里的表名（不是谓词），第 11 处是 DDL。
+- **选常量片段而不是 `@DatabaseView`**：视图会进入 DDL、迁移、schema 校验与失效通知四条链路，收益不抵风险。
+- 排除语义从「条目级」变成「位置级」：`trash_entries` 现在记的是「哪一份字节被回收」，因此 `VISIBLE_ITEM` 用 `EXISTS` 判定「该条目下至少还有一个未被回收的位置」——某条目只有一份位置且被回收时，它仍然从列表里消失（与改造前的用户可见行为一致）。
+
+**哈希三元组与两位写入者**
+
+`media_locations` 上不再有独立的指纹表，哈希直接落在位置行。缓存失效键是**三元组** `(sizeBytes, modifiedEpochMillis, hashAlgorithmVersion)`，不变量「三元组任一项变化 ⇒ 哈希必为 null」由两个写入者共同维持：去重扫描写哈希前重读元数据、变化就丢弃这一次的结果；编目扫描发现 size/mtime 变化时把哈希置空（`DefaultMediaScanner` 现在会保留未变化位置的既有哈希，此前是无条件用发现阶段的 `null` 覆盖，等于每次编目都把去重结果抹掉）。
+
+**L0–L4 扫描（`DefaultDuplicateScanner` 重写）**
+
+L0 `GROUP BY sizeBytes HAVING COUNT(*) >= 2`；L1 每个 size 桶按**键游标**（`id > :afterId`）取待算快指纹的行（**刻意不用 OFFSET**：筛选条件会被自己的写入改变，OFFSET 会漏行）；L2 按 `(sizeBytes, fastFingerprint)` 桶取待算完整哈希的行；L3 由 SQL 数出 `HAVING COUNT(*) >= 2` 的等价类个数（不把行带进内存）；L4 在删除执行器里做（见下）。失败不写哈希、只累加 `failureCount`，并记 `DUPLICATE_HASH_FAILED`。
+
+- `updateFastFingerprint(...)` **同时把 `contentHash` 置空**：走到这一步说明完整哈希要么没算过、要么算的是旧算法版本，留着旧值会让 L3 把陈旧结论当成当前版本。
+
+**读模型（`RoomDuplicateRepository` 重写）**
+
+`groups` = `observeHashedLocations(version)` 与 `observeIgnores()` 组合：按 `(contentHash, sizeBytes)` 分组，**只保留 `distinct mediaItemId` 数 ≥ 2 的组**（同一个条目持有两份相同内容不构成重复），忽略记录只在 `memberCount` 与当前组员数**相等**时隐藏该组（成员数变了说明有新情况，组要重新出现）。`ignore(...)` 写 `duplicate_ignores`。
+
+**归并（`RoomDuplicateMergeRepository` + `DuplicateMergeDao`）**
+
+一个 Room 事务内：位置重指向 → 标签并集（`UPDATE OR IGNORE`，冲突行留给 `media_tags` 的级联）→ 收藏逻辑或（时间戳取更早）→ 播放历史（次数求和、时间取最新、进度取时间较近者；并列且进度不同时取保留项并记 `DUPLICATE_MERGE_POSITION_TIE`）→ 最近整理取较新 → 播放列表并集 + `position` 重排（**先把 position 整体挪到负数区**再写回，避开 `(playlistId, position)` 唯一索引）→ 集合并集 → 切片项目重指向 → 处理任务输入重指向 + 同项目去重 + 重排 → `completed` 取逻辑或 → 断言 loser 名下已无位置后删除 loser 行。
+
+- **一处对 §7.3 的具体化**：`clip_projects.sourceLocationId` 改指**用户保留的那个位置**（由删除执行器把保留位置一起传进 `DuplicateMerge`），而不是「loser 的位置」或「保留项名下最近见到的位置」。后者会指向一个**即将被移入回收站**的位置——切片项目在下次导出时才发现源不可见。
+- 显式删除 loser 名下的 `favorites` / `playback_history` / `recently_organized` / `playlist_items` / `collection_items` / `processing_project_inputs`：这些表**都没有指向 `media_items` 的外键**，指望级联会留下孤儿行。
+
+**删除执行器（`DefaultDuplicateDeletionExecutor` 重写）**
+
+L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher.size` + `sha256`），与扫描时记下的值比对，任一不一致整体拒绝；通过后用 `DuplicateKeepRanking` 选出保留项、把其余选中实体归并进来；再按保留项取回条目、把勾选位置交给 `LibraryMutationRepository.trash(...)`。
+
+- **一处刻意偏离「与归并同一事务」**：实现拆成两个失败隔离阶段（归并 = Room 事务，回收 = 文件动作）。理由是「文件已移动而事务回滚」意味着磁盘上少了一份用户看不见的字节，比「归并已提交、回收没做」糟得多；后者只影响显示，重试即可。
+- `BatchOperationSummary.failures` 的键由 `MediaItemId` 改为 `MediaLocationId`：同一条目可能持有多份位置，按条目聚合会让失败互相覆盖。
+
+**处理链（去重必须经任务中心）**
+
+`ProcessingProject` 允许空 `inputMediaIds`（去重是全库作用域）；`ProcessingTaskEvent.Succeed.output` 与 `ProcessingExecutionResult.Success.output` 放宽为可空（去重没有产物，只有哈希列被更新）；新增 `DeduplicatePolicy`（`SCAN|<MODE>|v<n>` 编解码，解析失败一律拒绝，**不猜**）、`DeduplicateCoordinator`（建 `DEDUPLICATE` 项目 + 任务，`operationKey = duplicate-scan-<mode>`）、`DeduplicateProcessingExecutor`（版本不符直接 `HASH_VERSION_UNSUPPORTED`：按旧版本扫会把新版本的哈希当成「已算过」）；`RoutingProcessingExecutor` 新增 `DEDUPLICATE` 分支。
+
+**UI（最小接入）**
+
+`OrganizeViewModel.scanDuplicates()` 只负责入队；`duplicateScanning` **派生自任务流**（`operationKey` 前缀匹配 + 非终态），页面不再自己记布尔量；扫描终态由一个只认「本次入队项目」的收集器回报（历史里已成功的扫描不会让页面一进来就报完成）。`SCAN_COMPLETED` 状态码**不携带组数**，组数由 UI 在渲染时读当前 state（否则会在结果流刷新之前把个数定成 0）。SIMILAR 模式下候选列表为空（`DuplicateGroup` 已无 `mode` 字段），与 SIMILAR 仍未开启一致。
+
+**验证**
+
+| 层面 | 内容 |
+| --- | --- |
+| JVM 单测 | `DuplicateContractsTest` 13 例（组不变量、plan 三条 `require`、validator 五码与子集合法）、`DuplicateKeepRankingTest` 6 例、`DuplicateProcessingTest` 9 例（策略编解码拒绝猜测、入队建项目与 operationKey、四类扫描终态映射、版本与策略前置拒绝） |
+| 仪表化 | `DefaultDuplicateScannerTest` 7 例（L0/L1/L2 分层计数、缓存复用、旧算法版本重算、不可读文件不写哈希、扫描期间文件变化被丢弃、已回收位置被排除、SIMILAR 仍关闭）、`RoomDuplicateMergeRepositoryTest` 2 例（逐字段断言引用迁移与时间戳/次数/位置合并；未知条目被拒且不留半迁移状态）、`YingLiDatabaseMigrationTest` 12 例（新增 9→10 两例：结构 + 既有回收站记录保留；链式用例改为 1→10；新增「迁移链连续且终点等于 schema 版本」一例） |
+| 门禁 | `testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest`（lint 曾报两条 `UnusedResources`：`duplicates_similar_evidence` 已随 `DuplicateEvidence` 一起删除，`duplicates_scan_completed` 改为由 UI 带当前组数渲染） |
+
+**真机执行结果（2026-10-09，Xiaomi 25102RKBEC / `f3ba305a`）**：42 例仪表化测试全绿——`RoomDuplicateMergeRepositoryTest` 2 + `DefaultDuplicateScannerTest` 7 + `YingLiDatabaseMigrationTest` 12 + `RoomLibraryRepositoryTest` 8 + `RoomHomeRepositoryTest` 3 + `MediaDatabaseTest` 5 + `AndroidFileOperationGatewayTest` 1 + `OrganizeScreenTest` 2 + `LibraryScreenTest` 2。
+
+**真机跑出来的两个真实缺陷（都在本阶段修掉，且都改的是生产代码）**
+
+1. **`MIGRATION_9_10` 没有注册进生产 builder**。`MediaContainer` 的 `addMigrations(...)` 一路只列到 `MIGRATION_8_9`。所有 JVM 单测与迁移测试（它们直接调 `Migration` 对象）**全都不会报错**，症状是：**已装 v9 的设备升级后一打开数据库就抛 `IllegalStateException: A migration from 9 to 10 was required but not found`**，而异常发生在 `Dispatchers.Main` 的异步初始化里，表现为「随便哪个测试先跑就随机炸一下」——第一次看到时以为是测试自身的问题。
+   根因修法不是补一行，而是消掉第二份列表：新增 `YingLiDatabase.ALL_MIGRATIONS`（唯一的迁移清单），生产 builder 改为 `.addMigrations(*YingLiDatabase.ALL_MIGRATIONS)`，并加 `DATABASE_SCHEMA_VERSION` 常量供 `@Database(version = ...)` 与测试共用，新增用例 `allMigrationsFormAContiguousChainUpToTheDeclaredSchemaVersion` 断言「从 1 连续到当前版本」。
+2. **标签并集用 `UPDATE OR IGNORE … SET mediaItemId = survivor` 会留下孤儿行**。唯一约束冲突时 `OR IGNORE` 只跳过那一行，loser 的行原样保留（`media_tags` 靠 `media_items` 的级联侥幸被删掉，`media_tag_refs` 只对 `tag_definitions` 有外键，于是留下指向已删除条目的行）。改为与收藏/播放列表同构的「先 `INSERT OR IGNORE … SELECT` 复制、再显式删 loser」。
+
+**未验证（不得当成已验证）**
+
+- 退出条件里的「**二次扫描明显快于首次**」没有实测数据：本阶段只保证「已算过的位置不再重算」这条路径由 SQL 与版本键决定，速度差多少未测。
+- SIMILAR 维持关闭（D6 不变），因此「相似视频」标签页只有说明横幅，没有候选。
+- 未在真机上验证「库中已有大量 `duplicate_fingerprints` 行时的迁移耗时」，也未在真机上走一遍**真实的「移入回收站 → 恢复 → 永久删除」**交互（`AndroidFileOperationGatewayTest` 只覆盖到网关层）。
 
 ### 14.5 阶段 4：回收站
 

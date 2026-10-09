@@ -71,7 +71,7 @@ import seeyuer.yingli.player.core.designsystem.icon.imageVector
 import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.core.designsystem.tokens.YingLiTagColorTokens
 import seeyuer.yingli.player.core.model.media.MediaItemId
-import seeyuer.yingli.player.domain.duplicates.DuplicateEvidence
+import seeyuer.yingli.player.core.model.media.MediaLocationId
 import seeyuer.yingli.player.domain.duplicates.DuplicateGroup
 import seeyuer.yingli.player.domain.duplicates.DuplicateGroupId
 import seeyuer.yingli.player.domain.duplicates.DuplicateMode
@@ -123,7 +123,7 @@ fun OrganizeScreen(
     onDuplicateMode: (DuplicateMode) -> Unit,
     onScanDuplicates: () -> Unit,
     onCancelDuplicateScan: () -> Unit,
-    onToggleDuplicateTrash: (DuplicateGroupId, MediaItemId) -> Unit,
+    onToggleDuplicateTrash: (DuplicateGroupId, MediaLocationId) -> Unit,
     onIgnoreDuplicateGroup: (DuplicateGroupId) -> Unit,
     onRequestDuplicateDeletion: (DuplicateGroupId) -> Unit,
     onDismissDuplicateDeletion: () -> Unit,
@@ -209,8 +209,12 @@ fun OrganizeScreen(
         state.duplicateStatusCode?.let { code ->
             item {
                 YingLiBanner(
-                    message = duplicateStatusMessage(code),
-                    kind = if (code.startsWith("SCAN_COMPLETED") || code.startsWith("TRASH_COMPLETED")) {
+                    message = duplicateStatusMessage(code, state.duplicateGroups.size),
+                    kind = if (
+                        code.startsWith("TRASH_COMPLETED") ||
+                        code == OrganizeViewModel.SCAN_ENQUEUED ||
+                        code == OrganizeViewModel.SCAN_COMPLETED
+                    ) {
                         BannerKind.SUCCESS
                     } else {
                         BannerKind.WARNING
@@ -234,8 +238,9 @@ fun OrganizeScreen(
                 )
             }
         }
+        val visibleGroups = if (state.duplicateMode == DuplicateMode.EXACT) state.duplicateGroups else emptyList()
         items(
-            state.duplicateGroups.filter { it.mode == state.duplicateMode },
+            visibleGroups,
             key = { it.id.value },
         ) { group ->
             DuplicateGroupItem(
@@ -327,8 +332,8 @@ fun OrganizeScreen(
 @Composable
 private fun DuplicateGroupItem(
     group: DuplicateGroup,
-    selectedForTrash: Set<MediaItemId>,
-    onToggle: (DuplicateGroupId, MediaItemId) -> Unit,
+    selectedForTrash: Set<MediaLocationId>,
+    onToggle: (DuplicateGroupId, MediaLocationId) -> Unit,
     onIgnore: (DuplicateGroupId) -> Unit,
     onDelete: (DuplicateGroupId) -> Unit,
 ) {
@@ -337,19 +342,18 @@ private fun DuplicateGroupItem(
             Modifier.fillMaxWidth().padding(YingLiTheme.components.pagePadding),
             verticalArrangement = Arrangement.spacedBy(YingLiTheme.components.itemSpacing),
         ) {
-            Text(group.evidence.summary(), style = MaterialTheme.typography.titleMedium)
-            group.candidates.forEach { candidate ->
-                val fingerprint = candidate.fingerprint
+            Text(group.summary(), style = MaterialTheme.typography.titleMedium)
+            group.sortedCandidates().forEach { candidate ->
                 YingLiCheckbox(
                     label = stringResource(
                         R.string.duplicates_candidate,
-                        candidate.mediaId.value,
-                        fingerprint.width ?: 0,
-                        fingerprint.height ?: 0,
-                        fingerprint.sizeBytes.toMegabytes(),
+                        candidate.fileName,
+                        candidate.width ?: 0,
+                        candidate.height ?: 0,
+                        candidate.sizeBytes.toMegabytes(),
                     ),
-                    checked = candidate.mediaId in selectedForTrash,
-                    onCheckedChange = { onToggle(group.id, candidate.mediaId) },
+                    checked = candidate.locationId in selectedForTrash,
+                    onCheckedChange = { onToggle(group.id, candidate.locationId) },
                 )
             }
             Row(
@@ -374,23 +378,20 @@ private fun DuplicateGroupItem(
 }
 
 @Composable
-private fun DuplicateEvidence.summary(): String = when (this) {
-    is DuplicateEvidence.Exact -> stringResource(R.string.duplicates_exact_evidence, fullHash.take(12))
-    is DuplicateEvidence.Similar -> stringResource(R.string.duplicates_similar_evidence, (overallScore * 100).toInt())
-}
+private fun DuplicateGroup.summary(): String =
+    stringResource(R.string.duplicates_exact_evidence, contentHash.take(12))
 
 @Composable
-private fun duplicateStatusMessage(code: String): String = when {
-    code.startsWith("SCAN_COMPLETED_") -> stringResource(
-        R.string.duplicates_scan_completed,
-        code.substringAfterLast('_').toIntOrNull() ?: 0,
-    )
+private fun duplicateStatusMessage(code: String, groupCount: Int): String = when {
     code.startsWith("TRASH_COMPLETED_") -> stringResource(
         R.string.duplicates_trash_completed,
         code.substringAfterLast('_').toIntOrNull() ?: 0,
     )
+    code == OrganizeViewModel.SCAN_ENQUEUED -> stringResource(R.string.duplicates_scan_enqueued)
+    code == OrganizeViewModel.SCAN_ENQUEUE_FAILED -> stringResource(R.string.duplicates_scan_enqueue_failed)
+    code == OrganizeViewModel.SCAN_COMPLETED -> stringResource(R.string.duplicates_scan_completed, groupCount)
     code == "SIMILAR_EXPERIMENT_DISABLED" -> stringResource(R.string.duplicates_similar_disabled)
-    code == "SCAN_CANCELED" -> stringResource(R.string.duplicates_scan_canceled)
+    code == OrganizeViewModel.SCAN_CANCELED -> stringResource(R.string.duplicates_scan_canceled)
     else -> stringResource(R.string.duplicates_operation_failed, code)
 }
 

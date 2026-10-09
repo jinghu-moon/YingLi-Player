@@ -128,9 +128,15 @@ class DefaultMediaScannerTest {
             itemByLocation = mapOf(first.id to MediaItemId("item_1"), second.id to MediaItemId("item_2")),
         ))
         val hashes = mutableListOf<String>()
-        val hasher = MediaContentHasher { uri ->
-            hashes += uri.value
-            if (uri.value.endsWith("two")) "different-content" else "same-content"
+        val hasher = object : MediaContentHasher {
+            override suspend fun size(uri: MediaUri): Long? = null
+
+            override suspend fun quickFingerprint(uri: MediaUri, sizeBytes: Long): String? = null
+
+            override suspend fun sha256(uri: MediaUri): String? {
+                hashes += uri.value
+                return if (uri.value.endsWith("two")) "different-content" else "same-content"
+            }
         }
         val scanner = createScanner(
             catalog = catalog,

@@ -225,10 +225,10 @@ class OrganizeViewModelTrashTest {
         override suspend fun put(entry: TrashEntry) {
             state.value = state.value + entry
         }
-        override suspend fun updateState(mediaId: MediaItemId, state: TrashState) = Unit
+        override suspend fun updateState(locationId: MediaLocationId, state: TrashState) = Unit
 
-        override suspend fun remove(mediaId: MediaItemId) {
-            state.value = state.value.filterNot { it.mediaId == mediaId }
+        override suspend fun remove(locationId: MediaLocationId) {
+            state.value = state.value.filterNot { it.locationId == locationId }
         }
         override suspend fun expired(nowEpochMillis: Long): List<TrashEntry> =
             state.value.filter { it.purgeAtEpochMillis <= nowEpochMillis }

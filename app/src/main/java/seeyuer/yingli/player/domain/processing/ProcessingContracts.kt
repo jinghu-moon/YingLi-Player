@@ -25,12 +25,19 @@ enum class ProcessingProjectType {
 data class ProcessingProject(
     val id: ProcessingProjectId,
     val type: ProcessingProjectType,
+    /**
+     * 输入条目。**允许为空**，含义是「整个媒体库」——去重扫描的作用域就是全库，
+     * 它在拿到任务时才知道要扫哪些位置，逐条列出输入既不可能也无意义。
+     * 压缩/转码/切片仍然必须给出非空输入。
+     */
     val inputMediaIds: List<MediaItemId>,
     val outputPolicy: String,
     val createdAtEpochMillis: Long,
 ) {
     init {
-        require(inputMediaIds.isNotEmpty())
+        require(type == ProcessingProjectType.DEDUPLICATE || inputMediaIds.isNotEmpty()) {
+            "$type requires at least one input"
+        }
         require(inputMediaIds.distinct().size == inputMediaIds.size)
         require(outputPolicy.isNotBlank())
         require(createdAtEpochMillis >= 0)
@@ -112,7 +119,12 @@ sealed interface ProcessingTaskEvent {
     data class Resume(override val atEpochMillis: Long) : ProcessingTaskEvent
     data class RequestCancel(override val atEpochMillis: Long) : ProcessingTaskEvent
     data class FinishCancel(override val atEpochMillis: Long) : ProcessingTaskEvent
-    data class Succeed(val output: ProcessingOutput, override val atEpochMillis: Long) : ProcessingTaskEvent
+    /**
+     * 成功事件。[output] 可以是 `null`：**去重扫描不产出文件**——它的结果直接落在
+     * `media_locations` 的哈希列上（设计稿 §7.1），没有 `displayName`/`token` 可言。
+     * 压缩/转码/切片照旧必须带上非空的输出描述。
+     */
+    data class Succeed(val output: ProcessingOutput?, override val atEpochMillis: Long) : ProcessingTaskEvent
     data class Fail(val errorCode: String, override val atEpochMillis: Long) : ProcessingTaskEvent
     data class Recover(override val atEpochMillis: Long) : ProcessingTaskEvent
     data class Retry(override val atEpochMillis: Long) : ProcessingTaskEvent
@@ -183,6 +195,12 @@ object ProcessingTaskReducer {
                 else -> same(ProcessingTaskState.CANCELED)
             }
             is ProcessingTaskEvent.Succeed -> when {
+                event.output == null -> when (task.state) {
+                    // 去重扫描不产出文件：这里只能判「任务确实在运行」，
+                    // 输出描述本来就该为空（`ProcessingOutput` 是文件产物的模型）。
+                    ProcessingTaskState.RUNNING -> applied(ProcessingTaskState.SUCCEEDED)
+                    else -> same(ProcessingTaskState.SUCCEEDED)
+                }
                 event.output.displayName.isBlank() || event.output.token.isBlank() -> ProcessingReduction.Rejected(task)
                 task.state == ProcessingTaskState.RUNNING -> applied(
                     ProcessingTaskState.SUCCEEDED,
@@ -322,7 +340,11 @@ interface ProcessingExecutor {
 }
 
 sealed interface ProcessingExecutionResult {
-    data class Success(val output: ProcessingOutput) : ProcessingExecutionResult
+    /**
+     * [output] 可以是 `null`：去重扫描的成功结果是「`media_locations` 的哈希列已更新」，
+     * 磁盘上没有新文件，也就没有可供提交的产物。
+     */
+    data class Success(val output: ProcessingOutput?) : ProcessingExecutionResult
     data class Failure(val errorCode: String) : ProcessingExecutionResult
     data object Canceled : ProcessingExecutionResult
 }

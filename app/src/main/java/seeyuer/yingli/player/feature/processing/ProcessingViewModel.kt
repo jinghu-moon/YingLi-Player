@@ -63,6 +63,12 @@ data class ProcessingUiState(
     val exporting: Boolean = false,
     val timelineFrames: List<TimelineFrame> = emptyList(),
     val outputTarget: OutputTarget = OutputTargets.Balanced,
+    /**
+     * 当前源可达的目标（§14.7 第 3 项）。**未探测过源时是全集**：
+     * 那时还没有任何事实支持"某个档位不可达"，凭空的过滤会把能用的档位藏起来。
+     */
+    val reachableTargets: List<OutputTarget> = OutputTargets.all,
+    val reachableTargetsProbed: Boolean = false,
     val processingPlan: ProcessingPlan? = null,
     val processingPlanning: Boolean = false,
     val transcodeErrorCode: String? = null,
@@ -86,6 +92,8 @@ class ProcessingViewModel(
     private val exporting = MutableStateFlow(false)
     private val timelineFrames = MutableStateFlow<List<TimelineFrame>>(emptyList())
     private val outputTarget = MutableStateFlow(OutputTargets.Balanced)
+    private val reachableTargets = MutableStateFlow(OutputTargets.all)
+    private val reachableTargetsProbed = MutableStateFlow(false)
     private val processingPlan = MutableStateFlow<ProcessingPlan?>(null)
     private val processingPlanning = MutableStateFlow(false)
     private val transcodeErrorCode = MutableStateFlow<String?>(null)
@@ -98,9 +106,8 @@ class ProcessingViewModel(
     private val editorSnapshot = combine(editor, exporting, timelineFrames, ::EditorSnapshot)
     private val transcodeSnapshot = combine(
         outputTarget,
-        processingPlan,
-        processingPlanning,
-        transcodeErrorCode,
+        combine(reachableTargets, reachableTargetsProbed, ::ReachabilitySnapshot),
+        combine(processingPlan, processingPlanning, transcodeErrorCode, ::TranscodeOutcome),
         ::TranscodeSnapshot,
     )
 
@@ -119,11 +126,12 @@ class ProcessingViewModel(
             exporting = editorState.exporting,
             timelineFrames = editorState.frames,
             outputTarget = transcodeState.preset,
-            processingPlan = transcodeState.plan,
-            processingPlanning = transcodeState.planning,
-            transcodeErrorCode = transcodeState.errorCode,
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), ProcessingUiState())
+            reachableTargets = transcodeState.reachability.targets,
+            reachableTargetsProbed = transcodeState.reachability.probed,
+            processingPlan = transcodeState.outcome.plan,
+            processingPlanning = transcodeState.outcome.planning,
+            transcodeErrorCode = transcodeState.outcome.errorCode,
+        )    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), ProcessingUiState())
 
     init {
         viewModelScope.launch {
@@ -246,9 +254,13 @@ class ProcessingViewModel(
             val result = if (source == null) {
                 ProcessingPlanningResult.Rejected("PROBE_FAILED")
             } else {
+                val capabilities = mediaCapabilityProbe.deviceCapabilities()
+                // 探测成功才更新可达集：探不到源时「哪些档位不可达」没有任何依据。
+                reachableTargets.value = DefaultProcessingPlanner.reachableTargets(source, capabilities, availableBytes())
+                reachableTargetsProbed.value = true
                 DefaultProcessingPlanner.plan(
                     source,
-                    mediaCapabilityProbe.deviceCapabilities(),
+                    capabilities,
                     outputTarget.value,
                     availableBytes(),
                 )
@@ -295,6 +307,18 @@ class ProcessingViewModel(
 
     private data class TranscodeSnapshot(
         val preset: OutputTarget,
+        val reachability: ReachabilitySnapshot,
+        val outcome: TranscodeOutcome,
+    )
+
+    /** 当前源可达的目标，以及「是否已经探测过源」。 */
+    private data class ReachabilitySnapshot(
+        val targets: List<OutputTarget>,
+        val probed: Boolean,
+    )
+
+    /** 规划结果与两个瞬时状态。 */
+    private data class TranscodeOutcome(
         val plan: ProcessingPlan?,
         val planning: Boolean,
         val errorCode: String?,

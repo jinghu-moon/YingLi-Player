@@ -189,18 +189,26 @@ private fun TranscodePanel(
     modifier: Modifier,
 ) {
     var confirmed by remember(state.processingPlan) { mutableStateOf(false) }
+    val reachable = state.reachableTargets
     LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(YingLiTheme.components.itemSpacing)) {
-        item {
-            Text(stringResource(R.string.transcode_preset), style = MaterialTheme.typography.titleLarge)
-            YingLiSegmentedControl(
-                options = listOf(
-                    stringResource(R.string.transcode_preset_compatible),
-                    stringResource(R.string.transcode_preset_balanced),
-                    stringResource(R.string.transcode_preset_space_saver),
-                ),
-                selectedIndex = OutputTargets.all.indexOf(state.outputTarget),
-                onSelected = { onPreset(OutputTargets.all[it]) },
-            )
+        if (reachable.isEmpty()) {
+            // 全部不可达：既不显示一个都点不动的档位列表，也不假装能转换。
+            item {
+                YingLiBanner(
+                    message = stringResource(R.string.transcode_no_reachable_target),
+                    kind = BannerKind.WARNING,
+                )
+            }
+        } else {
+            item {
+                Text(stringResource(R.string.transcode_preset), style = MaterialTheme.typography.titleLarge)
+                YingLiSegmentedControl(
+                    options = reachable.map { it.label() },
+                    // 当前选中项可能已经不在可达集里（换过源）：夹到第一项，避免 -1 让控件无选中态。
+                    selectedIndex = reachable.indexOfFirst { it.id == state.outputTarget.id }.coerceAtLeast(0),
+                    onSelected = { onPreset(reachable[it]) },
+                )
+            }
         }
         state.transcodeErrorCode?.let { code ->
             item {
@@ -257,6 +265,21 @@ private fun TranscodePanel(
             }
         }
     }
+}
+
+/**
+ * 档位的显示名。
+ *
+ * 用 `id.value` 而不是 `OutputTargets.all` 的下标来映射：可达集是一个**子集**，
+ * 下标会随源变化，用下标取名会在换源之后把档位名张冠李戴。
+ */
+@Composable
+private fun OutputTarget.label(): String = when (id.value) {
+    "compatible_mp4" -> stringResource(R.string.transcode_preset_compatible)
+    "balanced_mp4" -> stringResource(R.string.transcode_preset_balanced)
+    "space_saver_mp4" -> stringResource(R.string.transcode_preset_space_saver)
+    // 未命中的目标显示内部 id：宁可能看到内部名，也不要显示错的档位名。
+    else -> id.value
 }
 
 @Composable

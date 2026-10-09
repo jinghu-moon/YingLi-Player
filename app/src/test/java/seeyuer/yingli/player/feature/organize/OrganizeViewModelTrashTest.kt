@@ -175,7 +175,7 @@ class OrganizeViewModelTrashTest {
     }
 
     @Test
-    fun `clearing without a task centre purges every entry and reports the first failure`() = runTest {
+    fun `clearing reports partial success and keeps the confirmation closed`() = runTest {
         val service = FakeTrashService(
             purgeOutcomes = mapOf(
                 "loc-a" to TrashOperationOutcome.Purged(MediaLocationId("loc-a")),
@@ -196,7 +196,9 @@ class OrganizeViewModelTrashTest {
         runCurrent()
 
         assertEquals(listOf("loc-a", "loc-b"), service.purged)
-        assertEquals("${OrganizeViewModel.TRASH_FAILED_PREFIX}PERMISSION_REQUIRED", viewModel.state.value.trashStatusCode)
+        // 逐项都试过了，所以状态码反映的是「1 成功 1 失败」而不是第一个失败原因：
+        // 只报第一个失败会让用户以为整批都没删掉。
+        assertEquals("${OrganizeViewModel.TRASH_CLEAR_PARTIAL_PREFIX}1_1", viewModel.state.value.trashStatusCode)
         assertFalse(viewModel.state.value.clearTrashConfirmOpen)
         collect.cancel()
     }
@@ -234,6 +236,50 @@ class OrganizeViewModelTrashTest {
 
         assertFalse(viewModel.state.value.trashSheetOpen)
         assertNull(viewModel.state.value.pendingPurge)
+        collect.cancel()
+    }
+
+    @Test
+    fun `retrying a pending cleanup purges again instead of restoring`() = runTest {
+        val service = FakeTrashService()
+        val viewModel = viewModel(service = service)
+        val collect = subscribe(viewModel)
+
+        viewModel.retryPurge(entry(mediaId = "a"))
+        runCurrent()
+
+        assertEquals(listOf("loc-a"), service.purged)
+        assertTrue("重试不是恢复", service.restored.isEmpty())
+        assertEquals(OrganizeViewModel.TRASH_PURGED, viewModel.state.value.trashStatusCode)
+        collect.cancel()
+    }
+
+    @Test
+    fun `discarding a failed entry keeps the file and reports the new code`() = runTest {
+        val service = FakeTrashService()
+        val viewModel = viewModel(service = service)
+        val collect = subscribe(viewModel)
+
+        viewModel.discard(entry(mediaId = "a"))
+        runCurrent()
+
+        assertEquals(listOf("loc-a"), service.discarded)
+        assertTrue(service.purged.isEmpty())
+        assertEquals(OrganizeViewModel.TRASH_DISCARDED, viewModel.state.value.trashStatusCode)
+        collect.cancel()
+    }
+
+    @Test
+    fun `reconcile surfaces how many entries still need a human`() = runTest {
+        val service = FakeTrashService(reconcileReport = ReconcileReport(repaired = 2, needsReview = 3, errors = 0))
+        val viewModel = viewModel(service = service)
+        val collect = subscribe(viewModel)
+
+        viewModel.reconcileTrash()
+        runCurrent()
+
+        assertEquals(1, service.reconcileCalls)
+        assertEquals("${OrganizeViewModel.TRASH_RECONCILED_REVIEW_PREFIX}3", viewModel.state.value.trashStatusCode)
         collect.cancel()
     }
 
@@ -275,10 +321,14 @@ class OrganizeViewModelTrashTest {
         private val restoreOutcome: TrashOperationOutcome? = null,
         private val purgeOutcomes: Map<String, TrashOperationOutcome> = emptyMap(),
         private val resolveOutcome: TrashOperationOutcome? = null,
+        private val reconcileReport: ReconcileReport = ReconcileReport.Empty,
     ) : TrashService {
         val restored = mutableListOf<String>()
         val purged = mutableListOf<String>()
+        val discarded = mutableListOf<String>()
         val resolved = mutableListOf<Pair<String, Boolean>>()
+        var reconcileCalls = 0
+            private set
 
         override fun observe(): Flow<List<TrashEntry>> = flowOf(emptyList())
 
@@ -305,9 +355,17 @@ class OrganizeViewModelTrashTest {
             return resolveOutcome
         }
 
-        override suspend fun reconcile(): ReconcileReport = ReconcileReport.Empty
+        override suspend fun reconcile(): ReconcileReport {
+            reconcileCalls += 1
+            return reconcileReport
+        }
 
         override suspend fun cleanupExpired(nowEpochMillis: Long): ReconcileReport = ReconcileReport.Empty
+
+        override suspend fun discard(locationId: MediaLocationId): TrashOperationOutcome {
+            discarded += locationId.value
+            return TrashOperationOutcome.Discarded(locationId)
+        }
 
         override suspend fun activeOperations(item: LibraryMedia): Set<ProcessingProjectType> = emptySet()
 

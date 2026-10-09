@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -72,6 +73,7 @@ import seeyuer.yingli.player.core.designsystem.component.YingLiBanner
 import seeyuer.yingli.player.core.designsystem.component.YingLiButton
 import seeyuer.yingli.player.core.designsystem.component.YingLiCheckbox
 import seeyuer.yingli.player.core.designsystem.component.YingLiIconButton
+import seeyuer.yingli.player.core.designsystem.component.YingLiRadio
 import seeyuer.yingli.player.core.designsystem.component.YingLiSegmentedControl
 import seeyuer.yingli.player.core.designsystem.component.YingLiTextField
 import seeyuer.yingli.player.core.designsystem.icon.YingLiIcon
@@ -80,10 +82,15 @@ import seeyuer.yingli.player.core.designsystem.theme.YingLiTheme
 import seeyuer.yingli.player.core.designsystem.tokens.YingLiTagColorTokens
 import seeyuer.yingli.player.core.model.media.MediaItemId
 import seeyuer.yingli.player.core.model.media.MediaLocationId
+import seeyuer.yingli.player.domain.duplicates.DuplicateCandidate
 import seeyuer.yingli.player.domain.duplicates.DuplicateGroup
 import seeyuer.yingli.player.domain.duplicates.DuplicateGroupId
+import seeyuer.yingli.player.domain.duplicates.DuplicateKeepRanking
 import seeyuer.yingli.player.domain.duplicates.DuplicateMode
+import seeyuer.yingli.player.domain.recycle.TrashAction
+import seeyuer.yingli.player.domain.recycle.TrashBackend
 import seeyuer.yingli.player.domain.recycle.TrashEntry
+import seeyuer.yingli.player.domain.recycle.TrashState
 import seeyuer.yingli.player.domain.organize.OrganizeMutationResult
 import seeyuer.yingli.player.domain.organize.OrganizedAction
 import seeyuer.yingli.player.domain.organize.TagColor
@@ -125,6 +132,7 @@ fun OrganizeRoute(viewModel: OrganizeViewModel, modifier: Modifier = Modifier) {
         viewModel::scanDuplicates,
         viewModel::cancelDuplicateScan,
         viewModel::toggleDuplicateTrash,
+        viewModel::setDuplicateKeeper,
         viewModel::ignoreDuplicateGroup,
         viewModel::requestDuplicateDeletion,
         viewModel::dismissDuplicateDeletion,
@@ -133,6 +141,9 @@ fun OrganizeRoute(viewModel: OrganizeViewModel, modifier: Modifier = Modifier) {
         viewModel::closeTrash,
         viewModel::restore,
         viewModel::requestPurge,
+        viewModel::retryPurge,
+        viewModel::discard,
+        viewModel::reconcileTrash,
         viewModel::dismissPurge,
         viewModel::confirmPurge,
         viewModel::requestClearTrash,
@@ -154,6 +165,7 @@ fun OrganizeScreen(
     onScanDuplicates: () -> Unit,
     onCancelDuplicateScan: () -> Unit,
     onToggleDuplicateTrash: (DuplicateGroupId, MediaLocationId) -> Unit,
+    onSelectDuplicateKeeper: (DuplicateGroupId, MediaLocationId) -> Unit,
     onIgnoreDuplicateGroup: (DuplicateGroupId) -> Unit,
     onRequestDuplicateDeletion: (DuplicateGroupId) -> Unit,
     onDismissDuplicateDeletion: () -> Unit,
@@ -162,6 +174,9 @@ fun OrganizeScreen(
     onCloseTrash: () -> Unit,
     onRestore: (TrashEntry) -> Unit,
     onRequestPurge: (TrashEntry) -> Unit,
+    onRetryPurge: (TrashEntry) -> Unit,
+    onDiscard: (TrashEntry) -> Unit,
+    onReconcile: () -> Unit,
     onDismissPurge: () -> Unit,
     onConfirmPurge: () -> Unit,
     onRequestClearTrash: () -> Unit,
@@ -248,8 +263,7 @@ fun OrganizeScreen(
                         BannerKind.SUCCESS
                     } else {
                         BannerKind.WARNING
-                    },
-                )
+                    },                )
             }
         }
         item {
@@ -274,11 +288,15 @@ fun OrganizeScreen(
             key = { it.id.value },
         ) { group ->
             DuplicateGroupItem(
-                group,
-                state.duplicateSelections[group.id].orEmpty(),
-                onToggleDuplicateTrash,
-                onIgnoreDuplicateGroup,
-                onRequestDuplicateDeletion,
+                group = group,
+                selectedForTrash = state.duplicateSelections[group.id].orEmpty(),
+                // 用户没选过就显示排序器的推荐值；不写回状态，两者因此不会混为一谈。
+                keeper = state.duplicateKeepers[group.id]
+                    ?: DuplicateKeepRanking.best(group.candidates)?.locationId,
+                onToggle = onToggleDuplicateTrash,
+                onSelectKeeper = onSelectDuplicateKeeper,
+                onIgnore = onIgnoreDuplicateGroup,
+                onDelete = onRequestDuplicateDeletion,
             )
         }
     }
@@ -288,6 +306,9 @@ fun OrganizeScreen(
             onClose = onCloseTrash,
             onRestore = onRestore,
             onRequestPurge = onRequestPurge,
+            onRetryPurge = onRetryPurge,
+            onDiscard = onDiscard,
+            onReconcile = onReconcile,
             onDismissPurge = onDismissPurge,
             onConfirmPurge = onConfirmPurge,
             onRequestClearTrash = onRequestClearTrash,
@@ -363,7 +384,9 @@ fun OrganizeScreen(
 private fun DuplicateGroupItem(
     group: DuplicateGroup,
     selectedForTrash: Set<MediaLocationId>,
+    keeper: MediaLocationId?,
     onToggle: (DuplicateGroupId, MediaLocationId) -> Unit,
+    onSelectKeeper: (DuplicateGroupId, MediaLocationId) -> Unit,
     onIgnore: (DuplicateGroupId) -> Unit,
     onDelete: (DuplicateGroupId) -> Unit,
 ) {
@@ -373,17 +396,16 @@ private fun DuplicateGroupItem(
             verticalArrangement = Arrangement.spacedBy(YingLiTheme.components.itemSpacing),
         ) {
             Text(group.summary(), style = MaterialTheme.typography.titleMedium)
+            // 组内并排属性对比（§14.7）：同组候选本来就是同一份内容的不同拷贝，
+            // 差异只在分辨率/体积/路径上，所以做成同列对齐的对照表而不是一堆独立条目。
+            DuplicateComparisonHeader()
             group.sortedCandidates().forEach { candidate ->
-                YingLiCheckbox(
-                    label = stringResource(
-                        R.string.duplicates_candidate,
-                        candidate.fileName,
-                        candidate.width ?: 0,
-                        candidate.height ?: 0,
-                        candidate.sizeBytes.toMegabytes(),
-                    ),
-                    checked = candidate.locationId in selectedForTrash,
-                    onCheckedChange = { onToggle(group.id, candidate.locationId) },
+                DuplicateComparisonRow(
+                    candidate = candidate,
+                    isKeeper = candidate.locationId == keeper,
+                    isSelectedForTrash = candidate.locationId in selectedForTrash,
+                    onSelectKeeper = { onSelectKeeper(group.id, candidate.locationId) },
+                    onToggleTrash = { onToggle(group.id, candidate.locationId) },
                 )
             }
             Row(
@@ -411,12 +433,106 @@ private fun DuplicateGroupItem(
 private fun DuplicateGroup.summary(): String =
     stringResource(R.string.duplicates_exact_evidence, contentHash.take(12))
 
+/** 对照表的列宽。写在一处，避免表头与数据行各写一份而错位。 */
+private val DUPLICATE_FILE_WEIGHT = 1.5f
+private val DUPLICATE_DIMENSION_WEIGHT = 1.1f
+private val DUPLICATE_SIZE_WEIGHT = 0.9f
+private val DUPLICATE_KEEP_WEIGHT = 0.8f
+private val DUPLICATE_TRASH_WEIGHT = 0.8f
+
+@Composable
+private fun DuplicateComparisonHeader() {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        DuplicateColumnLabel(stringResource(R.string.duplicates_column_file), DUPLICATE_FILE_WEIGHT)
+        DuplicateColumnLabel(stringResource(R.string.duplicates_column_dimension), DUPLICATE_DIMENSION_WEIGHT)
+        DuplicateColumnLabel(stringResource(R.string.duplicates_column_size), DUPLICATE_SIZE_WEIGHT)
+        DuplicateColumnLabel(stringResource(R.string.duplicates_column_keep), DUPLICATE_KEEP_WEIGHT)
+        DuplicateColumnLabel(stringResource(R.string.duplicates_column_trash), DUPLICATE_TRASH_WEIGHT)
+    }
+}
+
+@Composable
+private fun RowScope.DuplicateColumnLabel(text: String, weight: Float) {
+    Text(
+        text = text,
+        modifier = Modifier.weight(weight),
+        style = MaterialTheme.typography.labelSmall,
+        color = YingLiTheme.colors.textSecondary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/**
+ * 一条候选的对照行。
+ *
+ * 「保留」是**单选**（`YingLiRadio`），「移入回收站」是**多选**（`YingLiCheckbox`）；
+ * 保留项自己不能再被勾选，这一点由 ViewModel 的守卫兜底，这里只是把它显示成不可用。
+ */
+@Composable
+private fun DuplicateComparisonRow(
+    candidate: DuplicateCandidate,
+    isKeeper: Boolean,
+    isSelectedForTrash: Boolean,
+    onSelectKeeper: () -> Unit,
+    onToggleTrash: () -> Unit,
+) {
+    val dimension = if (candidate.width != null && candidate.height != null) {
+        stringResource(R.string.duplicates_dimension, candidate.width, candidate.height)
+    } else {
+        stringResource(R.string.duplicates_dimension_unknown)
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = candidate.fileName,
+            modifier = Modifier.weight(DUPLICATE_FILE_WEIGHT),
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = dimension,
+            modifier = Modifier.weight(DUPLICATE_DIMENSION_WEIGHT),
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+        )
+        Text(
+            text = stringResource(R.string.duplicates_size_mb, candidate.sizeBytes.toMegabytes()),
+            modifier = Modifier.weight(DUPLICATE_SIZE_WEIGHT),
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+        )
+        YingLiRadio(
+            label = stringResource(R.string.duplicates_keep),
+            selected = isKeeper,
+            onClick = onSelectKeeper,
+            modifier = Modifier.weight(DUPLICATE_KEEP_WEIGHT),
+        )
+        YingLiCheckbox(
+            label = "",
+            checked = isSelectedForTrash,
+            onCheckedChange = { onToggleTrash() },
+            modifier = Modifier.weight(DUPLICATE_TRASH_WEIGHT),
+            enabled = !isKeeper,
+        )
+    }
+}
+
 @Composable
 private fun duplicateStatusMessage(code: String, groupCount: Int): String = when {
     code.startsWith("TRASH_COMPLETED_") -> stringResource(
         R.string.duplicates_trash_completed,
         code.substringAfterLast('_').toIntOrNull() ?: 0,
     )
+    // 部分成功必须给专门的文案：它既不是全成功也不是全失败，掉进通用兜底会被读成「全都没删」。
+    code.startsWith("TRASH_PARTIAL_") -> {
+        val parts = code.removePrefix("TRASH_PARTIAL_").split('_')
+        val trashed = parts.getOrNull(0)?.toIntOrNull() ?: 0
+        val failed = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        stringResource(R.string.duplicates_trash_partial, trashed, failed)
+    }
+    // 删除前复核发现文件已变（size/mtime/hash 任一不符）：操作被整体拒绝，必须解释清楚。
+    code == FILE_CHANGED -> stringResource(R.string.duplicates_file_changed)
     code == OrganizeViewModel.SCAN_ENQUEUED -> stringResource(R.string.duplicates_scan_enqueued)
     code == OrganizeViewModel.SCAN_ENQUEUE_FAILED -> stringResource(R.string.duplicates_scan_enqueue_failed)
     code == OrganizeViewModel.SCAN_COMPLETED -> stringResource(R.string.duplicates_scan_completed, groupCount)
@@ -424,6 +540,15 @@ private fun duplicateStatusMessage(code: String, groupCount: Int): String = when
     code == OrganizeViewModel.SCAN_CANCELED -> stringResource(R.string.duplicates_scan_canceled)
     else -> stringResource(R.string.duplicates_operation_failed, code)
 }
+
+/**
+ * 与 `DuplicateDeletionResult.Rejected` 的 `FILE_CHANGED` 对齐。
+ *
+ * 领域层的错误码是字符串字面量，这里刻意再写一次而不是新增一个共享常量：
+ * 该码由 `DuplicateDeletionValidator` 产生，若将来改名编译器不会提醒，
+ * 但漏改的后果只是退回通用文案，不会造成错误删除。
+ */
+private const val FILE_CHANGED = "FILE_CHANGED"
 
 private fun Long.toMegabytes(): Long = (this + 1024 * 1024 - 1) / (1024 * 1024)
 
@@ -755,6 +880,9 @@ private fun TrashSheet(
     onClose: () -> Unit,
     onRestore: (TrashEntry) -> Unit,
     onRequestPurge: (TrashEntry) -> Unit,
+    onRetryPurge: (TrashEntry) -> Unit,
+    onDiscard: (TrashEntry) -> Unit,
+    onReconcile: () -> Unit,
     onDismissPurge: () -> Unit,
     onConfirmPurge: () -> Unit,
     onRequestClearTrash: () -> Unit,
@@ -765,6 +893,9 @@ private fun TrashSheet(
     val confirming = purgeTarget != null || state.clearTrashConfirmOpen
     val dismissConfirm = if (purgeTarget != null) onDismissPurge else onDismissClearTrash
     val acceptConfirm = if (purgeTarget != null) onConfirmPurge else onConfirmClearTrash
+    // 批量确认必须给出「有多少、能放出多少空间、不可恢复」三件事（§8.6 规则 3）。
+    // 体积取的是快照里的原始大小：它是唯一与实际占用空间对应的数字。
+    val trashBytes = state.trashItems.sumOf { it.entry.originalSizeBytes }
     ModalBottomSheet(
         onDismissRequest = onClose,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -797,14 +928,19 @@ private fun TrashSheet(
                     message = stringResource(
                         R.string.organize_trash_clear_confirm_message,
                         state.trashItems.size,
+                        formatFileSize(trashBytes),
                     ),
                 )
                 else -> TrashListBody(
                     modifier = Modifier.weight(1f, fill = false),
                     entries = state.trashItems,
+                    trashBytes = trashBytes,
                     statusCode = state.trashStatusCode,
                     onRestore = onRestore,
                     onRequestPurge = onRequestPurge,
+                    onRetryPurge = onRetryPurge,
+                    onDiscard = onDiscard,
+                    onReconcile = onReconcile,
                 )
             }
             TrashSheetFoot(
@@ -875,9 +1011,13 @@ private fun TrashSheetHead(title: String, subtitle: String?, onClose: () -> Unit
 private fun TrashListBody(
     modifier: Modifier,
     entries: List<TrashItemUi>,
+    trashBytes: Long,
     statusCode: String?,
     onRestore: (TrashEntry) -> Unit,
     onRequestPurge: (TrashEntry) -> Unit,
+    onRetryPurge: (TrashEntry) -> Unit,
+    onDiscard: (TrashEntry) -> Unit,
+    onReconcile: () -> Unit,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
@@ -896,7 +1036,7 @@ private fun TrashListBody(
             item(key = "empty") { TrashEmptyState(Modifier.fillMaxWidth()) }
         } else {
             item(key = "summary") {
-                TrashSummaryCard(entries.size)
+                TrashSummaryCard(entries.size, trashBytes)
                 Spacer(Modifier.height(17.dp))
                 Text(
                     text = stringResource(R.string.organize_trash_recent),
@@ -912,6 +1052,9 @@ private fun TrashListBody(
                     showDivider = index != entries.lastIndex,
                     onRestore = onRestore,
                     onRequestPurge = onRequestPurge,
+                    onRetryPurge = onRetryPurge,
+                    onDiscard = onDiscard,
+                    onReconcile = onReconcile,
                 )
             }
         }
@@ -920,7 +1063,7 @@ private fun TrashListBody(
 
 /** 设计稿 `.bin-summary`：深色卡 + 左「N 个项目」+ 右侧回收站符号。 */
 @Composable
-private fun TrashSummaryCard(count: Int) {
+private fun TrashSummaryCard(count: Int, bytes: Long) {
     val inverse = YingLiTheme.colors.textInverse
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -946,6 +1089,14 @@ private fun TrashSummaryCard(count: Int) {
                     color = inverse.copy(alpha = 0.72f),
                     fontSize = 11.sp,
                 )
+                if (bytes > 0) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = stringResource(R.string.organize_trash_summary_bytes, formatFileSize(bytes)),
+                        color = inverse.copy(alpha = 0.72f),
+                        fontSize = 11.sp,
+                    )
+                }
             }
             val shape = RoundedCornerShape(13.dp)
             Box(
@@ -968,9 +1119,11 @@ private fun TrashSummaryCard(count: Int) {
 }
 
 /**
- * 设计稿 `.bin-item`：缩略图 + 标题/元信息 + 「恢复」/「删除」行内动作。
+ * 设计稿 `.bin-item`：缩略图 + 标题/元信息 + 行内动作。
  *
- * `TrashEntry` 不含文件名与体积，标题只能是媒体 id，元信息只能是「移入多久 · 剩余保留期」。
+ * 行内动作**由状态机决定**（[TrashState.allowedActions]），不是由界面自己在 `when` 里枚举状态：
+ * 只有 `ACTIVE` 才有「恢复 / 删除」；`CLEANUP_PENDING` 只能重试删除；`FAILED` 只能放弃记录；
+ * `RECONCILIATION_REQUIRED` 只能对账。越权的请求仍会被 `TrashService` 挡住，这里只是不给入口。
  */
 @Composable
 private fun TrashItemRow(
@@ -978,7 +1131,11 @@ private fun TrashItemRow(
     showDivider: Boolean,
     onRestore: (TrashEntry) -> Unit,
     onRequestPurge: (TrashEntry) -> Unit,
+    onRetryPurge: (TrashEntry) -> Unit,
+    onDiscard: (TrashEntry) -> Unit,
+    onReconcile: () -> Unit,
 ) {
+    val allowed = item.entry.state.allowedActions
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -1015,12 +1172,25 @@ private fun TrashItemRow(
                     text = item.meta(),
                     color = YingLiTheme.colors.textSecondary,
                     fontSize = 10.sp,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            TrashMiniAction(stringResource(R.string.library_restore)) { onRestore(item.entry) }
-            TrashMiniAction(stringResource(R.string.library_purge)) { onRequestPurge(item.entry) }
+            if (TrashAction.RESTORE in allowed) {
+                TrashMiniAction(stringResource(R.string.library_restore)) { onRestore(item.entry) }
+            }
+            if (TrashAction.PURGE in allowed) {
+                TrashMiniAction(stringResource(R.string.library_purge)) { onRequestPurge(item.entry) }
+            }
+            if (TrashAction.RETRY_PURGE in allowed) {
+                TrashMiniAction(stringResource(R.string.organize_trash_action_retry)) { onRetryPurge(item.entry) }
+            }
+            if (TrashAction.RECONCILE in allowed) {
+                TrashMiniAction(stringResource(R.string.organize_trash_action_reconcile)) { onReconcile() }
+            }
+            if (TrashAction.DISCARD in allowed) {
+                TrashMiniAction(stringResource(R.string.organize_trash_action_discard)) { onDiscard(item.entry) }
+            }
         }
         if (showDivider) {
             HorizontalDivider(color = YingLiTheme.colors.borderDivider)
@@ -1240,11 +1410,36 @@ private fun SheetDangerButton(text: String, onClick: () -> Unit, modifier: Modif
     }
 }
 
+/**
+ * 行元信息。
+ *
+ * 三件事必须区分开（§8.8 / §14.7）：
+ * ① **后端**决定期限从哪来 —— R2 是应用自己的 30 天，R1 由系统管理（`DATE_EXPIRES` 只读）；
+ * ② **异常状态**下「剩余保留期」没有意义，改说清现在是什么状态、能做什么；
+ * ③ 未处于 `ACTIVE` 的条目没有开始计时，剩余天数是 0，不能显示成「剩余 0 天」。
+ */
 @Composable
-private fun TrashItemUi.meta(): String = if (ageDays <= 0L) {
-    stringResource(R.string.organize_trash_meta_today, remainingDays)
-} else {
-    stringResource(R.string.organize_trash_meta, ageDays, remainingDays)
+private fun TrashItemUi.meta(): String = when (entry.state) {
+    TrashState.ACTIVE -> if (entry.backend == TrashBackend.R1_SYSTEM) {
+        if (ageDays <= 0L) {
+            stringResource(R.string.organize_trash_meta_r1_today)
+        } else {
+            stringResource(R.string.organize_trash_meta_r1, ageDays)
+        }
+    } else {
+        if (ageDays <= 0L) {
+            stringResource(R.string.organize_trash_meta_today, remainingDays)
+        } else {
+            stringResource(R.string.organize_trash_meta, ageDays, remainingDays)
+        }
+    }
+    TrashState.CLEANUP_PENDING -> stringResource(R.string.organize_trash_state_cleanup_pending)
+    TrashState.RECONCILIATION_REQUIRED -> stringResource(R.string.organize_trash_state_reconciliation)
+    TrashState.FAILED -> stringResource(R.string.organize_trash_state_failed)
+    TrashState.STAGING,
+    TrashState.WAITING_SOURCE_DELETE_AUTH,
+    TrashState.RESTORING,
+    -> stringResource(R.string.organize_trash_state_reconciliation)
 }
 
 /**
@@ -1261,6 +1456,24 @@ private fun trashStatusMessage(code: String): String = when {
     code == OrganizeViewModel.TRASH_RESTORED -> stringResource(R.string.organize_trash_restored)
     code == OrganizeViewModel.TRASH_PURGED -> stringResource(R.string.organize_trash_purged)
     code == OrganizeViewModel.TRASH_CLEARED -> stringResource(R.string.organize_trash_cleared)
+    code == OrganizeViewModel.TRASH_DISCARDED -> stringResource(R.string.organize_trash_discarded)
+    code == OrganizeViewModel.TRASH_RECONCILED -> stringResource(R.string.organize_trash_reconciled)
+    code.startsWith(OrganizeViewModel.TRASH_RECONCILED_REVIEW_PREFIX) -> stringResource(
+        R.string.organize_trash_reconciled_review,
+        code.removePrefix(OrganizeViewModel.TRASH_RECONCILED_REVIEW_PREFIX).toIntOrNull() ?: 0,
+    )
+    code.startsWith(OrganizeViewModel.TRASH_CLEAR_PARTIAL_PREFIX) -> {
+        // 码形如 `TRASH_CLEAR_PARTIAL_<成功>_<失败>`；解析不出来时退回通用失败文案，
+        // **不要**在这里抛异常（状态码来自状态流，崩溃会把整个整理页带走）。
+        val parts = code.removePrefix(OrganizeViewModel.TRASH_CLEAR_PARTIAL_PREFIX).split('_')
+        val deleted = parts.getOrNull(0)?.toIntOrNull()
+        val failed = parts.getOrNull(1)?.toIntOrNull()
+        if (deleted == null || failed == null) {
+            stringResource(R.string.organize_trash_failed, code)
+        } else {
+            stringResource(R.string.organize_trash_clear_partial, deleted, failed)
+        }
+    }
     // 清空是批量操作，进任务中心：这里只能说「已排队」，完成与否由回收站列表自己变空来回答。
     code == OrganizeViewModel.TRASH_CLEAR_ENQUEUED -> stringResource(R.string.organize_trash_clear_enqueued)
     code == OrganizeViewModel.TRASH_AUTHORIZATION_REQUIRED -> stringResource(R.string.organize_trash_authorization_required)
@@ -1271,11 +1484,12 @@ private fun trashStatusMessage(code: String): String = when {
     else -> stringResource(R.string.organize_trash_failed, code)
 }
 
-private fun trashStatusKind(code: String): BannerKind = when (code) {
-    OrganizeViewModel.TRASH_RESTORED,
-    OrganizeViewModel.TRASH_PURGED,
-    OrganizeViewModel.TRASH_CLEARED,
-    -> BannerKind.SUCCESS
+private fun trashStatusKind(code: String): BannerKind = when {
+    code == OrganizeViewModel.TRASH_RESTORED ||
+        code == OrganizeViewModel.TRASH_PURGED ||
+        code == OrganizeViewModel.TRASH_CLEARED ||
+        code == OrganizeViewModel.TRASH_DISCARDED ||
+        code == OrganizeViewModel.TRASH_RECONCILED -> BannerKind.SUCCESS
     // 「已排队」不是结果，按提示色而不是成功色显示。
     else -> BannerKind.WARNING
 }

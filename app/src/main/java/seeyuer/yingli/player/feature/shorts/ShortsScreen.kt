@@ -130,6 +130,14 @@ fun ShortsScreen(
     var infoOpen by remember { mutableStateOf(false) }
     var deleteConfirmOpen by remember { mutableStateOf(false) }
     var managedMode by remember { mutableStateOf<String?>(null) }
+    // semantics { } 不是 @Composable 上下文，无障碍动作文案必须先取出来。
+    val accessibilityNext = stringResource(R.string.shorts_accessibility_next)
+    val accessibilityPrevious = stringResource(R.string.shorts_accessibility_previous)
+    val accessibilityPlayPause = if (state.playing) {
+        stringResource(R.string.shorts_accessibility_pause)
+    } else {
+        stringResource(R.string.shorts_accessibility_play)
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -142,9 +150,9 @@ fun ShortsScreen(
                 .testTag(ShortsTestTags.VIDEO)
                 .semantics {
                     customActions = listOf(
-                        CustomAccessibilityAction("下一条") { onNext(); true },
-                        CustomAccessibilityAction("上一条") { onPrevious(); true },
-                        CustomAccessibilityAction(if (state.playing) "暂停" else "播放") { onPlayPause(); true },
+                        CustomAccessibilityAction(accessibilityNext) { onNext(); true },
+                        CustomAccessibilityAction(accessibilityPrevious) { onPrevious(); true },
+                        CustomAccessibilityAction(accessibilityPlayPause) { onPlayPause(); true },
                     )
                 }
                 .pointerInput(state.currentIndex) {
@@ -203,7 +211,11 @@ fun ShortsScreen(
                 tint = YingLiTheme.player.controlPrimary,
             )
             Text(
-                text = if (state.currentIndex >= 0) "${state.currentIndex + 1}/${state.candidates.size}" else "0/0",
+                text = if (state.currentIndex >= 0) {
+                    stringResource(R.string.shorts_index_format, state.currentIndex + 1, state.candidates.size)
+                } else {
+                    stringResource(R.string.shorts_index_empty)
+                },
                 color = YingLiTheme.player.controlPrimary,
                 modifier = Modifier.padding(start = 8.dp),
             )
@@ -217,17 +229,25 @@ fun ShortsScreen(
         ) {
             ShortsRailAction(
                 icon = if (state.isFavorite) YingLiIcon.FAVORITE_FILLED else YingLiIcon.FAVORITE,
-                label = if (state.isFavorite) "已收藏" else "收藏",
+                label = if (state.isFavorite) {
+                    stringResource(R.string.shorts_favorite_added)
+                } else {
+                    stringResource(R.string.shorts_favorite)
+                },
                 onClick = onFavorite,
                 tint = if (state.isFavorite) YingLiTheme.colors.accentFavorite else YingLiTheme.player.controlPrimary,
             )
             ShortsRailAction(
                 icon = YingLiIcon.BLOCK,
-                label = if (state.isBlocked) "已屏蔽" else "屏蔽",
+                label = if (state.isBlocked) {
+                    stringResource(R.string.shorts_blocked)
+                } else {
+                    stringResource(R.string.shorts_block)
+                },
                 onClick = onBlocked,
                 tint = if (state.isBlocked) MaterialTheme.colorScheme.error else YingLiTheme.player.controlPrimary,
             )
-            ShortsRailAction(YingLiIcon.OVERFLOW, "更多", onClick = { moreOpen = true })
+            ShortsRailAction(YingLiIcon.OVERFLOW, stringResource(R.string.shorts_more), onClick = { moreOpen = true })
         }
         when {
             state.loading -> CircularProgressIndicator(
@@ -235,12 +255,12 @@ fun ShortsScreen(
                 color = YingLiTheme.player.controlPrimary,
             )
             state.errorCode != null -> Text(
-                text = "短视频加载失败，请返回后重试",
+                text = stringResource(R.string.shorts_failed),
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
             )
             state.candidates.isEmpty() -> Text(
-                text = "没有可播放的竖屏视频",
+                text = stringResource(R.string.shorts_empty),
                 color = YingLiTheme.player.controlSecondary,
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
             )
@@ -253,14 +273,18 @@ fun ShortsScreen(
         ) {
             candidate?.let {
                 Text(it.title, color = YingLiTheme.player.controlPrimary, maxLines = 2)
+                val dimension = stringResource(
+                    R.string.shorts_dimension_format,
+                    it.width?.toString() ?: stringResource(R.string.shorts_dimension_unknown),
+                    it.height?.toString() ?: stringResource(R.string.shorts_dimension_unknown),
+                )
                 Text(
-                    text = buildString {
-                        append("${it.width ?: "?"}x${it.height ?: "?"}")
-                        append("  ")
-                        append(formatShortsTime(state.progressMillis))
-                        append(" / ")
-                        append(formatShortsTime(it.durationMillis))
-                    },
+                    text = stringResource(
+                        R.string.shorts_progress_format,
+                        dimension,
+                        formatShortsTime(state.progressMillis),
+                        formatShortsTime(it.durationMillis),
+                    ),
                     color = YingLiTheme.player.controlSecondary,
                 )
             }
@@ -278,39 +302,39 @@ fun ShortsScreen(
                 onDismissRequest = { moreOpen = false },
                 containerColor = YingLiTheme.colors.surface,
             ) {
-                Text("短视频操作", modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
-                ShortsSheetSwitchRow("自动切换下一条", state.autoNext, onAutoNextChanged)
-                ShortsSheetSwitchRow("循环当前视频", state.repeatCurrent, onRepeatChanged)
+                Text(stringResource(R.string.shorts_sheet_title), modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+                ShortsSheetSwitchRow(stringResource(R.string.shorts_sheet_auto_next), state.autoNext, onAutoNextChanged)
+                ShortsSheetSwitchRow(stringResource(R.string.shorts_sheet_repeat_current), state.repeatCurrent, onRepeatChanged)
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("画面比例", modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.shorts_sheet_fit_mode), modifier = Modifier.weight(1f))
                     Text(state.fitMode.name, modifier = Modifier.padding(end = 8.dp))
-                    YingLiIconButton(YingLiIcon.ARROW_RIGHT, "切换画面比例", onCycleFitMode)
+                    YingLiIconButton(YingLiIcon.ARROW_RIGHT, stringResource(R.string.shorts_sheet_fit_mode_action), onCycleFitMode)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("锁定倍速", modifier = Modifier.weight(1f))
-                    Text("${state.lockedSpeed}x", modifier = Modifier.padding(end = 8.dp))
-                    YingLiIconButton(YingLiIcon.PLAY, "切换锁定倍速", onToggleSpeed)
+                    Text(stringResource(R.string.shorts_sheet_locked_speed), modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.shorts_sheet_speed_value, state.lockedSpeed), modifier = Modifier.padding(end = 8.dp))
+                    YingLiIconButton(YingLiIcon.PLAY, stringResource(R.string.shorts_sheet_locked_speed_action), onToggleSpeed)
                 }
                 TextButton(onClick = { moreOpen = false; infoOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("视频信息")
+                    Text(stringResource(R.string.shorts_info))
                 }
-                TextButton(onClick = { moreOpen = false; onCaptureScreenshot() }, modifier = Modifier.fillMaxWidth()) { Text("截图") }
-                TextButton(onClick = { moreOpen = false; onPictureInPicture() }, modifier = Modifier.fillMaxWidth()) { Text("画中画") }
-                TextButton(onClick = { managedMode = "favorites" }, modifier = Modifier.fillMaxWidth()) { Text("收藏列表 (${state.favoriteCount})") }
-                TextButton(onClick = { managedMode = "blocked" }, modifier = Modifier.fillMaxWidth()) { Text("黑名单视频管理 (${state.blockedCount})") }
+                TextButton(onClick = { moreOpen = false; onCaptureScreenshot() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.shorts_screenshot)) }
+                TextButton(onClick = { moreOpen = false; onPictureInPicture() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.shorts_pip)) }
+                TextButton(onClick = { managedMode = "favorites" }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.shorts_favorites_count, state.favoriteCount)) }
+                TextButton(onClick = { managedMode = "blocked" }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.shorts_blocked_count, state.blockedCount)) }
                 TextButton(
                     onClick = { moreOpen = false; candidate?.let(onShare) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = candidate != null,
-                ) { Text("分享") }
+                ) { Text(stringResource(R.string.shorts_share)) }
                 TextButton(onClick = { moreOpen = false; deleteConfirmOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("移入回收站")
+                    Text(stringResource(R.string.shorts_move_to_trash))
                 }
             }
         }
@@ -318,44 +342,58 @@ fun ShortsScreen(
             val info = state.mediaInfo
             AlertDialog(
                 onDismissRequest = { infoOpen = false },
-                title = { Text("视频信息") },
+                title = { Text(stringResource(R.string.shorts_info)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("标题：${info?.title ?: candidate?.title.orEmpty()}")
-                        Text("分辨率：${info?.width ?: candidate?.width ?: "未知"} x ${info?.height ?: candidate?.height ?: "未知"}")
-                        Text("时长：${info?.durationMillis ?: candidate?.durationMillis ?: "未知"} ms")
-                        Text("视频编码：${info?.videoCodec ?: "未知"}")
-                        Text("音频编码：${info?.audioCodec ?: "未知"}")
+                        Text(stringResource(R.string.shorts_info_title, info?.title ?: candidate?.title.orEmpty()))
+                        Text(
+                            stringResource(
+                                R.string.shorts_info_resolution,
+                                info?.width ?: candidate?.width ?: stringResource(R.string.shorts_unknown),
+                                info?.height ?: candidate?.height ?: stringResource(R.string.shorts_unknown),
+                            ),
+                        )
+                        Text(
+                            stringResource(
+                                R.string.shorts_info_duration,
+                                info?.durationMillis ?: candidate?.durationMillis ?: stringResource(R.string.shorts_unknown),
+                            ),
+                        )
+                        Text(stringResource(R.string.shorts_info_video_codec, info?.videoCodec ?: stringResource(R.string.shorts_unknown)))
+                        Text(stringResource(R.string.shorts_info_audio_codec, info?.audioCodec ?: stringResource(R.string.shorts_unknown)))
                         // 帧率统一走 frameRateLabel：这里原来直接打印 Float（既没有单位也没有小数口径），
                         // 与播放页顶栏/信息对话框不一致；同一个媒体在三个界面必须显示同一个数字。
-                        Text("帧率：${frameRateLabel(info?.frameRate) ?: "未知"}")
+                        Text(stringResource(R.string.shorts_info_frame_rate, frameRateLabel(info?.frameRate) ?: stringResource(R.string.shorts_unknown)))
                     }
                 },
-                confirmButton = { TextButton(onClick = { infoOpen = false }) { Text("关闭") } },
+                confirmButton = { TextButton(onClick = { infoOpen = false }) { Text(stringResource(R.string.shorts_close)) } },
             )
         }
         if (deleteConfirmOpen) {
             AlertDialog(
                 onDismissRequest = { deleteConfirmOpen = false },
-                title = { Text("移入回收站？") },
-                text = { Text("当前短视频将从候选队列移除，可在回收站恢复。") },
-                dismissButton = { TextButton(onClick = { deleteConfirmOpen = false }) { Text("取消") } },
+                title = { Text(stringResource(R.string.shorts_delete_confirm_title)) },
+                text = { Text(stringResource(R.string.shorts_delete_confirm_message)) },
+                dismissButton = { TextButton(onClick = { deleteConfirmOpen = false }) { Text(stringResource(R.string.shorts_cancel)) } },
                 confirmButton = {
-                    TextButton(onClick = { deleteConfirmOpen = false; onDelete() }) { Text("确认") }
+                    TextButton(onClick = { deleteConfirmOpen = false; onDelete() }) { Text(stringResource(R.string.shorts_confirm)) }
                 },
             )
         }
         if (managedMode != null) {
             ModalBottomSheet(onDismissRequest = { managedMode = null }, containerColor = YingLiTheme.colors.surface) {
                 val items = if (managedMode == "favorites") state.favoriteItems else state.blockedItems
-                Text(if (managedMode == "favorites") "收藏视频" else "黑名单视频", modifier = Modifier.padding(18.dp))
+                Text(
+                    if (managedMode == "favorites") stringResource(R.string.shorts_favorites_title) else stringResource(R.string.shorts_blocked_title),
+                    modifier = Modifier.padding(18.dp),
+                )
                 if (items.isEmpty()) {
-                    Text("暂无项目", modifier = Modifier.padding(18.dp))
+                    Text(stringResource(R.string.shorts_managed_empty), modifier = Modifier.padding(18.dp))
                 } else {
                     items.forEach { item ->
                         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(item.title, modifier = Modifier.weight(1f), maxLines = 1)
-                            YingLiIconButton(YingLiIcon.CLOSE, "移除 ${item.title}", onClick = {
+                            YingLiIconButton(YingLiIcon.CLOSE, stringResource(R.string.shorts_remove_item, item.title), onClick = {
                                 if (managedMode == "favorites") onRemoveFavorite(item.id) else onRemoveBlocked(item.id)
                             })
                         }
@@ -365,7 +403,7 @@ fun ShortsScreen(
         }
         if (!state.hintShown && state.candidates.isNotEmpty()) {
             Text(
-                "上滑下一条 · 下滑上一条\n左右滑动快进或快退",
+                stringResource(R.string.shorts_hint),
                 color = YingLiTheme.player.controlPrimary,
                 modifier = Modifier.align(Alignment.Center).padding(16.dp),
             )
@@ -381,14 +419,23 @@ fun ShortsScreen(
             ) {
                 AsyncImage(
                     model = preview.uri.takeIf { it.isNotBlank() },
-                    contentDescription = "截图预览",
+                    contentDescription = stringResource(R.string.shorts_screenshot_preview),
                     modifier = Modifier.size(width = 116.dp, height = 72.dp),
                 )
                 Text(preview.displayName, color = YingLiTheme.player.controlPrimary, modifier = Modifier.padding(end = 8.dp))
-                Text("${((preview.remainingMillis + 999L) / 1_000L).coerceAtMost(3L)}s", color = YingLiTheme.player.controlSecondary)
-                YingLiIconButton(YingLiIcon.PAUSE, if (preview.expanded) "收起截图预览" else "展开截图预览", onToggleScreenshotPause, tint = YingLiTheme.player.controlPrimary)
-                YingLiIconButton(YingLiIcon.CLOSE, "关闭截图预览", onCloseScreenshot, tint = YingLiTheme.player.controlPrimary)
-                YingLiIconButton(YingLiIcon.DELETE, "删除截图", onDeleteScreenshot, tint = MaterialTheme.colorScheme.error)
+                val remainingSeconds = ((preview.remainingMillis + 999L) / 1_000L).coerceAtMost(3L)
+                Text(
+                    stringResource(R.string.shorts_screenshot_remaining, remainingSeconds),
+                    color = YingLiTheme.player.controlSecondary,
+                )
+                YingLiIconButton(
+                    YingLiIcon.PAUSE,
+                    if (preview.expanded) stringResource(R.string.shorts_screenshot_collapse) else stringResource(R.string.shorts_screenshot_expand),
+                    onToggleScreenshotPause,
+                    tint = YingLiTheme.player.controlPrimary,
+                )
+                YingLiIconButton(YingLiIcon.CLOSE, stringResource(R.string.shorts_screenshot_close), onCloseScreenshot, tint = YingLiTheme.player.controlPrimary)
+                YingLiIconButton(YingLiIcon.DELETE, stringResource(R.string.shorts_screenshot_delete), onDeleteScreenshot, tint = MaterialTheme.colorScheme.error)
             }
             LinearProgressIndicator(
                 progress = { preview.remainingMillis / seeyuer.yingli.player.domain.playback.ScreenshotUiState.PREVIEW_DURATION_MILLIS.toFloat() },

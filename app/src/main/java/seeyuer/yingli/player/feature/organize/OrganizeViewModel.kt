@@ -28,6 +28,7 @@ import seeyuer.yingli.player.domain.duplicates.DuplicateDeletionPlan
 import seeyuer.yingli.player.domain.duplicates.DuplicateDeletionResult
 import seeyuer.yingli.player.domain.duplicates.DuplicateGroup
 import seeyuer.yingli.player.domain.duplicates.DuplicateGroupId
+import seeyuer.yingli.player.domain.duplicates.DuplicateKeepRanking
 import seeyuer.yingli.player.domain.duplicates.DuplicateMode
 import seeyuer.yingli.player.domain.duplicates.DuplicateRepository
 import seeyuer.yingli.player.domain.duplicates.DuplicateScanQueue
@@ -62,6 +63,13 @@ data class OrganizeUiState(
     val duplicateMode: DuplicateMode = DuplicateMode.EXACT,
     val duplicateGroups: List<DuplicateGroup> = emptyList(),
     val duplicateSelections: Map<DuplicateGroupId, Set<MediaLocationId>> = emptyMap(),
+    /**
+     * 用户显式选定的「保留项」（§14.7 第 1 项）。
+     *
+     * 缺省值不在状态里现算：`DuplicateKeepRanking` 会在用户没有选择时提供默认保留项，
+     * 界面只显示它，不把默认值写回这里 —— 否则「用户选过」与「系统推荐」就分不开了。
+     */
+    val duplicateKeepers: Map<DuplicateGroupId, MediaLocationId> = emptyMap(),
     val duplicateScanning: Boolean = false,
     val duplicateStatusCode: String? = null,
     val pendingDeletion: DuplicateGroupId? = null,
@@ -112,6 +120,7 @@ class OrganizeViewModel(
     private val mutationResult = MutableStateFlow<OrganizeMutationResult?>(null)
     private val duplicateMode = MutableStateFlow(DuplicateMode.EXACT)
     private val duplicateSelections = MutableStateFlow<Map<DuplicateGroupId, Set<MediaLocationId>>>(emptyMap())
+    private val duplicateKeepers = MutableStateFlow<Map<DuplicateGroupId, MediaLocationId>>(emptyMap())
     private val duplicateStatusCode = MutableStateFlow<String?>(null)
     private val pendingScanProject = MutableStateFlow<ProcessingProjectId?>(null)
     private val pendingDeletion = MutableStateFlow<DuplicateGroupId?>(null)
@@ -135,14 +144,26 @@ class OrganizeViewModel(
     }
 
     private val editorState = combine(editorKind, editorName, tagColor, mutationResult, ::EditorState)
+    /** 「打算删哪些」与「保留哪一个」是一对意图，合并成一条流以免 combine 过载。 */
+    private val duplicateIntent = combine(duplicateSelections, duplicateKeepers) { selections, keepers ->
+        selections to keepers
+    }
     private val duplicateState = combine(
         groups,
         duplicateMode,
-        duplicateSelections,
+        duplicateIntent,
         duplicateScanning,
         combine(duplicateStatusCode, pendingDeletion, ::DuplicateOperationState),
-    ) { groupValues, mode, selections, scanning, operation ->
-        DuplicateState(groupValues, mode, selections, scanning, operation.statusCode, operation.pendingDeletion)
+    ) { groupValues, mode, (selections, keepers), scanning, operation ->
+        DuplicateState(
+            groups = groupValues,
+            mode = mode,
+            selections = selections,
+            keepers = keepers,
+            scanning = scanning,
+            statusCode = operation.statusCode,
+            pendingDeletion = operation.pendingDeletion,
+        )
     }
 
     private val trashState = combine(
@@ -176,6 +197,7 @@ class OrganizeViewModel(
         duplicateMode = duplicate.mode,
         duplicateGroups = duplicate.groups,
         duplicateSelections = duplicate.selections,
+        duplicateKeepers = duplicate.keepers,
         duplicateScanning = duplicate.scanning,
         duplicateStatusCode = duplicate.statusCode,
         pendingDeletion = duplicate.pendingDeletion,
@@ -269,6 +291,7 @@ class OrganizeViewModel(
             duplicateStatusCode.value = if (projectId == null) SCAN_ENQUEUE_FAILED else SCAN_ENQUEUED
             if (projectId != null) pendingScanProject.value = projectId
             duplicateSelections.value = emptyMap()
+            duplicateKeepers.value = emptyMap()
         }
     }
 
@@ -276,14 +299,47 @@ class OrganizeViewModel(
         viewModelScope.launch { duplicateScanner?.cancel() }
     }
 
+    /**
+     * 勾选「移入回收站」的候选。
+     *
+     * 两条不变量：**保留项不能被勾**（用户显式选的那一份，或排序器推荐的默认保留项），
+     * 且**至少留一份**（`updated.size >= candidates.size` 时拒绝）。默认什么也不勾（§14.7）。
+     */
     fun toggleDuplicateTrash(groupId: DuplicateGroupId, locationId: MediaLocationId) {
         val group = state.value.duplicateGroups.firstOrNull { it.id == groupId } ?: return
+        if (locationId == effectiveKeeper(group)) return
         val current = duplicateSelections.value[groupId].orEmpty()
         val updated = if (locationId in current) current - locationId else current + locationId
         if (updated.size >= group.candidates.size) return
         duplicateSelections.value = duplicateSelections.value + (groupId to updated)
         duplicateStatusCode.value = null
     }
+
+    /**
+     * 显式选择保留项（§14.7 的「保留项选择」）。
+     *
+     * 选中的那份会**同时**从待删集合里移除 —— 这两件事必须一次做完，否则会短暂出现
+     * 「保留项也准备删」的状态，而删除计划的校验要求 `trash ⊆ group \ keep`。
+     */
+    fun setDuplicateKeeper(groupId: DuplicateGroupId, locationId: MediaLocationId) {
+        val group = state.value.duplicateGroups.firstOrNull { it.id == groupId } ?: return
+        if (group.candidates.none { it.locationId == locationId }) return
+        duplicateKeepers.value = duplicateKeepers.value + (groupId to locationId)
+        val current = duplicateSelections.value[groupId].orEmpty()
+        if (locationId in current) {
+            duplicateSelections.value = duplicateSelections.value + (groupId to (current - locationId))
+        }
+        duplicateStatusCode.value = null
+    }
+
+    /**
+     * 该组当前的保留项：用户显式选的优先，否则用 `DuplicateKeepRanking` 的推荐值。
+     *
+     * 读的是 `duplicateKeepers` 而不是 `state.value`：`state` 是 `WhileSubscribed` 的，
+     * 没有订阅者时停在初始值，用它做守卫会在后台路径上失效。
+     */
+    private fun effectiveKeeper(group: DuplicateGroup): MediaLocationId? =
+        duplicateKeepers.value[group.id] ?: DuplicateKeepRanking.best(group.candidates)?.locationId
 
     fun ignoreDuplicateGroup(groupId: DuplicateGroupId) {
         val group = state.value.duplicateGroups.firstOrNull { it.id == groupId } ?: return
@@ -304,13 +360,21 @@ class OrganizeViewModel(
         val groupId = pendingDeletion.value ?: return
         val group = state.value.duplicateGroups.firstOrNull { it.id == groupId } ?: return
         val trash = duplicateSelections.value[groupId].orEmpty()
-        if (trash.isEmpty() || trash.size >= group.candidates.size) return
+        if (trash.isEmpty()) return
         val all = group.candidates.map { it.locationId }.toSet()
+        // 保留项 = 用户选的那份，或排序器推荐的默认值。删除计划要求 `trash ⊆ group \ keep`，
+        // 所以这里必须是**具体的哪一份**，不能用「剩下的都算保留」这种事后解释。
+        val keeper = effectiveKeeper(group)
+        val keep = when {
+            keeper != null && keeper !in trash -> setOf(keeper)
+            else -> all - trash
+        }
+        if (keep.isEmpty()) return
         val plan = DuplicateDeletionPlan(
             groupId = groupId,
             contentHash = group.contentHash,
             sizeBytes = group.sizeBytes,
-            keepLocationIds = all - trash,
+            keepLocationIds = keep,
             trashLocationIds = trash,
             algorithmVersion = DUPLICATE_HASH_ALGORITHM_VERSION,
             createdAtEpochMillis = nowEpochMillis(),
@@ -349,12 +413,65 @@ class OrganizeViewModel(
         }
     }
 
+    /**
+     * 重试物理删除（`CLEANUP_PENDING` → `RETRY_PURGE`）。
+     *
+     * 复用 [TrashService.purge]：它只拒绝过渡态，而 `CLEANUP_PENDING` 是稳定态 ——
+     * 不需要为「重试」再造一条路径（再造一条就多一个可能与主路径行为不一致的分支）。
+     */
+    fun retryPurge(entry: TrashEntry) {
+        val service = trashService ?: return
+        pendingAuthorization.value = null
+        trashStatusCode.value = null
+        viewModelScope.launch {
+            trashStatusCode.value = service.purge(entry.locationId).toTrashStatusCode(TRASH_PURGED)
+        }
+    }
+
+    /**
+     * 对账（`RECONCILIATION_REQUIRED` → `RECONCILE`）。
+     *
+     * 对账本身是全局幂等的启动动作，这里只是给用户一个「现在就查一遍」的入口，
+     * 因此直接调 [TrashService.reconcile]，不为单条目造特殊路径。
+     */
+    fun reconcileTrash() {
+        val service = trashService ?: return
+        pendingAuthorization.value = null
+        trashStatusCode.value = null
+        viewModelScope.launch {
+            val report = service.reconcile()
+            trashStatusCode.value = if (report.needsReview > 0) {
+                // 注意模板边界：常量名以 `_` 结尾，必须用 `${...}` 包起来，
+                // 否则 `$NAME_` 会把尾下划线并进标识符（本仓已踩过）。
+                "${TRASH_RECONCILED_REVIEW_PREFIX}${report.needsReview}"
+            } else {
+                TRASH_RECONCILED
+            }
+        }
+    }
+
     fun requestPurge(entry: TrashEntry) {
         pendingPurge.value = entry
     }
 
     fun dismissPurge() {
         pendingPurge.value = null
+    }
+
+    /**
+     * 放弃一条移入失败的记录（§8.3 的 `FAILED → 终止`）。
+     *
+     * 与 [confirmPurge] 的区别是对用户说的实话不同：这条记录代表的字节**从未离开源位置**，
+     * 所以没有确认对话框（不需要警告不可恢复），反馈码也不是「已删除」。
+     */
+    fun discard(entry: TrashEntry) {
+        val service = trashService ?: return
+        pendingPurge.value = null
+        pendingAuthorization.value = null
+        trashStatusCode.value = null
+        viewModelScope.launch {
+            trashStatusCode.value = service.discard(entry.locationId).toTrashStatusCode(TRASH_PURGED)
+        }
     }
 
     fun confirmPurge() {
@@ -393,15 +510,20 @@ class OrganizeViewModel(
         if (queue == null) {
             val service = trashService ?: return
             viewModelScope.launch {
-                var failure: String? = null
+                var failed = 0
                 for (entry in entries) {
                     when (val outcome = service.purge(entry.locationId)) {
-                        is TrashOperationOutcome.Blocked -> { failure = outcome.code; break }
-                        is TrashOperationOutcome.Failed -> { failure = outcome.code; break }
+                        // 部分成功要如实报数（§8.6 规则 4）：只报第一个错误会让用户以为一条都没删成，
+                        // 只报成功又会盖住失败项 —— 这两个数字都要给。
+                        is TrashOperationOutcome.Blocked, is TrashOperationOutcome.Failed -> failed++
                         else -> Unit
                     }
                 }
-                trashStatusCode.value = failure?.let { "$TRASH_FAILED_PREFIX$it" } ?: TRASH_CLEARED
+                trashStatusCode.value = if (failed == 0) {
+                    TRASH_CLEARED
+                } else {
+                    "$TRASH_CLEAR_PARTIAL_PREFIX${entries.size - failed}_$failed"
+                }
             }
             return
         }
@@ -458,6 +580,8 @@ class OrganizeViewModel(
     private fun TrashOperationOutcome.toTrashStatusCode(successCode: String): String = when (this) {
         is TrashOperationOutcome.Completed -> successCode
         is TrashOperationOutcome.Purged -> successCode
+        // 放弃失败记录不是调用点给的任何一种成功：它的语义是「记录消失了，字节没动」。
+        is TrashOperationOutcome.Discarded -> TRASH_DISCARDED
         is TrashOperationOutcome.AuthorizationRequired -> {
             pendingAuthorization.value = request
             TRASH_AUTHORIZATION_REQUIRED
@@ -486,6 +610,7 @@ class OrganizeViewModel(
         val groups: List<DuplicateGroup>,
         val mode: DuplicateMode,
         val selections: Map<DuplicateGroupId, Set<MediaLocationId>>,
+        val keepers: Map<DuplicateGroupId, MediaLocationId>,
         val scanning: Boolean,
         val statusCode: String?,
         val pendingDeletion: DuplicateGroupId?,
@@ -530,11 +655,33 @@ class OrganizeViewModel(
         /** 需要用户先通过系统对话框授权。 */
         const val TRASH_AUTHORIZATION_REQUIRED = "TRASH_AUTHORIZATION_REQUIRED"
 
-        /** 用户在系统对话框里拒绝了授权。 */
+        /** 用户拒绝授权。 */
         const val AUTHORIZATION_DENIED = "AUTHORIZATION_DENIED"
+
+        /**
+         * 放弃了一条移入失败的记录。
+         *
+         * 刻意**不**复用 `TRASH_PURGED`：那会让界面说出「文件被删了」这种错误的事实 ——
+         * 放弃只撤销记录，字节还在源位置。
+         */
+        const val TRASH_DISCARDED = "TRASH_DISCARDED"
 
         /** 失败反馈码前缀，完整形式为 `TRASH_FAILED_<存储层错误码>`。 */
         const val TRASH_FAILED_PREFIX = "TRASH_FAILED_"
+
+        /**
+         * 部分清空的结果码，完整形式为 `TRASH_CLEAR_PARTIAL_<成功数>_<失败数>`。
+         *
+         * 数字写进状态码在这里是**对的**（与 `SCAN_COMPLETED` 相反）：清空是一次性动作，
+         * 结果不来自任何流，没有「码先到、数据后到」的时序问题。
+         */
+        const val TRASH_CLEAR_PARTIAL_PREFIX = "TRASH_CLEAR_PARTIAL_"
+
+        /** 对账结束且无需人工处理。 */
+        const val TRASH_RECONCILED = "TRASH_RECONCILED"
+
+        /** 对账结束但仍有条目需要人工确认，完整形式为 `TRASH_RECONCILED_REVIEW_<条数>`。 */
+        const val TRASH_RECONCILED_REVIEW_PREFIX = "TRASH_RECONCILED_REVIEW_"
 
         /** 去重扫描已排进任务中心。结果由 `groups` 流自动送回来，页面不再自报完成。 */
         const val SCAN_ENQUEUED = "SCAN_ENQUEUED"

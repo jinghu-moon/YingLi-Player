@@ -182,8 +182,15 @@ class AndroidRecycleBinStorage(
         itemsDirectory.listFiles().orEmpty().filter { it.isFile }.mapTo(mutableSetOf()) { it.name }
     }
 
+    /**
+     * 删除一个不再被任何记录引用的副本文件。
+     *
+     * **两处都要找**：副本正常情况下在 `items/`，但它可能已经被退回 `recovery/`
+     * （授权被拒时的 `denied()`、启动对账的 `quarantineCopy`/`quarantineOrphanCopy` 都只做 rename，
+     * `copyRelativePath` 仍然写着 `items/<uuid>`）。只查 `items/` 会把隔离副本变成永久垃圾。
+     */
     override suspend fun removeCopyFile(name: String): Boolean = withContext(dispatchers.io) {
-        removeFile(itemsDirectory, name)
+        removeFile(itemsDirectory, name) || removeFile(recoveryDirectory, name)
     }
 
     override suspend fun removeStagingFile(name: String): Boolean = withContext(dispatchers.io) {

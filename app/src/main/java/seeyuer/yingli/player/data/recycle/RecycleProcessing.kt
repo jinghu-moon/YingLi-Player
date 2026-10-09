@@ -171,6 +171,8 @@ class RecycleProcessingExecutor(
                 null,
                 is TrashOperationOutcome.Completed,
                 is TrashOperationOutcome.Purged,
+                // 目标是「记录消失」，放弃失败记录同样达成了这一点，算这一项成功。
+                is TrashOperationOutcome.Discarded,
                 -> Unit
                 is TrashOperationOutcome.AuthorizationRequired -> {
                     // 授权对话框必须由前台发起。任务在这里停住并把 token 交回，

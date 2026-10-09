@@ -270,6 +270,8 @@ class RecycleProcessingExecutorTest {
             purgeOutcomes[locationId] ?: TrashOperationOutcome.Purged(locationId)
 
         override suspend fun purgeAll(): TrashOperationReport = TrashOperationReport(emptyMap())
+        override suspend fun discard(locationId: MediaLocationId): TrashOperationOutcome =
+            TrashOperationOutcome.Discarded(locationId)
         override suspend fun resolveAuthorization(token: String, granted: Boolean): TrashOperationOutcome? = null
         override suspend fun reconcile(): ReconcileReport = ReconcileReport(0, 0, 0)
         override suspend fun cleanupExpired(nowEpochMillis: Long): ReconcileReport = cleanupReport

@@ -349,6 +349,35 @@ object DefaultProcessingPlanner {
         )
     }
 
+    /**
+     * 某个源**真正可达**的目标集合（设计稿 §14.7 第 3 项：格式转换入口由可达矩阵生成）。
+     *
+     * 判据就是 [plan] 本身：能被 plan 出一个方案的目标才出现在入口里，
+     * **不另写一份容器 × codec 的表** —— 两份表必然分叉，而 `plan` 已经把编码器可用性、
+     * 尺寸上限、容器可达性（§4.4、§4.5）都算进去了。
+     *
+     * 两类拒绝被刻意**当作可达**：
+     * - `INSUFFICIENT_STORAGE`：这是当下的存储状态而不是能力边界，用户清出空间后同一个目标就可用；
+     *   因此不能把档位从入口里摘掉。
+     * - 任何其他未知码：宁可让它在点下去时报错，也不要因为新增了一个拒绝码而静默隐藏档位。
+     */
+    fun reachableTargets(
+        source: SourceMediaInfo,
+        capabilities: DeviceMediaCapabilities,
+        availableBytes: Long,
+    ): List<OutputTarget> = OutputTargets.all.filter { target ->
+        when (val result = plan(source, capabilities, target, availableBytes)) {
+            is ProcessingPlanningResult.Ready -> true
+            is ProcessingPlanningResult.Rejected -> result.code !in CAPABILITY_REJECTIONS
+        }
+    }
+
+    /** 只描述「这台设备/这个源做不到」，不含存储与区间这类运行期条件。 */
+    private val CAPABILITY_REJECTIONS = setOf(
+        "VIDEO_ENCODER_UNAVAILABLE",
+        "ENCODER_SIZE_UNSUPPORTED",
+    )
+
     private fun even(value: Int): Int = value.coerceAtLeast(2) and -2
 
     private fun String.sanitizeOutputName(): String = replace(Regex("[^A-Za-z0-9._-]+"), "_")

@@ -67,6 +67,8 @@ class DefaultLibraryMutationRepository(
         }
         is TrashOperationOutcome.Completed -> FileOperationFailure.UNKNOWN
         is TrashOperationOutcome.Purged -> FileOperationFailure.TARGET_MISSING
+        // 放弃失败记录：字节仍在源位置，只是这条记录被撤销了。对调用方来说这一条**什么也没做成**。
+        is TrashOperationOutcome.Discarded -> FileOperationFailure.UNKNOWN
     }
 
     /**
@@ -77,6 +79,8 @@ class DefaultLibraryMutationRepository(
         is TrashOperationOutcome.Completed -> FileOperationResult.Success(entry.restoreUri ?: entry.originalUri)
         // 已经不存在 = 用户想要的结果已经达成，这不是失败（幂等语义，§8.7 规则 3）。
         is TrashOperationOutcome.Purged -> FileOperationResult.Success(fallback.originalUri)
+        // 放弃记录不改动任何字节，报成功会让调用方以为文件被删掉了。
+        is TrashOperationOutcome.Discarded,
         is TrashOperationOutcome.Failed,
         is TrashOperationOutcome.Blocked,
         is TrashOperationOutcome.AuthorizationRequired,

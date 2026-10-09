@@ -26,7 +26,26 @@ interface LibraryDao {
     @RawQuery
     suspend fun folders(query: SupportSQLiteQuery): List<LibraryFolderRow>
 
-    @Query("SELECT * FROM trash_entries WHERE state = 'ACTIVE' ORDER BY trashedAtEpochMillis DESC")
+    /**
+     * 回收站列表。
+     *
+     * **不只是 `ACTIVE`**：`CLEANUP_PENDING` / `RECONCILIATION_REQUIRED` / `FAILED` 都必须出现在
+     * 列表里 —— 否则 §14.7 要求的「异常状态说明与恢复路径」根本没有入口，用户会看到文件凭空消失。
+     * 排序按**状态优先级**（ACTIVE 在最前，异常的在后），同组内按移入时间倒序；用 `CASE` 而不是
+     * 在 Kotlin 里再排一次，避免出现第二份优先级真源。
+     */
+    @Query(
+        """
+        SELECT * FROM trash_entries
+        WHERE state IN ('ACTIVE', 'CLEANUP_PENDING', 'RECONCILIATION_REQUIRED', 'FAILED')
+        ORDER BY CASE state
+            WHEN 'ACTIVE' THEN 0
+            WHEN 'CLEANUP_PENDING' THEN 1
+            WHEN 'RECONCILIATION_REQUIRED' THEN 2
+            ELSE 3
+        END, trashedAtEpochMillis DESC
+        """,
+    )
     fun observeTrash(): Flow<List<TrashEntryEntity>>
 
     @Query("SELECT * FROM trash_entries WHERE locationId = :locationId LIMIT 1")

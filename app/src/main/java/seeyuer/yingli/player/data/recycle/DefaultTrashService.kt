@@ -89,6 +89,8 @@ class DefaultTrashService(
                 outcome
             }
             is TrashOperationOutcome.Purged -> outcome
+            // 存储层不会返回 `Discarded`（那是本服务的动作，不是后端动作）；分支只为穷尽性存在。
+            is TrashOperationOutcome.Discarded -> outcome
         }
     }
 
@@ -114,6 +116,27 @@ class DefaultTrashService(
         return TrashOperationReport(outcomes)
     }
 
+    override suspend fun discard(locationId: MediaLocationId): TrashOperationOutcome {
+        val entry = repository.byLocation(locationId)
+            ?: return TrashOperationOutcome.Blocked("ENTRY_NOT_FOUND")
+        if (entry.state != TrashState.FAILED) {
+            return TrashOperationOutcome.Blocked("STATE_NOT_DISCARDABLE", entry.state.name)
+        }
+        // 唯一副本守卫：源文件必须仍然在。源已经不在了说明隔离副本是唯一的一份，
+        // 此时让用户「放弃」就等于删掉唯一副本 —— 必须走对账，而不是这里。
+        if (!storage.isReadable(entry.originalUri)) {
+            return TrashOperationOutcome.Blocked("SOURCE_MISSING")
+        }
+        blockingTask(entry.mediaItemId)?.let {
+            return TrashOperationOutcome.Blocked("BLOCKED_BY_RUNNING_TASK", it.name)
+        }
+        entry.copyRelativePath?.substringAfterLast('/')?.let { name ->
+            storage.removeCopyFile(name)
+        }
+        repository.remove(entry.locationId)
+        return TrashOperationOutcome.Discarded(entry.locationId)
+    }
+
     override suspend fun resolveAuthorization(token: String, granted: Boolean): TrashOperationOutcome? {
         val entry = pendingEntries.remove(token) ?: return null
         val outcome = storage.resolveAuthorization(token, entry, granted) ?: return null
@@ -133,6 +156,11 @@ class DefaultTrashService(
             }
             is TrashOperationOutcome.Blocked -> outcome
             is TrashOperationOutcome.AuthorizationRequired -> outcome
+            // 授权流程不会产出「放弃记录」，分支只为穷尽性存在。
+            is TrashOperationOutcome.Discarded -> {
+                repository.remove(entry.locationId)
+                outcome
+            }
         }
     }
 
@@ -357,6 +385,7 @@ class DefaultTrashService(
                 staged
             }
             is TrashOperationOutcome.Purged -> staged
+            is TrashOperationOutcome.Discarded -> staged
         }
     }
 
@@ -384,6 +413,7 @@ class DefaultTrashService(
             }
             is TrashOperationOutcome.Blocked -> outcome
             is TrashOperationOutcome.Purged -> outcome
+            is TrashOperationOutcome.Discarded -> outcome
         }
 
     private suspend fun purgeEntry(entry: TrashEntry): TrashOperationOutcome =
@@ -410,6 +440,7 @@ class DefaultTrashService(
                 repository.update(pending)
                 TrashOperationOutcome.Failed(pending, outcome.code, outcome.detail)
             }
+            is TrashOperationOutcome.Discarded -> outcome
         }
 
     /** §8.5 第 8–9 步：先把位置行指向新 URI，再删记录；副本已在存储层删掉。 */

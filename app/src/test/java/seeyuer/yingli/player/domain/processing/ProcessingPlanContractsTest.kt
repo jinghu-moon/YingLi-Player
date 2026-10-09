@@ -171,6 +171,30 @@ class ProcessingPlanContractsTest {
         assertEquals(range, accurate.plan.range)
     }
 
+    @Test
+    fun `reachable targets drop the ones no encoder can produce`() {
+        // 设备没有任何编码器：三档都要求重新编码，所以整个列表为空——
+        // 界面据此显示「没有可达的输出格式」，而不是让用户点下去才失败。
+        assertEquals(
+            emptyList<OutputTarget>(),
+            DefaultProcessingPlanner.reachableTargets(source(), capabilities(emptyList()), Long.MAX_VALUE),
+        )
+        assertEquals(
+            OutputTargets.all,
+            DefaultProcessingPlanner.reachableTargets(source(), capabilities(), Long.MAX_VALUE),
+        )
+    }
+
+    @Test
+    fun `reachable targets survive a temporary storage shortage`() {
+        // 空间不足是**临时**状态（用户清点东西就能重试），因此刻意不把档位藏起来：
+        // 藏起来会过期成错误信息，点下去报错才是可解释的行为。
+        assertEquals(
+            OutputTargets.all,
+            DefaultProcessingPlanner.reachableTargets(source(), capabilities(), availableBytes = 1),
+        )
+    }
+
     private fun capabilities(encoders: List<EncoderCapability> = listOf(
         EncoderCapability("video/avc", 3_840, 2_160, 60f, supportsHdr = false, hardwareAccelerated = true),
     )) = DeviceMediaCapabilities(encoders, 1)

@@ -2006,13 +2006,32 @@ L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher
 
 ### 14.7 阶段 6：UI 接入
 
-1. 整理页：去重候选列表按等价类查询；保留项选择；默认不勾选删除；`FILE_CHANGED` 的重新验证提示；组内并排属性对比。
-2. 回收站页：按后端显示剩余期限；批量确认对话框（条目数 + 不可恢复提示 + 预计释放空间）；部分成功结果摘要；异常状态（`CLEANUP_PENDING` / `RECONCILIATION_REQUIRED`）的说明与恢复路径。
-3. 格式转换入口（§6.4）：选项由可达矩阵生成，不可达目标不出现。
-4. 修 G23（`ShortsScreen` 硬编码文案）。
-5. 首页维护项接新的等价类查询。
+| # | 任务 | 状态 |
+| --- | --- | --- |
+| 1 | 整理页：去重候选列表按等价类查询；保留项选择；默认不勾选删除；`FILE_CHANGED` 的重新验证提示；组内并排属性对比 | ✅ 见 14.7.1 |
+| 2 | 回收站页：按后端显示剩余期限；批量确认对话框（条目数 + 不可恢复提示 + 预计释放空间）；部分成功结果摘要；异常状态（`CLEANUP_PENDING` / `RECONCILIATION_REQUIRED`）的说明与恢复路径 | ✅ 见 14.7.1 |
+| 3 | 格式转换入口（§6.4）：选项由可达矩阵生成，不可达目标不出现 | ✅ 见 14.7.1 |
+| 4 | 修 G23（`ShortsScreen` 硬编码文案） | ✅ 见 14.7.1 |
+| 5 | 首页维护项接新的等价类查询 | ✅ 无需改动（已由阶段 3 的 `RoomDuplicateRepository.groups` 提供） |
 
 **退出条件**：UI 状态只来自 ViewModel/Repository，业务层仍能拒绝非法操作；**所有按钮都有真实业务行为，不做空操作或假成功**；颜色不是唯一模式线索。
+
+#### 14.7.1 阶段 6 落地（2026-10-11）
+
+1. **① 保留项是显式状态，不是一个减法**。新增 `duplicateKeepers: Map<DuplicateGroupId, MediaLocationId>`（`OrganizeUiState` 与 `DuplicateState` 都有），`setDuplicateKeeper(groupId, locationId)` 同时把该位置移出待删集合；`toggleDuplicateTrash` 拒绝勾选当前保留项；`confirmDuplicateDeletion` 的 `keep` 优先取显式保留项。**默认仍然一份都不勾**（`duplicateSelections` 初值 `emptyMap()`），推荐保留项只由 `DuplicateKeepRanking.best` 标注。一处实现细节值得记住：`effectiveKeeper` 读的是 `duplicateKeepers` 这个 `MutableStateFlow` 而**不是** `state.value`——`state` 是 `WhileSubscribed`，没有订阅者时停在初始值，用它做守卫会在「测试里没订阅」这种情形下悄悄失效。
+2. **① 组内并排属性对比**。`DuplicateComparisonHeader()` + `DuplicateComparisonRow(...)`：文件 / 分辨率 / 大小 / 保留 / 删除五列，列宽常量 `DUPLICATE_FILE_WEIGHT = 1.5f`、`DUPLICATE_DIMENSION_WEIGHT = 1.1f`、`DUPLICATE_SIZE_WEIGHT = 0.9f`、`DUPLICATE_KEEP_WEIGHT = 0.8f`、`DUPLICATE_TRASH_WEIGHT = 0.8f` **只写一处**，表头与数据行共用（各写一份必然错位）。保留列是单选（`YingLiRadio`），删除列是复选且对保留项禁用——**模式不靠颜色区分**（退出条件）。
+3. **① 两条此前掉进通用文案的状态码**：`FILE_CHANGED`（服务端复核发现文件变了）现在给「本次不会删除任何文件，请重新扫描」，`TRASH_PARTIAL_<ok>_<fail>` 现在解析出成功/失败条数——此前它落进兜底文案**且被判成 WARNING 之外的通用分支**（阶段 6 调研发现的现存 bug）。解析失败不抛异常，退回通用失败文案。
+4. **② 可用操作来自状态机，不来自界面**。新增领域类型 `TrashAction { RESTORE, PURGE, RETRY_PURGE, RECONCILE, DISCARD }` 与 `TrashState.allowedActions`（`ACTIVE`→恢复/删除；`CLEANUP_PENDING`→重试删除；`RECONCILIATION_REQUIRED`→对账；`FAILED`→放弃记录；三个过渡态→空集）。`TrashItemRow` 直接画这张表，越权请求仍由 `TrashService` 拒绝。配套新增 `TrashOperationOutcome.Discarded` 与 `TrashService.discard(locationId)`：**`Purged` 的语义是"字节被删"，`Discarded` 是"记录被撤销而字节仍在源位置"**，两者共用一个返回值会让界面把"文件还在"说成"已永久删除"。`discard` 的前置条件是「源可读」——不可读说明隔离副本才是唯一副本，必须走对账而不是放弃。
+5. **② 异常状态必须可见**。`LibraryDao.observeTrash()` 从 `WHERE state = 'ACTIVE'` 扩为 `ACTIVE / CLEANUP_PENDING / RECONCILIATION_REQUIRED / FAILED` 四态，并用 `CASE state ... END` 指定优先级后按 `trashedAtEpochMillis DESC` 排序（不写第二份优先级表）。元信息行按后端与状态分支出文案：R1 记「保留期由系统管理」，R2 记剩余天数，异常态各自说明。批量确认给出条目数 + **预计释放空间**（`sumOf { it.entry.originalSizeBytes }`）+「无法从回收站恢复」；清空失败不再只报第一项，改为 `TRASH_CLEAR_PARTIAL_<ok>_<fail>`（逐项都试过了，只报第一个失败会让用户以为整批都没删掉）。
+6. **② 一处存储层修正**：`AndroidRecycleBinStorage.removeCopyFile` 原先只查 `items/`，但授权被拒的 `denied()` 与对账的 `quarantineCopy`/`quarantineOrphanCopy` 只做 `rename`，`copyRelativePath` 仍写着 `items/<uuid>`——于是隔离副本永远删不掉。现在 `items/` 与 `recovery/` 都查。
+7. **③ 可达矩阵复用 planner，不另写能力表**。`DefaultProcessingPlanner.reachableTargets(source, capabilities, availableBytes)` 逐个调用 `plan(...)`：`Ready` 或「拒绝码不在 `CAPABILITY_REJECTIONS = { VIDEO_ENCODER_UNAVAILABLE, ENCODER_SIZE_UNSUPPORTED }`」即算可达。**刻意把 `INSUFFICIENT_STORAGE` 与未知码算作可达**——前者是临时存储状态（藏起来会过期成错误信息），后者宁可点下去报错也不要静默隐藏档位。`TranscodePanel` 只画 `state.reachableTargets`；为空时显示 `transcode_no_reachable_target` 横幅且不渲染选择器；档位文案按 `OutputTarget.id.value` 映射（**不用下标**：可达集是子集且随源变化，下标会张冠李戴）。`reachableTargets` 在 `planTranscode` 探测成功后才替换，并用 `reachableTargetsProbed` 记录「还没探测过」——**未探测过时是全集**，那时没有任何事实支持过滤。
+8. **③ 一处重构**：`TranscodeSnapshot` 从「一个字段一个流」折叠成 3 个字段（`preset` + `ReachabilitySnapshot(targets, probed)` + `TranscodeOutcome(plan, planning, errorCode)`）。原因不是美观：`combine` 的参数个数有上限，逐个堆流会编译不过，而把相关字段先折叠成小 data class 是唯一不需第二份状态的解法。
+9. **④ G23**：`ShortsScreen.kt` 的 57 处用户可见中文字面量全部换成 `stringResource`，`strings.xml` 新增 54 个 `shorts_*` 键（追加在 `app_lock_use_pin` 之后，未动既有键）。三处刻意偏离：`shorts_dimension_format = %1$sx%2$s` 不写空格（保持渲染逐字相同）、`buildString` 的两个分隔符折进 `shorts_progress_format`（非 `@Composable` 上下文不能调 `stringResource`）、三个 `CustomAccessibilityAction` 文案提到局部 val（`Modifier.semantics {}` 同样不是 `@Composable`）。改动后 `\p{Han}` 只命中注释。
+10. **⑤ 首页**：`HomeViewModel` 已经 `combine(duplicateRepository.groups, trashRepository.observe())`，且 `reclaimable` 用 `DuplicateKeepRanking.best` 算「保留推荐项之外」的字节数；两个 `MaintenanceItem` 都有非空守卫（`MaintenanceItem` 的 `require(itemCount > 0)` 因此成立）。**本项无需改动**，只把 `TrashRepository` 的 import 换到 `domain.recycle`。
+11. **验证**：JVM 共新增/改写 —— `OrganizeViewModelDuplicateKeeperTest`（新建 4 例：推荐保留项不可勾、显式保留项进入计划 `keepLocationIds`、改选保留项会清掉它的待删标记、没有待删项时不产生计划）、`OrganizeViewModelTrashTest`（14 例，新增重试清理/放弃失败记录/对账需人工确认/清空部分成功）、`ProcessingPlanContractsTest`（+2 例：无编码器时可达集为空、空间不足仍可达）、`RecycleProcessingTest` 与 `OrganizeScreenTest` 的连带更新。全门禁 `testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest` = **BUILD SUCCESSFUL**，聚合 `app/build/test-results/testDebugUnitTest/TEST-*.xml` = **117 suites / 774 tests / 0 failures / 0 errors / 0 skipped**（阶段 5 收尾为 116 / 765）。`lintDebug` 拦下一条真实问题：`duplicates_candidate` 在被并排对比表取代后成为未用资源（`UnusedResources` 是 error）——已删除该键而不是加抑制。
+12. **真机（Xiaomi 25102RKBEC，serial `f3ba305a`）**：`OrganizeScreenTest` = **OK (2 tests / 93 s)**；`RecycleBinStorageDeviceTest` + `ProcessingScreenTest` = **OK (4 tests / 93 s)**。跑之前先 `am force-stop` + `KEYCODE_WAKEUP` + `wm dismiss-keyguard`（MIUI 会让测试宿主 Activity 到不了前台，详见 AGENTS.md 的"设备仪器化测试的前提"）。
+13. **未验证**：真机上没有走完整的「异常态 → 对账 → 恢复」流程（`RECONCILIATION_REQUIRED` 只能在旧 R3 条目上出现，本机没有这种旧数据）；`reachableTargets` 的真机误判（把可达判成不可达）未测量，它只回答「planner 会不会拒绝」，不回答「编码器真的写得出」；`DISCARD` 在真机上只被单测覆盖（需要手工造出 `FAILED` 条目）。
+14. **两处对 §14.7 原稿的偏离**：(a) 文档要求「批量移入/删除/清空进任务中心」，实现里**只有当调用方持有 `RecycleQueue` 时才入队**（单测与无队列场景退化为逐项调用），因为「后端（R1/R2）只能在运行时才判定」——把它提前做成 UI 层分类会再造一个真源；(b) `DefaultLibraryMutationRepository` 现在**只做结果翻译**（把 `TrashOperationOutcome` 映射成 `FileOperationFailure`/`FileOperationResult`），不再自己做文件操作与写库，全部经 `TrashService`。
 
 ### 14.8 阶段 7：变更后回归
 
@@ -2058,6 +2077,9 @@ L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher
 | 步骤 9/10（`forRange`） | ✅ `ClipContractsTest.kt` 既有用例全绿 | ✅ `ClipContractsTest` +5 例（`start=0`、`end=duration`、`end=duration+1` 拒绝、`start=end` 拒绝、**A/B 颠倒不互换而是抛**）；`ProcessingViewModelTest`（新建 5 例）的 golden 断言"同一 `LibraryMedia` 经 `createProject` 产出的 `ClipProject` 与改前**字面量逐字段相同**"。见 14.6.1 |
 | 步骤 11（播放页入队） | ✅ `PlayerViewModelTest.kt` 既有用例全绿 | ✅ `PlayerViewModelTest` +6 例：AB 未冻结时 `abExportSheet == null`；`ClipFastExportProbe` 为真/假时的默认模式与理由；**入队恰好一次**（连点两次仍只一个项目，区间原样固化进单段）；清除 AB 之后到达的探测结果被 generation 丢弃；缺协作者时事件是 `player_ab_export_unavailable` 而非假成功。另 `AbExportNamingTest`（6 例）钉住段名与 `mm:ss.SSS` 读数。见 14.6.1 |
 | 步骤 12/13（UI 与 G11） | ✅ 无既有用例被改动 | ✅ 真机 `PlayerAbLoopCapsuleCommandTest`：新增 `exportButtonStaysDisabledUntilBothPointsExist`，并把第 5 枚按钮纳入"胶囊内垂直居中"逐按钮断言；`MuxerClipFastExportProbe` 零 mime 字面量（能力表仍只有 `MuxerContainer` 一份）。**未验证**：`fastUnavailable` 分支无真机样例源 |
+| 阶段 6 保留项选择 | ✅ `OrganizeViewModelTrashTest` 与 `OrganizeScreenTest` 既有用例全绿（`OrganizeScreen` 新增形参以空实现补齐） | ✅ `OrganizeViewModelDuplicateKeeperTest`（新建 4 例）：推荐保留项勾不进待删集合；显式保留项进入 `keepLocationIds`;改选保留项会清掉它的待删标记；没有待删项时不产生计划（`executor.plan == null`）。见 14.7.1 |
+| 阶段 6 回收站异常态 | ✅ `DefaultTrashServiceTest`（16 例）+ `TrashRetentionPolicyTest`（5 例）全绿 | ✅ `OrganizeViewModelTrashTest` 扩到 14 例：重试清理走 `purge` 而不是 `restore`；放弃 `FAILED` 条目返回 `TRASH_DISCARDED` 且**字节不动**；对账把「还需人工确认 N 项」编进状态码；清空对 1 成功 1 失败报 `TRASH_CLEAR_PARTIAL_1_1`（原用例原本断言"只报第一个失败"，行为已改）。`RecycleProcessingTest` 的 `FakeTrashService` 同步补 `discard`。见 14.7.1 |
+| 阶段 6 可达矩阵 | ✅ `ProcessingPlanContractsTest` 既有 9 例全绿 | ✅ `ProcessingPlanContractsTest` +2 例：设备无编码器时可达集为空（界面显示"没有可达输出"横幅）；空间不足时三档仍可达（**临时状态刻意不隐藏**）。见 14.7.1 |
 
 **去重侧新增**：
 - 同 `sizeBytes` 但 `contentHash` 不同 ⇒ **不形成组**（负样本，`docs/09:928`）。
@@ -2083,7 +2105,7 @@ L4 复核对计划涉及的每个位置**重新读文件**（`MediaContentHasher
 - **幂等**：同一位置重复移入不产生第二条记录；同一副本重复清理不删除无关文件。
 - **「清空」不先清数据库**：模拟文件删除失败 ⇒ 记录仍存在且状态为 `CLEANUP_PENDING`。
 
-**回收站侧落地状态（2026-10-10，阶段 4）**：上述十条里，`TrashRetentionPolicy` 边界、状态机的每条边与反向断言、**只有 `ACTIVE` 可恢复/可永久删除**、`RECONCILIATION_REQUIRED` 下拒绝任何自动删除、互斥矩阵（含 D5「扫描与编码不互斥」）、批量部分成功、幂等（重复移入不产生第二条记录）、「清空不先清库」，全部由 `DefaultTrashServiceTest`（16 例）+ `TrashRetentionPolicyTest`（5 例）+ `RecycleProcessingTest`（13 例）覆盖。**尚未覆盖**：「批量交给任务中心之后逐项结果可追踪」——执行器侧只断言了「部分成功算 `Success`」，任务中心里的逐项可见性属于阶段 6。
+**回收站侧落地状态（2026-10-10，阶段 4）**：上述十条里，`TrashRetentionPolicy` 边界、状态机的每条边与反向断言、**只有 `ACTIVE` 可恢复/可永久删除**、`RECONCILIATION_REQUIRED` 下拒绝任何自动删除、互斥矩阵（含 D5「扫描与编码不互斥」）、批量部分成功、幂等（重复移入不产生第二条记录）、「清空不先清库」，全部由 `DefaultTrashServiceTest`（16 例）+ `TrashRetentionPolicyTest`（5 例）+ `RecycleProcessingTest`（13 例）覆盖。**「批量交给任务中心之后逐项结果可追踪」于阶段 6 部分闭合**：逐项结果被汇总成 `TRASH_CLEAR_PARTIAL_<ok>_<fail>` 状态码（`OrganizeViewModelTrashTest` 覆盖），但**任务中心里仍无逐项结果列表**，该条仍算未覆盖。
 
 ### 15.3 设备测试（instrumentation）
 

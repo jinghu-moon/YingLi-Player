@@ -59,6 +59,44 @@ enum class TrashState {
 
     /** 过渡态：进程重启时必然需要对账收尾。 */
     val isTransitional: Boolean get() = !isStable
+
+    /**
+     * 用户在这个状态下可以做的事（§8.3 的「允许的操作」一列）。
+     *
+     * **放在领域层**：它不是界面偏好，而是状态机的一部分 —— 界面只是把这张表画出来，
+     * 任何越权的请求仍会被 [TrashService] 的守卫拒掉（§14.7 的退出条件）。
+     */
+    val allowedActions: Set<TrashAction>
+        get() = when (this) {
+            // 移入成功且在保留期内：可以恢复，也可以永久删除。
+            ACTIVE -> setOf(TrashAction.RESTORE, TrashAction.PURGE)
+            // 物理清理失败：**禁止恢复**（副本可能已经删了一半），只能重试删除或看诊断。
+            CLEANUP_PENDING -> setOf(TrashAction.RETRY_PURGE)
+            // 结果不确定：只能对账，且不得自动删除任何副本。
+            RECONCILIATION_REQUIRED -> setOf(TrashAction.RECONCILE)
+            // 移入失败、源文件未动：放弃这条记录（清理隔离副本），或回媒体库重新移入。
+            FAILED -> setOf(TrashAction.DISCARD)
+            // 过渡态：无用户可做的事，等对账收尾。
+            STAGING, WAITING_SOURCE_DELETE_AUTH, RESTORING -> emptySet()
+        }
+}
+
+/** 用户在回收站条目上可以发起的动作（§8.3）。 */
+enum class TrashAction {
+    /** 恢复（只有 R2 在保留期内、R1 在系统期限内可达）。 */
+    RESTORE,
+
+    /** 永久删除。 */
+    PURGE,
+
+    /** [TrashState.CLEANUP_PENDING] 上的重试删除。 */
+    RETRY_PURGE,
+
+    /** 启动对账，把「结果不确定」的条目收敛回稳定态。 */
+    RECONCILE,
+
+    /** [TrashState.FAILED] 上的放弃：删记录并清理隔离副本（**要求源文件仍在**）。 */
+    DISCARD,
 }
 
 /**
@@ -190,6 +228,15 @@ sealed interface TrashOperationOutcome {
      * 这是唯一一个没有条目可返回的终态，因此单独成一个分支。
      */
     data class Purged(val locationId: MediaLocationId) : TrashOperationOutcome
+
+    /**
+     * 放弃一条 [TrashState.FAILED] 记录：源文件从未被动过，隔离副本被删掉，记录消失。
+     *
+     * 与 [Purged] 分开是因为语义完全不同：`Purged` 意味着「那份字节被删了」，
+     * `Discarded` 意味着「这条失败记录被撤销了，字节仍在源位置」。合成一个分支会让界面
+     * 对用户说出错误的事实。
+     */
+    data class Discarded(val locationId: MediaLocationId) : TrashOperationOutcome
 }
 
 /**
@@ -359,6 +406,14 @@ interface TrashService {
 
     /** 「清空」：逐项执行，**每个文件确认删除成功后才删元数据**（§8.6 规则 2）。 */
     suspend fun purgeAll(): TrashOperationReport
+
+    /**
+     * 放弃一条移入失败的记录（§8.3 的 `FAILED → 终止`）。
+     *
+     * **守卫**：只有 `FAILED` 态可放弃；放弃前必须确认源文件仍在（`isReadable(originalUri)`），
+     * 否则源已经不存在、隔离副本就是唯一副本 —— 那种情况必须走对账而不是让用户把它删掉。
+     */
+    suspend fun discard(locationId: MediaLocationId): TrashOperationOutcome
 
     suspend fun resolveAuthorization(token: String, granted: Boolean): TrashOperationOutcome?
 
